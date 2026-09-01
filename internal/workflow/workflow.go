@@ -52,6 +52,9 @@ type Service struct {
 // trusted verification all bind to the exact immutable candidate. It never
 // publishes a remote or moves the user's current branch.
 func (s Service) Run(ctx context.Context, req Request) (Result, error) {
+	// Detach from caller-owned slices before any injected scanner or verifier
+	// can run. The same captured bytes must be scanned, verified, and prepared.
+	req.Snapshot = cloneSnapshot(req.Snapshot)
 	if err := policy.Validate(req.Policy); err != nil {
 		return Result{}, fmt.Errorf("invalid effective policy: %w", err)
 	}
@@ -126,6 +129,15 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	result.Commit = committed
 	return result, nil
+}
+
+func cloneSnapshot(entries []gittransaction.SnapshotEntry) []gittransaction.SnapshotEntry {
+	copyEntries := make([]gittransaction.SnapshotEntry, len(entries))
+	for i, entry := range entries {
+		copyEntries[i] = entry
+		copyEntries[i].Content = append([]byte(nil), entry.Content...)
+	}
+	return copyEntries
 }
 
 func securitySnapshot(entries []gittransaction.SnapshotEntry) security.CandidateSnapshot {

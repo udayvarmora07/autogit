@@ -285,8 +285,9 @@ be exercised without a user repository or network credentials:
   ownership/index, bounded verifier, durable git intent/reconciliation,
   exact-provider, six-adapter contract matrix, and owned-config primitives;
   `staging` now excludes unchanged baseline paths, blocks baseline edits and
-  deletions as ambiguous, and exposes a deep-copied immutable candidate
-  snapshot directly compatible with `gittransaction`; `gittransaction`
+  deletions as ambiguous, retains an explicitly observed file mode, and
+  exposes a deep-copied immutable candidate snapshot directly compatible with
+  `gittransaction`; `gittransaction`
   additionally separates real-Git candidate preparation from commit/ref
   mutation with exact-tree, unchanged-HEAD/index, and idempotent recovery
   tests.
@@ -294,9 +295,11 @@ be exercised without a user repository or network credentials:
   caller-owned snapshot and recorded tracking policy; it scans before durable
   Git intent, prepares an isolated candidate, runs a frozen trusted verifier
   set against its exact candidate/base/policy/guard evidence, and creates only
-  the verified AutoGit-owned local commit ref. It has real-Git coverage for
-  preserving the current branch and shared index, plus a secret-block path
-  that proves no durable intent or ref is created.
+  the verified AutoGit-owned local commit ref. It copies the input snapshot at
+  entry so a later collaborator mutation cannot change the scanned/verified/
+  committed bytes. It has real-Git coverage for preserving the current branch
+  and shared index, plus a secret-block path that proves no durable intent or
+  ref is created.
 - `internal/publication`: a pure local public-preflight package with no Git,
   provider, or network dependency; it validates consent, destination identity,
   candidate/history scans, verification evidence, file metadata, README/license

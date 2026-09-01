@@ -21,7 +21,11 @@ security, provider, native-OS, or release gates.
   guard evidence, and preserves the user branch and shared index.
 - [x] Ownership snapshot handoff: `internal/staging` blocks edited/deleted
   baseline paths as ambiguous, excludes unchanged baseline paths, and returns
-  a deep-copied `gittransaction` snapshot.
+  a deep-copied `gittransaction` snapshot while retaining explicitly observed
+  file modes.
+- [x] Workflow snapshot isolation: `internal/workflow` copies candidate bytes
+  at entry so an injected scanner/verifier or caller cannot alter the
+  scan/verification/commit input after work begins.
 - [x] Provider, adapter, install, coordinator, and public-preflight building
   blocks with deterministic fake/contract tests.
 
@@ -31,8 +35,9 @@ security, provider, native-OS, or release gates.
   invariants, test-traceability matrix, and compatibility window.
 - [ ] Capture durable session/task baselines from real repository observations
   (HEAD, index, status, modes, and owned paths), then feed them into staging.
-- [ ] Extend snapshot capture to preserve mode, symlink, rename/delete,
-  ignore, linked-worktree, Unicode/control-path, and concurrent-writer rules.
+- [ ] Extend real filesystem snapshot capture to preserve symlink,
+  rename/delete, ignore, linked-worktree, Unicode/control-path, and
+  concurrent-writer rules; explicitly observed regular-file modes are covered.
 - [ ] Load frozen trusted verifier configuration from policy/configuration and
   wire it into `verify` plus the session-driven local workflow.
 - [ ] Wire `sync` to reconcile lifecycle state, derive an owned candidate,

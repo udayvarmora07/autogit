@@ -2,6 +2,7 @@ package staging
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -65,6 +66,19 @@ func TestPlanCandidateSnapshotIsolatedFromFilesystemObservations(t *testing.T) {
 	again := plan.CandidateSnapshot()
 	if len(again) != 1 || string(again[0].Content) != "candidate" {
 		t.Fatalf("candidate snapshot was not isolated: %#v", again)
+	}
+}
+
+func TestBuildObservedPlanPreservesExecutableModeInCandidateSnapshot(t *testing.T) {
+	plan, err := BuildObservedPlan(nil, ObservedSnapshot{
+		"script.sh": {Content: []byte("#!/bin/sh\necho ok\n"), Mode: 0755},
+	}, []string{"script.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 1 || entries[0].Path != "script.sh" || entries[0].Mode != os.FileMode(0755) {
+		t.Fatalf("candidate snapshot = %#v", entries)
 	}
 }
 

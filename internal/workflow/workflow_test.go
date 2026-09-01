@@ -10,6 +10,7 @@ import (
 
 	"autogit/internal/gittransaction"
 	"autogit/internal/policy"
+	"autogit/internal/security"
 	"autogit/internal/state"
 	"autogit/internal/verification"
 )
@@ -98,6 +99,58 @@ func TestRunBlocksSecretBeforePreparingGitCandidate(t *testing.T) {
 	if ref := exec.Command("git", "-C", repo, "show-ref", "--verify", "--quiet", "refs/autogit/commits/secret-candidate").Run(); ref == nil {
 		t.Fatal("blocked candidate created an AutoGit ref")
 	}
+}
+
+func TestRunUsesSnapshotCapturedBeforeScannerMutation(t *testing.T) {
+	repo := newRepository(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	write(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "test", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{
+		ID:            "captured-before-scan",
+		RepositoryDir: repo,
+		Snapshot:      []gittransaction.SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Message:       "feat: preserve captured candidate",
+		Policy:        policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+		Verifiers:     registry,
+	}
+	service := Service{
+		Git:            gittransaction.SystemRunner{},
+		Intents:        gittransaction.NewStateIntentPort(db),
+		VerifierRunner: verifierRunner{},
+		Scanner: mutatingScanner{mutate: func() {
+			req.Snapshot[0].Content = []byte("changed-after-scan\n")
+		}},
+	}
+	got, err := service.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content := git(t, repo, "show", got.Commit.SHA+":owned.txt"); content != "candidate" {
+		t.Fatalf("committed content=%q", content)
+	}
+}
+
+type mutatingScanner struct{ mutate func() }
+
+func (s mutatingScanner) Scan(_ context.Context, _ security.CandidateSnapshot) security.ScanResult {
+	s.mutate()
+	return security.ScanResult{}
 }
 
 type verifierRunner struct{}
