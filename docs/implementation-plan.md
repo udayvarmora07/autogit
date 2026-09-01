@@ -287,6 +287,13 @@ be exercised without a user repository or network credentials:
   `gittransaction` additionally separates real-Git candidate preparation from
   commit/ref mutation with exact-tree, unchanged-HEAD/index, and idempotent
   recovery tests.
+- `internal/workflow`: a composable local workflow that accepts a captured,
+  caller-owned snapshot and recorded tracking policy; it scans before durable
+  Git intent, prepares an isolated candidate, runs a frozen trusted verifier
+  set against its exact candidate/base/policy/guard evidence, and creates only
+  the verified AutoGit-owned local commit ref. It has real-Git coverage for
+  preserving the current branch and shared index, plus a secret-block path
+  that proves no durable intent or ref is created.
 - `internal/publication`: a pure local public-preflight package with no Git,
   provider, or network dependency; it validates consent, destination identity,
   candidate/history scans, verification evidence, file metadata, README/license
@@ -300,8 +307,9 @@ be exercised without a user repository or network credentials:
   process boundary for trusted verifier argv.
 
 The following planned gates remain open and are not represented as completed:
-end-to-end candidate Git workflow wiring, full trusted verification policy wiring,
-complete adapter discovery/installation and workflow orchestration in the CLI,
+baseline/ownership derivation from session state, full trusted verification
+policy configuration wiring, complete adapter discovery/installation and
+workflow orchestration in the CLI,
 the complete CLI publication/provider workflow, provider intent wiring from the
 CLI, the >=609 release-test target, and the opt-in disposable-provider canary.
 The prototype shell test scripts described by the test strategy are not present

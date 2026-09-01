@@ -1,0 +1,140 @@
+package workflow
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"autogit/internal/gittransaction"
+	"autogit/internal/policy"
+	"autogit/internal/state"
+	"autogit/internal/verification"
+)
+
+func TestRunCreatesVerifiedOwnedCommitWithoutChangingSharedState(t *testing.T) {
+	repo := newRepository(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	write(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	write(t, filepath.Join(repo, "unrelated.txt"), "user work\n")
+	git(t, repo, "add", "--", "unrelated.txt")
+
+	headBefore := git(t, repo, "rev-parse", "HEAD")
+	indexBefore := read(t, filepath.Join(repo, ".git", "index"))
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "test", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := (Service{
+		Git:            gittransaction.SystemRunner{},
+		Intents:        gittransaction.NewStateIntentPort(db),
+		VerifierRunner: verifierRunner{},
+	}).Run(context.Background(), Request{
+		ID:            "owned-commit",
+		RepositoryDir: repo,
+		Snapshot: []gittransaction.SnapshotEntry{{
+			Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644,
+		}},
+		Message:   "feat: commit the verified candidate",
+		Policy:    policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+		Verifiers: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Commit.SHA == "" || !got.Verification.Passed {
+		t.Fatalf("result=%+v", got)
+	}
+	if content := git(t, repo, "show", got.Commit.SHA+":owned.txt"); content != "candidate" {
+		t.Fatalf("owned content=%q", content)
+	}
+	if head := git(t, repo, "rev-parse", "HEAD"); head != headBefore {
+		t.Fatalf("HEAD changed from %s to %s", headBefore, head)
+	}
+	if index := read(t, filepath.Join(repo, ".git", "index")); string(index) != string(indexBefore) {
+		t.Fatal("shared index changed")
+	}
+}
+
+func TestRunBlocksSecretBeforePreparingGitCandidate(t *testing.T) {
+	repo := newRepository(t)
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = (Service{
+		Git:     gittransaction.SystemRunner{},
+		Intents: gittransaction.NewStateIntentPort(db),
+	}).Run(context.Background(), Request{
+		ID:            "secret-candidate",
+		RepositoryDir: repo,
+		Snapshot:      []gittransaction.SnapshotEntry{{Path: ".env", Content: []byte("API_KEY=not-a-real-token"), Mode: 0644}},
+		Message:       "feat: add configuration",
+		Policy:        policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "security scan blocked") {
+		t.Fatalf("error=%v", err)
+	}
+	if _, err := db.GitCommitIntent(context.Background(), "secret-candidate"); !os.IsNotExist(err) {
+		t.Fatalf("blocked candidate persisted an intent: %v", err)
+	}
+	if ref := exec.Command("git", "-C", repo, "show-ref", "--verify", "--quiet", "refs/autogit/commits/secret-candidate").Run(); ref == nil {
+		t.Fatal("blocked candidate created an AutoGit ref")
+	}
+}
+
+type verifierRunner struct{}
+
+func (verifierRunner) Run(context.Context, string, map[string]string, ...string) (verification.Result, error) {
+	return verification.Result{ExitCode: 0}, nil
+}
+
+func newRepository(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	git(t, repo, "init")
+	return repo
+}
+
+func git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func write(t *testing.T, path, value string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func read(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
