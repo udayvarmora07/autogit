@@ -284,9 +284,12 @@ be exercised without a user repository or network credentials:
   `internal/adapters`, and `internal/install`: tested durable job/outbox/lease,
   ownership/index, bounded verifier, durable git intent/reconciliation,
   exact-provider, six-adapter contract matrix, and owned-config primitives;
-  `gittransaction` additionally separates real-Git candidate preparation from
-  commit/ref mutation with exact-tree, unchanged-HEAD/index, and idempotent
-  recovery tests.
+  `staging` now excludes unchanged baseline paths, blocks baseline edits and
+  deletions as ambiguous, and exposes a deep-copied immutable candidate
+  snapshot directly compatible with `gittransaction`; `gittransaction`
+  additionally separates real-Git candidate preparation from commit/ref
+  mutation with exact-tree, unchanged-HEAD/index, and idempotent recovery
+  tests.
 - `internal/workflow`: a composable local workflow that accepts a captured,
   caller-owned snapshot and recorded tracking policy; it scans before durable
   Git intent, prepares an isolated candidate, runs a frozen trusted verifier

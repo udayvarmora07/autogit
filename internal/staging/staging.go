@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"autogit/internal/gittransaction"
 )
 
 // Snapshot is a content observation at a baseline/current boundary. A caller
@@ -22,11 +24,18 @@ type Change struct {
 	Path, Operation, PreviousPath string
 	Content                       string
 }
+
+// SnapshotEntry is the transaction-owned candidate representation. Keeping
+// this alias means a derived snapshot can be passed directly to workflow
+// without a second, lossy conversion boundary.
+type SnapshotEntry = gittransaction.SnapshotEntry
+
 type Plan struct {
-	Paths    []string
-	Changes  []Change
-	Digest   string
-	BaseTree string
+	Paths     []string
+	Changes   []Change
+	Digest    string
+	BaseTree  string
+	candidate []SnapshotEntry
 }
 type Candidate struct {
 	Digest                string // canonical digest derived from TreeOID
@@ -52,8 +61,16 @@ func BuildPlan(baseline, current Snapshot, requested []string) (Plan, error) {
 		seen[name] = true
 		old, had := baseline[name]
 		now, exists := current[name]
-		if had && exists && old != now {
-			return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
+		if had {
+			if !exists || old != now {
+				// Baseline entries denote pre-existing changed paths. A
+				// later edit or deletion cannot be attributed to this
+				// candidate without an explicit ownership decision.
+				return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
+			}
+			// A path that was present and unchanged at the boundary is
+			// not candidate work.
+			continue
 		}
 		if !exists && !had {
 			continue
@@ -66,15 +83,32 @@ func BuildPlan(baseline, current Snapshot, requested []string) (Plan, error) {
 		}
 		p.Paths = append(p.Paths, name)
 		p.Changes = append(p.Changes, Change{Path: name, Operation: op, Content: now})
+		p.candidate = append(p.candidate, SnapshotEntry{Path: name, Content: []byte(now), Delete: op == "deleted"})
 	}
 	sort.Strings(p.Paths)
 	sort.Slice(p.Changes, func(i, j int) bool { return p.Changes[i].Path < p.Changes[j].Path })
+	sort.Slice(p.candidate, func(i, j int) bool { return p.candidate[i].Path < p.candidate[j].Path })
 	h := sha256.New()
 	for _, c := range p.Changes {
 		fmt.Fprintf(h, "%s\x00%s\x00%s\x00", c.Path, c.Operation, c.Content)
 	}
 	p.Digest = "sha256:" + hex.EncodeToString(h.Sum(nil))
 	return p, nil
+}
+
+// CandidateSnapshot returns a deep copy of the exact current observations
+// selected by this plan. The returned slice and byte contents are owned by
+// the caller; mutating them cannot alter the plan or the source snapshots.
+func (p Plan) CandidateSnapshot() []SnapshotEntry {
+	entries := make([]SnapshotEntry, len(p.candidate))
+	for i, entry := range p.candidate {
+		entries[i] = SnapshotEntry{
+			Path:    entry.Path,
+			Content: append([]byte(nil), entry.Content...),
+			Delete:  entry.Delete,
+		}
+	}
+	return entries
 }
 
 func BuildCandidate(ctx context.Context, r Runner, dir, index string, p Plan) (Candidate, error) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"autogit/internal/gittransaction"
 )
 
 func TestOwnershipExcludesPreexistingAndReportsOverlap(t *testing.T) {
@@ -18,6 +20,51 @@ func TestOwnershipExcludesPreexistingAndReportsOverlap(t *testing.T) {
 	}
 	if _, err := BuildPlan(baseline, current, []string{"shared.txt"}); err == nil {
 		t.Fatal("overlap was silently owned")
+	}
+}
+
+func TestPlanCandidateSnapshotIsolatedFromFilesystemObservations(t *testing.T) {
+	baseline := Snapshot{
+		"unchanged.txt": "same",
+		"deleted.txt":   "before",
+	}
+	current := Snapshot{
+		"unchanged.txt": "same",
+		"deleted.txt":   "after",
+		"new.txt":       "candidate",
+	}
+
+	plan, err := BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"})
+	if err == nil {
+		t.Fatal("ambiguous pre-existing edit was accepted")
+	}
+
+	delete(current, "deleted.txt")
+	if _, err = BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"}); err == nil {
+		t.Fatal("deletion of a pre-existing path was accepted")
+	}
+	current["deleted.txt"] = "before"
+	plan, err = BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 1 || entries[0].Path != "new.txt" || string(entries[0].Content) != "candidate" || entries[0].Delete {
+		t.Fatalf("candidate snapshot = %#v", entries)
+	}
+	var workflowEntries []gittransaction.SnapshotEntry = entries
+	if len(workflowEntries) != 1 || workflowEntries[0].Path != "new.txt" {
+		t.Fatalf("snapshot is not workflow-consumable: %#v", workflowEntries)
+	}
+
+	// The derived bytes must not alias the current observation or a prior
+	// caller-owned result.
+	current["new.txt"] = "mutated after derivation"
+	entries[0].Content[0] = 'X'
+	plan.Changes[0].Content = "mutated exported plan"
+	again := plan.CandidateSnapshot()
+	if len(again) != 1 || string(again[0].Content) != "candidate" {
+		t.Fatalf("candidate snapshot was not isolated: %#v", again)
 	}
 }
 
