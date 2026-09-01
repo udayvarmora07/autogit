@@ -287,7 +287,10 @@ be exercised without a user repository or network credentials:
   `staging` now excludes unchanged baseline paths, blocks baseline edits and
   deletions as ambiguous, retains an explicitly observed file mode, and
   exposes a deep-copied immutable candidate snapshot directly compatible with
-  `gittransaction`; `gittransaction`
+  `gittransaction`. It can capture explicit regular files from a canonical
+  root, rejects a final symlink, and derives a plan from that capture;
+  `workflow.RunPlan` accepts candidate bytes only from this ownership plan.
+  `gittransaction`
   additionally separates real-Git candidate preparation from commit/ref
   mutation with exact-tree, unchanged-HEAD/index, and idempotent recovery
   tests.

@@ -11,6 +11,7 @@ import (
 	"autogit/internal/gittransaction"
 	"autogit/internal/policy"
 	"autogit/internal/security"
+	"autogit/internal/staging"
 	"autogit/internal/state"
 	"autogit/internal/verification"
 )
@@ -142,6 +143,52 @@ func TestRunUsesSnapshotCapturedBeforeScannerMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if content := git(t, repo, "show", got.Commit.SHA+":owned.txt"); content != "candidate" {
+		t.Fatalf("committed content=%q", content)
+	}
+}
+
+func TestRunPlanCommitsOnlyTheOwnedPlanSnapshot(t *testing.T) {
+	repo := newRepository(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	write(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	plan, err := staging.BuildObservedPlan(nil, staging.ObservedSnapshot{
+		"owned.txt": {Content: []byte("owned candidate\n"), Mode: 0644},
+	}, []string{"owned.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "test", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := (Service{
+		Git:            gittransaction.SystemRunner{},
+		Intents:        gittransaction.NewStateIntentPort(db),
+		VerifierRunner: verifierRunner{},
+	}).RunPlan(context.Background(), Request{
+		ID:            "owned-plan",
+		RepositoryDir: repo,
+		Snapshot:      []gittransaction.SnapshotEntry{{Path: "owned.txt", Content: []byte("unowned input\n"), Mode: 0644}},
+		Message:       "feat: commit owned plan",
+		Policy:        policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+		Verifiers:     registry,
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content := git(t, repo, "show", got.Commit.SHA+":owned.txt"); content != "owned candidate" {
 		t.Fatalf("committed content=%q", content)
 	}
 }

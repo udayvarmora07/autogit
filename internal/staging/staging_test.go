@@ -3,6 +3,7 @@ package staging
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,6 +79,57 @@ func TestBuildObservedPlanPreservesExecutableModeInCandidateSnapshot(t *testing.
 	}
 	entries := plan.CandidateSnapshot()
 	if len(entries) != 1 || entries[0].Path != "script.sh" || entries[0].Mode != os.FileMode(0755) {
+		t.Fatalf("candidate snapshot = %#v", entries)
+	}
+}
+
+func TestCaptureObservedFilesCopiesRegularFileContentAndMode(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "script.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho initial\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	captured, err := CaptureObservedFiles(root, []string{"script.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := captured["script.sh"]; string(got.Content) != "#!/bin/sh\necho initial\n" || got.Mode.Perm() != 0755 {
+		t.Fatalf("captured file = %#v", got)
+	}
+	if err := os.WriteFile(path, []byte("changed later\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := captured["script.sh"]; string(got.Content) != "#!/bin/sh\necho initial\n" || got.Mode.Perm() != 0755 {
+		t.Fatalf("captured file changed with filesystem: %#v", got)
+	}
+}
+
+func TestCaptureObservedFilesRejectsSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.txt")
+	if err := os.WriteFile(target, []byte("target\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "link.txt")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := CaptureObservedFiles(root, []string{"link.txt"}); err == nil {
+		t.Fatal("symlink was accepted as a candidate file")
+	}
+}
+
+func TestBuildCapturedPlanDerivesOwnedSnapshotFromFilesystem(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "new.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho owned\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildCapturedPlan(root, nil, []string{"new.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 1 || entries[0].Path != "new.sh" || entries[0].Mode.Perm() != 0755 || string(entries[0].Content) != "#!/bin/sh\necho owned\n" {
 		t.Fatalf("candidate snapshot = %#v", entries)
 	}
 }

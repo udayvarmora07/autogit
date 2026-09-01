@@ -14,6 +14,7 @@ import (
 	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/security"
+	"autogit/internal/staging"
 	"autogit/internal/verification"
 )
 
@@ -46,6 +47,14 @@ type Service struct {
 	Intents        gittransaction.IntentPort
 	Scanner        security.CandidateScanner
 	VerifierRunner verification.Runner
+}
+
+// RunPlan accepts a candidate only through staging's ownership boundary. Any
+// raw snapshot in req is intentionally replaced, preventing a caller from
+// pairing plan evidence with different bytes.
+func (s Service) RunPlan(ctx context.Context, req Request, plan staging.Plan) (Result, error) {
+	req.Snapshot = plan.CandidateSnapshot()
+	return s.Run(ctx, req)
 }
 
 // Run creates a local AutoGit ref only after consent, a security scan, and

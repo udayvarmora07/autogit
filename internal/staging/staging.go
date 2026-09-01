@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -131,6 +132,65 @@ func normalizedMode(mode os.FileMode) os.FileMode {
 		return 0644
 	}
 	return mode
+}
+
+// CaptureObservedFiles reads an explicit set of regular files beneath root
+// into immutable observations. It does not walk a directory or infer paths;
+// callers must establish ownership before asking it to capture bytes.
+func CaptureObservedFiles(root string, paths []string) (ObservedSnapshot, error) {
+	if root == "" {
+		return nil, errors.New("capture root is required")
+	}
+	canonicalRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	canonicalRoot, err = filepath.EvalSymlinks(canonicalRoot)
+	if err != nil {
+		return nil, fmt.Errorf("capture root: %w", err)
+	}
+	rootInfo, err := os.Stat(canonicalRoot)
+	if err != nil || !rootInfo.IsDir() {
+		return nil, errors.New("capture root is not a directory")
+	}
+	captured := make(ObservedSnapshot, len(paths))
+	for _, name := range paths {
+		if err := safePath(name); err != nil {
+			return nil, err
+		}
+		if _, exists := captured[name]; exists {
+			continue
+		}
+		absolute := filepath.Join(canonicalRoot, filepath.FromSlash(name))
+		relative, err := filepath.Rel(canonicalRoot, absolute)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+			return nil, errors.New("capture path escapes root")
+		}
+		info, err := os.Lstat(absolute)
+		if err != nil {
+			return nil, fmt.Errorf("capture %q: %w", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("capture %q: not a regular file", name)
+		}
+		content, err := os.ReadFile(absolute)
+		if err != nil {
+			return nil, fmt.Errorf("capture %q: %w", name, err)
+		}
+		captured[name] = ObservedFile{Content: append([]byte(nil), content...), Mode: info.Mode()}
+	}
+	return captured, nil
+}
+
+// BuildCapturedPlan captures the current bytes for explicit requested paths,
+// then applies the same fail-closed baseline ownership rules as
+// BuildObservedPlan.
+func BuildCapturedPlan(root string, baseline ObservedSnapshot, requested []string) (Plan, error) {
+	current, err := CaptureObservedFiles(root, requested)
+	if err != nil {
+		return Plan{}, err
+	}
+	return BuildObservedPlan(baseline, current, requested)
 }
 
 // CandidateSnapshot returns a deep copy of the exact current observations
