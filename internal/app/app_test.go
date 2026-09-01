@@ -95,8 +95,17 @@ func TestHookRejectsProjectIdentityMismatchBeforeReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"01J7N6X8P5K2V4W6FQ8M9ABCDF","event_type":"session.idle","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","session_id":"session"},"ordering":{"stream_id":"stream"},"idempotency":{"key":"k"},"payload":{}}`
-	input := strings.Replace(base, `"payload":{}`, `"payload":{},"project":{"candidate_root":"`+root+`"}`, 1)
-	input = strings.Replace(input, "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", info.RepoID, 1)
+	var evt map[string]any
+	if err := json.Unmarshal([]byte(base), &evt); err != nil {
+		t.Fatal(err)
+	}
+	scope := evt["scope"].(map[string]any)
+	scope["repo_id"] = info.RepoID
+	evt["project"] = map[string]any{"candidate_root": root}
+	input, err := json.Marshal(evt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// A resolver deliberately returns a different identity, proving the event
 	// is rejected before its receipt can be accepted.
 	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
@@ -106,10 +115,10 @@ func TestHookRejectsProjectIdentityMismatchBeforeReceipt(t *testing.T) {
 	defer s.Close()
 	a := New(s, policy.Policy{}, nil)
 	a.Resolver = func(string) (repository.Info, error) { return repository.Info{RepoID: "other"}, nil }
-	if _, decodeErr := events.Decode([]byte(input), 64<<10); decodeErr != nil {
+	if _, decodeErr := events.Decode(input, 64<<10); decodeErr != nil {
 		t.Fatalf("input=%s decode=%v", input, decodeErr)
 	}
-	if _, err = a.Hook(context.Background(), []byte(input)); err == nil || events.CodeOf(err) != "E_SCOPE" {
+	if _, err = a.Hook(context.Background(), input); err == nil || events.CodeOf(err) != "E_SCOPE" {
 		t.Fatalf("error=%v", err)
 	}
 }

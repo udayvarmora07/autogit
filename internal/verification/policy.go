@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -71,8 +72,8 @@ func NewVerifierRegistry(specs []TrustedVerifierSpec) (*VerifierRegistry, error)
 		if err := validateEnvironment(in.Environment); err != nil {
 			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
 		}
-		if resolved, err := filepath.EvalSymlinks(in.Argv[0]); err == nil && filepath.Clean(resolved) != filepath.Clean(in.Argv[0]) {
-			return nil, fmt.Errorf("verifier %q: executable symlink is not trusted", in.Name)
+		if err := rejectFinalSymlink(in.Argv[0]); err != nil {
+			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
 		}
 		if digest, err := executableFingerprint(in.Argv[0]); err == nil {
 			in.ExecutableDigest = digest
@@ -303,7 +304,7 @@ func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedReq
 	// The executable is checked again at execution time to close replacement and
 	// symlink races between registry construction and verification.
 	canonical, err := canonicalTrustedExecutable(spec.Argv[0])
-	if err != nil || canonical != filepath.Clean(spec.Argv[0]) {
+	if err != nil {
 		return e, fmt.Errorf("%w: %v", errTrustedExecutable, err)
 	}
 	if spec.ExecutableDigest != "" {
@@ -370,13 +371,18 @@ func validateTrustedRequest(req TrustedRequest) error {
 	if req.Dir == "" || !filepath.IsAbs(req.Dir) {
 		return errors.New("candidate working directory must be an explicit absolute path")
 	}
-	st, err := os.Stat(req.Dir)
-	if err != nil || !st.IsDir() {
+	clean := filepath.Clean(req.Dir)
+	// Resolve symlinked parent components (for example /var -> /private/var on
+	// macOS or 8.3 short names on Windows) but keep the final component
+	// untouched, then reject a final-component symlink explicitly.
+	parent, err := filepath.EvalSymlinks(filepath.Dir(clean))
+	if err != nil {
 		return errors.New("candidate working directory must be an existing directory")
 	}
-	resolved, err := filepath.EvalSymlinks(req.Dir)
-	if err != nil || filepath.Clean(resolved) != filepath.Clean(req.Dir) {
-		return errors.New("candidate working directory must not be a symlink")
+	canon := filepath.Join(parent, filepath.Base(clean))
+	st, err := os.Lstat(canon)
+	if err != nil || st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
+		return errors.New("candidate working directory must be an existing directory")
 	}
 	return nil
 }
@@ -440,21 +446,61 @@ func canonicalTrustedExecutable(path string) (string, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return "", errors.New("executable must be absolute and clean")
 	}
-	resolved, err := filepath.EvalSymlinks(path)
+	canon, err := resolveFinalComponent(path)
 	if err != nil {
 		return "", err
 	}
-	if filepath.Clean(resolved) != path {
-		return "", errors.New("executable symlink is not trusted")
-	}
-	st, err := os.Stat(path)
-	if err != nil || !st.Mode().IsRegular() || st.Mode()&0111 == 0 {
+	st, err := os.Stat(canon)
+	if err != nil || !st.Mode().IsRegular() {
 		if err == nil {
 			err = errors.New("executable is not a regular executable file")
 		}
 		return "", err
 	}
-	return path, nil
+	if runtime.GOOS != "windows" && st.Mode()&0111 == 0 {
+		return "", errors.New("executable is not a regular executable file")
+	}
+	return canon, nil
+}
+
+// resolveFinalComponent resolves symlinked parent components of path but keeps
+// the final component untouched, then rejects a final-component symlink. This
+// allows canonical absolute paths under symlinked roots (for example /var ->
+// /private/var on macOS or 8.3 short names on Windows) while still refusing
+// executable paths whose final component is a symlink.
+func resolveFinalComponent(path string) (string, error) {
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return "", err
+	}
+	canon := filepath.Join(parent, filepath.Base(path))
+	st, err := os.Lstat(canon)
+	if err != nil {
+		return "", err
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("executable symlink is not trusted")
+	}
+	return canon, nil
+}
+
+// rejectFinalSymlink reports whether path is a symlink or has an unresolvable
+// parent. It mirrors resolveFinalComponent but returns nil when the path is a
+// regular file so registry construction can tolerate missing files.
+func rejectFinalSymlink(path string) error {
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return nil
+	}
+	canon := filepath.Join(parent, filepath.Base(path))
+	st, err := os.Lstat(canon)
+	if err != nil {
+		return nil
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		return errors.New("executable symlink is not trusted")
+	}
+	return nil
 }
 
 func appendFailureMetadata(existing string, e TrustedEvidence, runErr error) string {

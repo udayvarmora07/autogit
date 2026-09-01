@@ -1,7 +1,9 @@
 package historyscan
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -125,12 +127,76 @@ func TestHistoryScanRejectsSymlinkAndGitlinkEntries(t *testing.T) {
 
 func TestHistoryScanRejectsMalformedHistoricalPath(t *testing.T) {
 	repo := newRepo(t)
-	writeFile(t, repo, "bad\nname", "safe")
-	commit(t, repo, "malformed path")
-	got, err := New(nil).Scan(context.Background(), Request{RepoRoot: repo, CandidateSHA: head(t, repo), PolicyDigest: "sha256:" + strings.Repeat("8", 64)})
+	// Build a tree containing a path with a newline via raw object plumbing.
+	// Git for Windows rejects such paths even in `update-index --cacheinfo`
+	// (core.protectNTFS), and the working tree can never hold the name, so
+	// hash the tree/commit objects directly and point the branch at the
+	// commit with update-ref.
+	blob := hashObject(t, repo, "blob", []byte("safe"))
+	treeContent := append([]byte("100644 bad\nname\x00"), mustDecodeHex(t, blob)...)
+	tree := hashObjectLiteral(t, repo, "tree", treeContent)
+	commit := hashObject(t, repo, "commit", []byte("tree "+tree+"\nauthor History Test <history@example.invalid> 1700000000 +0000\ncommitter History Test <history@example.invalid> 1700000000 +0000\n\nmalformed path\n"))
+	refCmd := exec.Command("git", "update-ref", "refs/heads/main", commit)
+	refCmd.Dir = repo
+	refCmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	if out, err := refCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git update-ref: %v: %s", err, out)
+	}
+	got, err := New(nil).Scan(context.Background(), Request{RepoRoot: repo, CandidateSHA: commit, PolicyDigest: "sha256:" + strings.Repeat("8", 64)})
 	if err == nil || !got.Blocked || !hasReason(got, ReasonMalformedPath) {
 		t.Fatalf("malformed path was accepted: %#v err=%v", got, err)
 	}
+}
+
+// hashObject writes raw object content to the object database via
+// `git hash-object -w -t <type> --stdin` and returns the resulting SHA.
+func hashObject(t *testing.T, repo, objectType string, content []byte) string {
+	t.Helper()
+	return hashObjectWithArgs(t, repo, objectType, content, nil)
+}
+
+// hashObjectLiteral is like hashObject but passes --literally, which writes
+// the object without fsck validation. Required on Windows for objects that
+// embed pathnames the filesystem (and core.protectNTFS) can never represent.
+func hashObjectLiteral(t *testing.T, repo, objectType string, content []byte) string {
+	t.Helper()
+	return hashObjectWithArgs(t, repo, objectType, content, []string{"--literally"})
+}
+
+func hashObjectWithArgs(t *testing.T, repo, objectType string, content []byte, extra []string) string {
+	t.Helper()
+	args := append([]string{"hash-object", "-w", "-t", objectType}, extra...)
+	args = append(args, "--stdin")
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repo
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	cmd.Stdin = bytes.NewReader(content)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git hash-object -t %s: %v: %s", objectType, err, out)
+	}
+	sha := strings.TrimSpace(string(out))
+	if len(sha) != 40 || !isHex(sha) {
+		t.Fatalf("git hash-object returned invalid sha %q", sha)
+	}
+	return sha
+}
+
+func isHex(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
+
+func mustDecodeHex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		t.Fatalf("hex decode %q: %v", s, err)
+	}
+	return b
 }
 
 func TestHistoryScanCancellationAndCanonicalRoot(t *testing.T) {

@@ -17,6 +17,9 @@ func TestDiscoverRejectsHomeAndFilesystemRoot(t *testing.T) {
 
 func TestDiscoverCanonicalizesRepositoryAndProvidesStableIdentities(t *testing.T) {
 	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
 		t.Fatal(err)
 	}

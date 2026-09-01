@@ -3,12 +3,16 @@ package gittransaction
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"autogit/internal/state"
 )
+
+// testRepoDir mirrors internal/state's platform-absolute test repository path.
+var testRepoDir = filepath.Join(os.TempDir(), "autogit-test-repo")
 
 func TestStateIntentPortPersistsIntentAndRedactsReconcileReason(t *testing.T) {
 	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
@@ -127,5 +131,5 @@ func testPersistentIntent(id string) Intent {
 		}
 		return "sha256:" + string(b)
 	}
-	return Intent{ID: id, RepoDir: "/repo", Ref: "refs/autogit/commits/" + id, ParentSHA: "", TreeOID: "0123456789012345678901234567890123456789", Message: "feat: persist\n", CandidateDigest: d('a'), MessageDigest: d('b'), SnapshotDigest: d('c'), PolicyDigest: d('d'), VerifierDigest: d('e'), GuardDigest: d('f')}
+	return Intent{ID: id, RepoDir: testRepoDir, Ref: "refs/autogit/commits/" + id, ParentSHA: "", TreeOID: "0123456789012345678901234567890123456789", Message: "feat: persist\n", CandidateDigest: d('a'), MessageDigest: d('b'), SnapshotDigest: d('c'), PolicyDigest: d('d'), VerifierDigest: d('e'), GuardDigest: d('f')}
 }

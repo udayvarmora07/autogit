@@ -708,15 +708,22 @@ func canonicalRoot(root string) (string, error) {
 		return "", errors.New("repository root must be absolute")
 	}
 	abs := filepath.Clean(root)
-	eval, err := filepath.EvalSymlinks(abs)
-	if err != nil || eval != abs {
+	// Resolve symlinked parent components (for example /var -> /private/var on
+	// macOS or 8.3 short names on Windows) but keep the final component
+	// untouched, then reject a final-component symlink explicitly.
+	parent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
 		return "", errors.New("repository root must be canonical")
 	}
-	st, err := os.Stat(abs)
-	if err != nil || !st.IsDir() {
+	canon := filepath.Join(parent, filepath.Base(abs))
+	st, err := os.Lstat(canon)
+	if err != nil {
 		return "", errors.New("repository root must be a directory")
 	}
-	return abs, nil
+	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
+		return "", errors.New("repository root must be a real directory")
+	}
+	return canon, nil
 }
 func validateRef(ref string) error {
 	if ref == "" || strings.ContainsAny(ref, "\\\x00\r\n") || strings.HasPrefix(ref, "-") || strings.Contains(ref, "..") || strings.HasSuffix(ref, "/") {

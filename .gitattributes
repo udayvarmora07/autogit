@@ -1,0 +1,5 @@
+* text=auto
+
+# Go source files must stay LF so `gofmt -l` never flags them,
+# even on Windows runners where core.autocrlf is enabled.
+*.go text eol=lf

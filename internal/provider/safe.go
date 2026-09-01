@@ -195,18 +195,22 @@ func canonicalExecutable(path string) (string, error) {
 	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return "", errors.New("invalid command executable")
 	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil || resolved != path {
+	// Resolve symlinked parent components (for example /var -> /private/var on
+	// macOS or 8.3 short names on Windows) but keep the final component
+	// untouched, then reject a final-component symlink explicitly.
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
 		return "", errors.New("invalid command executable")
 	}
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
+	canon := filepath.Join(parent, filepath.Base(path))
+	info, err := os.Lstat(canon)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return "", errors.New("invalid command executable")
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
 		return "", errors.New("invalid command executable")
 	}
-	return path, nil
+	return canon, nil
 }
 
 func canonicalWorkingDir(dir string) (string, error) {
@@ -216,15 +220,16 @@ func canonicalWorkingDir(dir string) (string, error) {
 	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
 		return "", errors.New("invalid command working directory")
 	}
-	resolved, err := filepath.EvalSymlinks(dir)
-	if err != nil || resolved != dir {
+	parent, err := filepath.EvalSymlinks(filepath.Dir(dir))
+	if err != nil {
 		return "", errors.New("invalid command working directory")
 	}
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
+	canon := filepath.Join(parent, filepath.Base(dir))
+	info, err := os.Lstat(canon)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return "", errors.New("invalid command working directory")
 	}
-	return dir, nil
+	return canon, nil
 }
 
 func controlledCommandEnv() []string {

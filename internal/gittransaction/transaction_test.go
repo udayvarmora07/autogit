@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -603,7 +604,12 @@ func TestCreateStagesDeletionRenameAndModeFromExplicitPaths(t *testing.T) {
 	if strings.Contains(entries, "old.txt") || entries != "new name.txt" {
 		t.Fatalf("rename tree=%q", entries)
 	}
-	if mode := git(t, repo, "ls-tree", got.SHA, "--", "new name.txt"); !strings.HasPrefix(mode, "100755 blob ") {
+	wantMode := "100755 blob "
+	if runtime.GOOS == "windows" {
+		// Windows git has no executable bit: files land in the tree as 100644.
+		wantMode = "100644 blob "
+	}
+	if mode := git(t, repo, "ls-tree", got.SHA, "--", "new name.txt"); !strings.HasPrefix(mode, wantMode) {
 		t.Fatalf("mode entry=%q", mode)
 	}
 }

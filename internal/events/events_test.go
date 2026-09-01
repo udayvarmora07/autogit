@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -163,6 +164,11 @@ func TestStoreUsesRestrictivePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st.Mode().Perm() != 0600 {
+		if runtime.GOOS == "windows" {
+			// Windows models only the read-only attribute; other permission
+			// bits report as 0666.
+			t.Skipf("state mode = %o, want 600 (Windows does not model permissions)", st.Mode().Perm())
+		}
 		t.Fatalf("state mode = %o, want 600", st.Mode().Perm())
 	}
 }

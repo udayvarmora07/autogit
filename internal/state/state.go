@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -129,7 +130,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("state directory: %w", err)
 	}
 	if info, err := os.Stat(path); err == nil {
-		if info.Mode().Perm()&0077 != 0 {
+		if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 			return nil, errors.New("state database permissions are too broad")
 		}
 	} else if !os.IsNotExist(err) {
