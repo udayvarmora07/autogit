@@ -244,8 +244,8 @@ Open gates and next priorities:
       and the [test traceability matrix](test-strategy.md); resolve remaining
       document status/link consistency and record the approved compatibility
       window.
-- [ ] Complete end-to-end owned candidate -> trusted verification -> local
-      commit orchestration.
+- [ ] Bridge durable session/repository observations into owned candidate
+      derivation and the verified local-commit workflow.
 - [ ] Wire provider intent plus `verify`/`sync`/`retry` CLI behavior.
 - [ ] Run native hosted macOS and Windows coverage.
 - [ ] Run an opt-in disposable GitHub canary with exact postconditions and
