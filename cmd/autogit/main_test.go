@@ -314,8 +314,16 @@ func TestCodexSessionEndHookContractAcceptsOfficialPayload(t *testing.T) {
 		t.Fatalf("installed command=%q", command)
 	}
 	var hookOut bytes.Buffer
-	official := `{"hook_event_name":"SessionEnd","session_id":"session-1","cwd":"` + root + `","operation_id":"operation-1"}`
-	if err := runHook([]string{"--adapter", "codex", "--root", root, "--event", "session.ended"}, strings.NewReader(official), &hookOut); err != nil {
+	payload, err := json.Marshal(map[string]string{
+		"hook_event_name": "SessionEnd",
+		"session_id":      "session-1",
+		"cwd":             root,
+		"operation_id":    "operation-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runHook([]string{"--adapter", "codex", "--root", root, "--event", "session.ended"}, strings.NewReader(string(payload)), &hookOut); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(hookOut.String(), `"disposition":"accepted"`) {
@@ -331,9 +339,18 @@ func TestAdapterHooksResolveTrustedTempRepositoryForEveryClient(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
-			raw := `{"event":"idle","session_id":"s-1","cwd":"` + repo + `","repo_id":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","id":"01J7N6X8P5K2V4W6FQ8M9ABCDF"}`
+			payload, err := json.Marshal(map[string]string{
+				"event":      "idle",
+				"session_id": "s-1",
+				"cwd":        repo,
+				"repo_id":    "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+				"id":         "01J7N6X8P5K2V4W6FQ8M9ABCDF",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			var out bytes.Buffer
-			if err := run([]string{"hook", "--adapter", name, "--root", repo}, strings.NewReader(raw), &out); err != nil {
+			if err := run([]string{"hook", "--adapter", name, "--root", repo}, strings.NewReader(string(payload)), &out); err != nil {
 				t.Fatal(err)
 			}
 			if !strings.Contains(out.String(), `"disposition":"accepted"`) {

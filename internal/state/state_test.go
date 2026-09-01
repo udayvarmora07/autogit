@@ -13,6 +13,11 @@ import (
 	"autogit/internal/repository"
 )
 
+// testRepoDir is a platform-absolute repository path. The Unix-only literal
+// "/repo" is not absolute on Windows (filepath.IsAbs("/repo") is false), which
+// made intent validation reject every test intent.
+var testRepoDir = filepath.Join(os.TempDir(), "autogit-test-repo")
+
 func TestStorePersistsTypedJobAndOutboxAtomically(t *testing.T) {
 	d := t.TempDir()
 	s, err := Open(filepath.Join(d, "state.db"))
@@ -168,7 +173,7 @@ func TestStoreFailsClosedForFutureSchemaVersion(t *testing.T) {
 func TestGitCommitIntentPersistsAcrossRestartAndContainsNoSnapshotBytes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "intent.db")
 	intent := GitCommitIntent{
-		ID: "intent-1", RepoDir: "/repo", Ref: "refs/autogit/commits/intent-1", ParentSHA: repeated('1'),
+		ID: "intent-1", RepoDir: testRepoDir, Ref: "refs/autogit/commits/intent-1", ParentSHA: repeated('1'),
 		TreeOID: repeated('2'), Message: "feat: durable intent\n", CandidateDigest: "sha256:" + repeated('a'),
 		MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'),
 		PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f'),
@@ -289,7 +294,7 @@ func TestGitCommitIntentRejectsIdentityChangeAndAllowsExactRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	first := GitCommitIntent{ID: "same", RepoDir: "/repo", Ref: "refs/autogit/commits/same", TreeOID: repeated('1'), Message: "feat: immutable identity\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
+	first := GitCommitIntent{ID: "same", RepoDir: testRepoDir, Ref: "refs/autogit/commits/same", TreeOID: repeated('1'), Message: "feat: immutable identity\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
 	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutGitCommitIntent(first) }); err != nil {
 		t.Fatal(err)
 	}
@@ -310,12 +315,12 @@ func TestGitCommitIntentRejectsMalformedObjectRefsAndDigests(t *testing.T) {
 	}
 	defer s.Close()
 	for _, width := range []int{39, 41, 63, 65} {
-		intent := GitCommitIntent{ID: "width-" + strconv.Itoa(width), RepoDir: "/repo", Ref: "refs/autogit/commits/width-" + strconv.Itoa(width), TreeOID: strings.Repeat("a", width), Message: "feat: object width\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
+		intent := GitCommitIntent{ID: "width-" + strconv.Itoa(width), RepoDir: testRepoDir, Ref: "refs/autogit/commits/width-" + strconv.Itoa(width), TreeOID: strings.Repeat("a", width), Message: "feat: object width\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
 		if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutGitCommitIntent(intent) }); !errors.Is(err, ErrInvalidGitCommitIntent) {
 			t.Fatalf("tree width=%d error=%v", width, err)
 		}
 	}
-	badRef := GitCommitIntent{ID: "bad-ref", RepoDir: "/repo", Ref: "refs/heads/main", TreeOID: repeated('a'), Message: "feat: owned ref\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
+	badRef := GitCommitIntent{ID: "bad-ref", RepoDir: testRepoDir, Ref: "refs/heads/main", TreeOID: repeated('a'), Message: "feat: owned ref\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
 	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutGitCommitIntent(badRef) }); !errors.Is(err, ErrInvalidGitCommitIntent) {
 		t.Fatalf("malformed ref error=%v", err)
 	}
@@ -327,7 +332,7 @@ func TestGitCommitIntentCommitAndReconcileAreBoundedAndIdempotent(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer s.Close()
-	intent := GitCommitIntent{ID: "record", RepoDir: "/repo", Ref: "refs/autogit/commits/record", TreeOID: repeated('1'), Message: "feat: record commit\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
+	intent := GitCommitIntent{ID: "record", RepoDir: testRepoDir, Ref: "refs/autogit/commits/record", TreeOID: repeated('1'), Message: "feat: record commit\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
 	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutGitCommitIntent(intent) }); err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +397,7 @@ func TestGitCommitIntentRejectsNonCanonicalRepositoryAndMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	base := GitCommitIntent{ID: "invariant", RepoDir: "/repo", Ref: "refs/autogit/commits/invariant", TreeOID: repeated('a'), Message: "feat: valid message\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
+	base := GitCommitIntent{ID: "invariant", RepoDir: testRepoDir, Ref: "refs/autogit/commits/invariant", TreeOID: repeated('a'), Message: "feat: valid message\n", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), SnapshotDigest: "sha256:" + repeated('c'), PolicyDigest: "sha256:" + repeated('d'), VerifierDigest: "sha256:" + repeated('e'), GuardDigest: "sha256:" + repeated('f')}
 	for name, mutate := range map[string]func(*GitCommitIntent){
 		"non-canonical repo":       func(i *GitCommitIntent) { i.RepoDir = "/repo/../repo" },
 		"NUL repository":           func(i *GitCommitIntent) { i.RepoDir = "/repo\x00" },

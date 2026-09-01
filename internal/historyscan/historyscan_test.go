@@ -125,8 +125,28 @@ func TestHistoryScanRejectsSymlinkAndGitlinkEntries(t *testing.T) {
 
 func TestHistoryScanRejectsMalformedHistoricalPath(t *testing.T) {
 	repo := newRepo(t)
-	writeFile(t, repo, "bad\nname", "safe")
-	commit(t, repo, "malformed path")
+	// Create a blob with a newline in its path via plumbing: Windows cannot
+	// hold a newline in a filesystem name, so this never touches the working
+	// tree.
+	hash := exec.Command("git", "hash-object", "-w", "--stdin")
+	hash.Dir = repo
+	hash.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	hash.Stdin = strings.NewReader("safe")
+	blobBytes, err := hash.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git hash-object: %v: %s", err, blobBytes)
+	}
+	blob := strings.TrimSpace(string(blobBytes))
+	if blob == "" {
+		t.Fatal("hash-object returned empty")
+	}
+	cmd := exec.Command("git", "update-index", "--add", "--cacheinfo", "100644,"+blob+",bad\nname")
+	cmd.Dir = repo
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git update-index: %v: %s", err, out)
+	}
+	runGit(t, repo, "commit", "-qm", "malformed path")
 	got, err := New(nil).Scan(context.Background(), Request{RepoRoot: repo, CandidateSHA: head(t, repo), PolicyDigest: "sha256:" + strings.Repeat("8", 64)})
 	if err == nil || !got.Blocked || !hasReason(got, ReasonMalformedPath) {
 		t.Fatalf("malformed path was accepted: %#v err=%v", got, err)

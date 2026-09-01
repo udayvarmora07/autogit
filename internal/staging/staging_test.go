@@ -4,12 +4,23 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"autogit/internal/gittransaction"
 	"autogit/internal/repository"
 )
+
+// modeOnDisk returns the mode a freshly written file reports on this platform.
+// Windows does not model POSIX permissions: os.WriteFile(0755) and
+// os.WriteFile(0644) both report 0666.
+func modeOnDisk(written os.FileMode) os.FileMode {
+	if runtime.GOOS == "windows" {
+		return 0666
+	}
+	return written
+}
 
 func TestOwnershipExcludesPreexistingAndReportsOverlap(t *testing.T) {
 	baseline := Snapshot{"keep.txt": "old", "shared.txt": "old"}
@@ -112,13 +123,13 @@ func TestCaptureObservedFilesCopiesRegularFileContentAndMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := captured["script.sh"]; string(got.Content) != "#!/bin/sh\necho initial\n" || got.Mode.Perm() != 0755 {
+	if got := captured["script.sh"]; string(got.Content) != "#!/bin/sh\necho initial\n" || got.Mode.Perm() != modeOnDisk(0755) {
 		t.Fatalf("captured file = %#v", got)
 	}
 	if err := os.WriteFile(path, []byte("changed later\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got := captured["script.sh"]; string(got.Content) != "#!/bin/sh\necho initial\n" || got.Mode.Perm() != 0755 {
+	if got := captured["script.sh"]; string(got.Content) != "#!/bin/sh\necho initial\n" || got.Mode.Perm() != modeOnDisk(0755) {
 		t.Fatalf("captured file changed with filesystem: %#v", got)
 	}
 }
@@ -199,7 +210,7 @@ func TestBuildCapturedPlanDerivesOwnedSnapshotFromFilesystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := plan.CandidateSnapshot()
-	if len(entries) != 1 || entries[0].Path != "new.sh" || entries[0].Mode.Perm() != 0755 || string(entries[0].Content) != "#!/bin/sh\necho owned\n" {
+	if len(entries) != 1 || entries[0].Path != "new.sh" || entries[0].Mode.Perm() != modeOnDisk(0755) || string(entries[0].Content) != "#!/bin/sh\necho owned\n" {
 		t.Fatalf("candidate snapshot = %#v", entries)
 	}
 }
@@ -213,14 +224,14 @@ func TestBuildCapturedPlanFromBaselineExcludesPreexistingPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	baseline := repository.Baseline{Files: map[string]repository.FileObservation{
-		"existing.txt": {Content: []byte("user work\n"), Mode: 0644, Present: true},
+		"existing.txt": {Content: []byte("user work\n"), Mode: modeOnDisk(0644), Present: true},
 	}}
 	plan, err := BuildCapturedPlanFromBaseline(root, baseline, []string{"existing.txt", "owned.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	entries := plan.CandidateSnapshot()
-	if len(entries) != 1 || entries[0].Path != "owned.txt" || entries[0].Mode.Perm() != 0755 {
+	if len(entries) != 1 || entries[0].Path != "owned.txt" || entries[0].Mode.Perm() != modeOnDisk(0755) {
 		t.Fatalf("candidate=%#v", entries)
 	}
 }

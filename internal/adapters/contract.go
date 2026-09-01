@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -648,19 +649,29 @@ func approvedRoot(root string, approved []string) (string, error) {
 	if clean == string(filepath.Separator) {
 		return "", ErrScope
 	}
+	// Resolve symlinked parent components of the candidate root (for example
+	// /var -> /private/var on macOS or 8.3 short names on Windows). The final
+	// component is kept untouched and rejected separately when it is a symlink.
+	parent, err := filepath.EvalSymlinks(filepath.Dir(clean))
+	if err != nil {
+		return "", ErrScope
+	}
+	canon := filepath.Join(parent, filepath.Base(clean))
+	st, err := os.Lstat(canon)
+	if err != nil || st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
+		return "", ErrScope
+	}
 	for _, base := range approved {
 		if base == "" || !filepath.IsAbs(base) {
 			continue
 		}
 		b := filepath.Clean(base)
-		rel, err := filepath.Rel(b, clean)
+		if resolved, evalErr := filepath.EvalSymlinks(b); evalErr == nil {
+			b = resolved
+		}
+		rel, err := filepath.Rel(b, canon)
 		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			if real, err := filepath.EvalSymlinks(clean); err == nil {
-				if realRel, e := filepath.Rel(b, real); e != nil || realRel == ".." || strings.HasPrefix(realRel, ".."+string(filepath.Separator)) {
-					return "", ErrScope
-				}
-			}
-			return clean, nil
+			return canon, nil
 		}
 	}
 	return "", ErrScope

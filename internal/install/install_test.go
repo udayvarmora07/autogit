@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -31,6 +32,9 @@ func TestJSONInstallBacksUpAtomicallyAndIsIdempotent(t *testing.T) {
 		t.Fatalf("unrelated config or ownership marker missing: %s", after)
 	}
 	if mode := fileMode(p); mode.Perm() != 0600 {
+		if runtime.GOOS == "windows" {
+			t.Skipf("mode=%o, want restrictive 0600 (Windows does not model permissions)", mode.Perm())
+		}
 		t.Fatalf("mode=%o, want restrictive 0600", mode.Perm())
 	}
 	backups, _ := filepath.Glob(p + ".autogit-backup-*")
