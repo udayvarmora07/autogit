@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autogit.dev/schemas/event-v1.schema.json",
+  "title": "AutoGit canonical event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_class",
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "producer",
+    "scope",
+    "ordering",
+    "idempotency",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": { "const": "autogit.event/1" },
+    "event_class": { "enum": ["ingress", "domain"] },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "session.started",
+        "session.idle",
+        "session.ended",
+        "session.crashed",
+        "session.recovered",
+        "prompt.submitted",
+        "prompt.requested",
+        "prompt.queued",
+        "prompt.presented",
+        "prompt.answered",
+        "prompt.expired",
+        "prompt.cancelled",
+        "task.started",
+        "task.updated",
+        "task.completion_candidate",
+        "task.completed",
+        "task.failed",
+        "task.cancelled",
+        "tool.started",
+        "tool.completed",
+        "files.changed",
+        "model.stopped",
+        "repository.discovered",
+        "policy.consent_requested",
+        "policy.set",
+        "change.detected",
+        "change.staged",
+        "change.invalidated",
+        "verification.requested",
+        "verification.started",
+        "verification.passed",
+        "verification.failed",
+        "verification.invalidated",
+        "commit.requested",
+        "commit.created",
+        "commit.failed",
+        "commit.reconciled",
+        "push.requested",
+        "push.succeeded",
+        "push.failed",
+        "push.skipped"
+      ]
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "producer": { "$ref": "#/$defs/producer" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "ordering": { "$ref": "#/$defs/ordering" },
+    "idempotency": { "$ref": "#/$defs/idempotency" },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "project": { "$ref": "#/$defs/project" },
+    "payload": { "$ref": "#/$defs/payload" },
+    "extensions": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event_class": { "const": "ingress" } } },
+      "then": {
+        "properties": {
+          "producer": {
+            "properties": { "kind": { "const": "adapter" } },
+            "required": ["kind", "adapter", "version", "installation_id", "instance_id"]
+          },
+          "event_type": {
+            "enum": [
+              "session.started", "session.idle", "session.ended",
+              "prompt.submitted", "task.started", "task.updated",
+              "task.completed", "task.failed", "tool.started",
+              "tool.completed", "files.changed", "model.stopped"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_class": { "const": "domain" } } },
+      "then": {
+        "properties": {
+          "producer": {
+            "properties": { "kind": { "enum": ["core", "reconciler"] } },
+            "required": ["kind", "instance_id"]
+          },
+          "ordering": { "required": ["correlation_id"] },
+          "event_type": {
+            "enum": [
+              "repository.discovered", "policy.consent_requested", "policy.set",
+              "session.crashed", "session.recovered", "prompt.requested",
+              "prompt.queued", "prompt.presented", "prompt.answered",
+              "prompt.expired", "prompt.cancelled", "task.completion_candidate",
+              "task.completed", "task.failed", "task.cancelled", "change.detected",
+              "change.staged", "change.invalidated", "verification.requested",
+              "verification.started", "verification.passed", "verification.failed",
+              "verification.invalidated", "commit.requested", "commit.created",
+              "commit.failed", "commit.reconciled", "push.requested",
+              "push.succeeded", "push.failed", "push.skipped"
+            ]
+          }
+        },
+        "not": { "required": ["project"] }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "pattern": "^session\\." } } },
+      "then": { "properties": { "scope": { "required": ["session_id"] } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "pattern": "^(task|prompt|tool)\\." } } },
+      "then": { "properties": { "scope": { "required": ["session_id", "task_id"] } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "pattern": "^(change|verification|commit|push)\\." } } },
+      "then": {
+        "properties": {
+          "scope": { "required": ["worktree_id", "session_id", "task_id", "change_id"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "files.changed" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["changes"],
+            "properties": { "changes": { "$ref": "#/$defs/changes" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["prompt.submitted", "prompt.requested", "prompt.queued", "prompt.presented", "prompt.answered", "prompt.expired", "prompt.cancelled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["prompt_id", "prompt_kind"],
+            "properties": {
+              "prompt_id": { "$ref": "#/$defs/opaque_id" },
+              "prompt_kind": { "enum": ["consent", "verification", "repair", "notification", "unknown"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["verification.requested", "verification.started", "verification.passed", "verification.failed", "verification.invalidated"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["verification_id", "candidate_digest"],
+            "properties": {
+              "verification_id": { "$ref": "#/$defs/opaque_id" },
+              "candidate_digest": { "$ref": "#/$defs/digest" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["commit.requested", "commit.created", "commit.failed", "commit.reconciled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["commit_job_id", "candidate_digest"],
+            "properties": {
+              "commit_job_id": { "$ref": "#/$defs/opaque_id" },
+              "candidate_digest": { "$ref": "#/$defs/digest" },
+              "commit_sha": { "$ref": "#/$defs/git_sha" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["push.requested", "push.succeeded", "push.failed", "push.skipped"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["push_job_id", "commit_sha"],
+            "properties": {
+              "push_job_id": { "$ref": "#/$defs/opaque_id" },
+              "commit_sha": { "$ref": "#/$defs/git_sha" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaque_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^(sha256|hmac-sha256):[a-f0-9]{64}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "instance_id"],
+      "properties": {
+        "kind": { "enum": ["adapter", "core", "reconciler"] },
+        "adapter": {
+          "enum": ["codex", "claude-code", "cursor", "gemini-cli", "opencode", "commandcode"]
+        },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "client_version": { "type": "string", "maxLength": 128 },
+        "installation_id": { "$ref": "#/$defs/opaque_id" },
+        "instance_id": { "$ref": "#/$defs/opaque_id" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id"],
+      "properties": {
+        "repo_id": { "$ref": "#/$defs/digest" },
+        "worktree_id": { "$ref": "#/$defs/digest" },
+        "session_id": { "$ref": "#/$defs/opaque_id" },
+        "task_id": { "$ref": "#/$defs/opaque_id" },
+        "change_id": { "$ref": "#/$defs/opaque_id" }
+      }
+    },
+    "ordering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream_id"],
+      "properties": {
+        "stream_id": { "$ref": "#/$defs/opaque_id" },
+        "producer_seq": { "type": "integer", "minimum": 0 },
+        "causation_id": { "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+        "correlation_id": { "$ref": "#/$defs/opaque_id" }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": { "$ref": "#/$defs/opaque_id" },
+        "attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "queue_state": { "enum": ["native", "none", "unknown"] },
+        "task_boundaries": { "enum": ["native", "none", "synthetic"] },
+        "changed_paths": { "enum": ["reported", "none", "derived"] },
+        "monotonic_sequence": { "type": "boolean" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "maxLength": 64 },
+        "state": { "type": "string", "maxLength": 64 },
+        "outcome": { "enum": ["success", "failure", "cancelled", "unknown"] },
+        "reason": { "type": "string", "maxLength": 256 },
+        "error_code": { "type": "string", "maxLength": 128 },
+        "prompt_id": { "$ref": "#/$defs/opaque_id" },
+        "prompt_kind": { "enum": ["consent", "verification", "repair", "notification", "unknown"] },
+        "blocking": { "type": "boolean" },
+        "answer": { "enum": ["yes", "no", "approved", "rejected", "cancelled", "unknown"] },
+        "changes": { "$ref": "#/$defs/changes" },
+        "candidate_revision": { "type": "integer", "minimum": 0 },
+        "base_head_digest": { "$ref": "#/$defs/digest" },
+        "tree_digest": { "$ref": "#/$defs/digest" },
+        "index_digest": { "$ref": "#/$defs/digest" },
+        "candidate_digest": { "$ref": "#/$defs/digest" },
+        "verification_id": { "$ref": "#/$defs/opaque_id" },
+        "verifier_set": { "type": "string", "maxLength": 128 },
+        "verifier_version": { "type": "string", "maxLength": 128 },
+        "exit_code": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "commit_job_id": { "$ref": "#/$defs/opaque_id" },
+        "commit_sha": { "$ref": "#/$defs/git_sha" },
+        "message_digest": { "$ref": "#/$defs/digest" },
+        "push_job_id": { "$ref": "#/$defs/opaque_id" },
+        "remote_digest": { "$ref": "#/$defs/digest" },
+        "ref": { "type": "string", "maxLength": 256 },
+        "extensions": { "type": "object" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidate_root": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "client_cwd": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operation"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^.+$"
+        },
+        "operation": { "enum": ["added", "modified", "deleted", "renamed", "mode-changed", "unknown"] },
+        "previous_path": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/change" }
+    }
+  }
+}

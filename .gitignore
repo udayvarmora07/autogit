@@ -1,0 +1,15 @@
+# Build outputs
+/bin/
+*.exe
+*.test
+*.out
+
+# Env
+.env
+# Editor & OS
+.vscode/
+.idea/
+.DS_Store
+.autogit
+.autogit-msg
+.autogit-verify
