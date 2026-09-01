@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"autogit/internal/provider"
 	"autogit/internal/state"
 )
 
@@ -266,44 +267,59 @@ func (c Coordinator) Push(ctx context.Context, r PushRequest) error {
 	}
 	outcome, confirmErr := c.Provider.ConfirmPush(ctx, r)
 	if outcome == PushConflict {
-		_ = c.Store.MarkPushBlocked(ctx, r.ID)
-		return ErrPushConflict
+		cause := error(ErrPushConflict)
+		if confirmErr != nil {
+			cause = errors.Join(cause, confirmErr)
+		}
+		return c.recordPushBlocked(ctx, r.ID, cause)
 	}
 	if confirmErr != nil {
-		_ = c.Store.MarkPushRetry(ctx, r.ID)
-		return confirmErr
+		return c.recordPushFailure(ctx, r.ID, confirmErr)
 	}
 	if confirmErr == nil && outcome == PushPresent {
 		return c.Store.MarkPushSucceeded(ctx, r.ID)
 	}
 	if confirmErr == nil && outcome == PushConflict {
-		_ = c.Store.MarkPushBlocked(ctx, r.ID)
-		return ErrPushConflict
+		return c.recordPushBlocked(ctx, r.ID, ErrPushConflict)
 	}
 	if confirmErr == nil && outcome != PushMissing {
-		_ = c.Store.MarkPushBlocked(ctx, r.ID)
-		return errors.New("invalid remote confirmation outcome")
+		return c.recordPushFailure(ctx, r.ID, errors.New("invalid remote confirmation outcome"))
 	}
 	if err := c.Provider.Push(ctx, r); err != nil {
-		return err
+		return c.recordPushFailure(ctx, r.ID, err)
 	}
 	outcome, err = c.Provider.ConfirmPush(ctx, r)
 	if outcome == PushConflict {
-		_ = c.Store.MarkPushBlocked(ctx, r.ID)
-		return ErrPushConflict
+		cause := error(ErrPushConflict)
+		if err != nil {
+			cause = errors.Join(cause, err)
+		}
+		return c.recordPushBlocked(ctx, r.ID, cause)
 	}
 	if err != nil {
-		_ = c.Store.MarkPushRetry(ctx, r.ID)
-		return err
+		return c.recordPushFailure(ctx, r.ID, err)
 	}
 	if outcome != PushPresent {
-		_ = c.Store.MarkPushBlocked(ctx, r.ID)
-		if outcome == PushConflict {
-			return ErrPushConflict
-		}
-		return errors.New("remote push postcondition not met")
+		return c.recordPushFailure(ctx, r.ID, errors.New("remote push postcondition not met"))
 	}
 	return c.Store.MarkPushSucceeded(ctx, r.ID)
+}
+
+func (c Coordinator) recordPushFailure(ctx context.Context, id string, cause error) error {
+	if provider.IsRetryable(cause) {
+		if err := c.Store.MarkPushRetry(ctx, id); err != nil {
+			return errors.Join(cause, err)
+		}
+		return cause
+	}
+	return c.recordPushBlocked(ctx, id, cause)
+}
+
+func (c Coordinator) recordPushBlocked(ctx context.Context, id string, cause error) error {
+	if err := c.Store.MarkPushBlocked(ctx, id); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 
 var shaRE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)

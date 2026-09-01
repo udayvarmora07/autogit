@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"autogit/internal/provider"
 	"autogit/internal/state"
 )
 
@@ -125,13 +126,150 @@ func TestPushBlocksWrongExistingSHAWithoutPushing(t *testing.T) {
 
 func TestPushDoesNotMutateWhenRemoteConfirmationFails(t *testing.T) {
 	s := newMemoryStore()
-	p := &fakeProvider{confirmErr: errors.New("remote unavailable")}
+	p := &fakeProvider{confirmErr: provider.ErrOffline}
 	r := PushRequest{ID: "p", Owner: "o", Name: "n", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
 	if err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), r); err == nil {
 		t.Fatal("confirmation failure was accepted")
 	}
 	if p.calls != 0 || s.status[r.ID] != "RETRY_WAIT" {
 		t.Fatalf("push=%d status=%s", p.calls, s.status[r.ID])
+	}
+}
+
+func TestPushPersistsTypedProviderFailureStatesAtEveryBoundary(t *testing.T) {
+	cases := []struct {
+		name                     string
+		err                      error
+		want                     string
+		boundary                 string
+		wantPushes, wantConfirms int
+	}{
+		{"offline initial confirmation", provider.ErrOffline, "RETRY_WAIT", "initial", 0, 1},
+		{"timeout initial confirmation", provider.ErrTimeout, "RETRY_WAIT", "initial", 0, 1},
+		{"rate limit initial confirmation", provider.ErrRateLimit, "RETRY_WAIT", "initial", 0, 1},
+		{"auth initial confirmation", provider.ErrAuth, "BLOCKED", "initial", 0, 1},
+		{"non fast forward initial confirmation", provider.ErrNonFastForward, "BLOCKED", "initial", 0, 1},
+		{"protected branch initial confirmation", provider.ErrProtectedBranch, "BLOCKED", "initial", 0, 1},
+		{"secret scanning initial confirmation", provider.ErrSecretScanning, "BLOCKED", "initial", 0, 1},
+		{"collision initial confirmation", provider.ErrCollision, "BLOCKED", "initial", 0, 1},
+		{"ref conflict initial confirmation", provider.ErrRefConflict, "BLOCKED", "initial", 0, 1},
+		{"postcondition initial confirmation", provider.ErrPostcondition, "BLOCKED", "initial", 0, 1},
+		{"output limit initial confirmation", provider.ErrOutputLimit, "BLOCKED", "initial", 0, 1},
+		{"local only initial confirmation", provider.ErrLocalOnly, "BLOCKED", "initial", 0, 1},
+		{"unsupported push initial confirmation", provider.ErrUnsupportedPush, "BLOCKED", "initial", 0, 1},
+		{"remote binding initial confirmation", provider.ErrRemoteBinding, "BLOCKED", "initial", 0, 1},
+		{"unknown initial confirmation", errors.New("unknown provider failure"), "BLOCKED", "initial", 0, 1},
+		{"offline publish", provider.ErrOffline, "RETRY_WAIT", "publish", 1, 1},
+		{"auth publish", provider.ErrAuth, "BLOCKED", "publish", 1, 1},
+		{"unknown publish", errors.New("unknown provider failure"), "BLOCKED", "publish", 1, 1},
+		{"offline post confirmation", provider.ErrOffline, "RETRY_WAIT", "post", 1, 2},
+		{"auth post confirmation", provider.ErrAuth, "BLOCKED", "post", 1, 2},
+		{"unknown post confirmation", errors.New("unknown provider failure"), "BLOCKED", "post", 1, 2},
+	}
+	request := PushRequest{ID: "p", Owner: "o", Name: "n", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newMemoryStore()
+			p := &fakeProvider{confirmed: tc.boundary == "post"}
+			switch tc.boundary {
+			case "initial":
+				p.confirmErr = tc.err
+			case "publish":
+				p.confirmErrors = []error{nil}
+				p.pushErr = tc.err
+			case "post":
+				p.confirmErrors = []error{nil, tc.err}
+			}
+			if err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), request); err == nil {
+				t.Fatal("provider failure returned nil")
+			}
+			if got := s.status[request.ID]; got != tc.want {
+				t.Fatalf("state=%q, want %q", got, tc.want)
+			}
+			if p.calls != tc.wantPushes || p.confirms != tc.wantConfirms {
+				t.Fatalf("pushes=%d confirms=%d, want pushes=%d confirms=%d", p.calls, p.confirms, tc.wantPushes, tc.wantConfirms)
+			}
+		})
+	}
+}
+
+func TestPushJoinsProviderAndFailureStatePersistenceErrors(t *testing.T) {
+	cases := []struct {
+		name        string
+		providerErr error
+		persistErr  error
+		retry       bool
+	}{
+		{"blocked", provider.ErrAuth, errors.New("blocked state database unavailable"), false},
+		{"retry", provider.ErrOffline, errors.New("retry state database unavailable"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newMemoryStore()
+			if tc.retry {
+				s.markRetryErr = tc.persistErr
+			} else {
+				s.markBlockedErr = tc.persistErr
+			}
+			p := &fakeProvider{confirmErr: tc.providerErr}
+			r := PushRequest{ID: "p", Owner: "o", Name: "n", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+			err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), r)
+			if !errors.Is(err, tc.providerErr) || !errors.Is(err, tc.persistErr) {
+				t.Fatalf("error=%v, want provider and persistence causes", err)
+			}
+		})
+	}
+}
+
+func TestPublicationProviderAdapterMapsExactRequestsOutcomesAndErrors(t *testing.T) {
+	publication := &fakePublicationProvider{outcome: provider.PushPresent}
+	adapter := PublicationProviderAdapter{Provider: publication}
+	r := PushRequest{ID: "id", Owner: "owner", Name: "repo", Ref: "feature/x", CommitSHA: strings.Repeat("a", 40)}
+	if err := adapter.Push(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if publication.published != (provider.PushRequest{Owner: r.Owner, Name: r.Name, Ref: r.Ref, SHA: r.CommitSHA}) {
+		t.Fatalf("published request=%+v", publication.published)
+	}
+	for _, tc := range []struct {
+		name    string
+		outcome provider.PushOutcome
+		want    ConfirmPushOutcome
+	}{
+		{"missing", provider.PushMissing, PushMissing},
+		{"present", provider.PushPresent, PushPresent},
+		{"conflict", provider.PushConflict, PushConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			publication.outcome = tc.outcome
+			got, err := adapter.ConfirmPush(context.Background(), r)
+			if err != nil || got != tc.want {
+				t.Fatalf("outcome=%q err=%v, want %q", got, err, tc.want)
+			}
+			if publication.confirmed != (provider.PushRequest{Owner: r.Owner, Name: r.Name, Ref: r.Ref, SHA: r.CommitSHA}) {
+				t.Fatalf("confirmed request=%+v", publication.confirmed)
+			}
+		})
+	}
+	typedErr := provider.ErrProtectedBranch
+	publication.publishErr = typedErr
+	if err := adapter.Push(context.Background(), r); !errors.Is(err, typedErr) {
+		t.Fatalf("push error=%v, want %v", err, typedErr)
+	}
+	publication.confirmErr = typedErr
+	if _, err := adapter.ConfirmPush(context.Background(), r); !errors.Is(err, typedErr) {
+		t.Fatalf("confirm error=%v, want %v", err, typedErr)
+	}
+	publication.outcome = provider.PushConflict
+	publication.confirmErr = provider.ErrRefConflict
+	got, err := adapter.ConfirmPush(context.Background(), r)
+	if got != PushConflict || !errors.Is(err, provider.ErrRefConflict) {
+		t.Fatalf("conflict outcome=%q err=%v, want mapped conflict and typed error", got, err)
+	}
+	publication.outcome = provider.PushOutcome("unexpected")
+	publication.confirmErr = provider.ErrAuth
+	if _, err := adapter.ConfirmPush(context.Background(), r); !errors.Is(err, provider.ErrAuth) {
+		t.Fatalf("unknown outcome error=%v, want typed provider error", err)
 	}
 }
 
@@ -171,12 +309,14 @@ func TestCreatedWithoutValidSHAReconcilesInsteadOfSucceeding(t *testing.T) {
 }
 
 type memoryStore struct {
-	intents    []CommitRequest
-	status     map[string]string
-	createdSHA string
-	skipped    bool
-	trace      *[]string
-	pushes     map[string]PushRequest
+	intents        []CommitRequest
+	status         map[string]string
+	createdSHA     string
+	skipped        bool
+	trace          *[]string
+	pushes         map[string]PushRequest
+	markBlockedErr error
+	markRetryErr   error
 }
 
 func newMemoryStore() *memoryStore {
@@ -223,11 +363,17 @@ func (s *memoryStore) MarkPushSucceeded(_ context.Context, id string) error {
 	return nil
 }
 func (s *memoryStore) MarkPushBlocked(_ context.Context, id string) error {
+	if s.markBlockedErr != nil {
+		return s.markBlockedErr
+	}
 	s.status[id] = "BLOCKED"
 	return nil
 }
 
 func (s *memoryStore) MarkPushRetry(_ context.Context, id string) error {
+	if s.markRetryErr != nil {
+		return s.markRetryErr
+	}
 	s.status[id] = "RETRY_WAIT"
 	return nil
 }
@@ -258,11 +404,21 @@ type fakeProvider struct {
 	confirmed      bool
 	confirmOutcome ConfirmPushOutcome
 	confirmErr     error
+	confirmErrors  []error
+	pushErr        error
 }
 
-func (p *fakeProvider) Push(_ context.Context, _ PushRequest) error { p.calls++; return nil }
+func (p *fakeProvider) Push(_ context.Context, _ PushRequest) error { p.calls++; return p.pushErr }
 func (p *fakeProvider) ConfirmPush(_ context.Context, _ PushRequest) (ConfirmPushOutcome, error) {
 	p.confirms++
+	if len(p.confirmErrors) > 0 {
+		err := p.confirmErrors[0]
+		p.confirmErrors = p.confirmErrors[1:]
+		if err != nil {
+			return "", err
+		}
+		return PushMissing, nil
+	}
 	if p.confirmErr != nil {
 		return "", p.confirmErr
 	}
@@ -272,5 +428,25 @@ func (p *fakeProvider) ConfirmPush(_ context.Context, _ PushRequest) (ConfirmPus
 	if p.confirmOutcome != "" {
 		return p.confirmOutcome, nil
 	}
-	return PushMissing, errors.New("not present")
+	return PushMissing, provider.ErrOffline
+}
+
+type fakePublicationProvider struct {
+	published  provider.PushRequest
+	confirmed  provider.PushRequest
+	outcome    provider.PushOutcome
+	publishErr error
+	confirmErr error
+}
+
+func (p *fakePublicationProvider) Create(context.Context, provider.RemoteRequest) (string, error) {
+	return "", errors.New("create must not be called")
+}
+func (p *fakePublicationProvider) Publish(_ context.Context, r provider.PushRequest) error {
+	p.published = r
+	return p.publishErr
+}
+func (p *fakePublicationProvider) ConfirmPush(_ context.Context, r provider.PushRequest) (provider.PushOutcome, error) {
+	p.confirmed = r
+	return p.outcome, p.confirmErr
 }

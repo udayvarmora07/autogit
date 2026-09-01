@@ -40,11 +40,11 @@ passed the relevant gates; it is not the v1 security boundary.
 | Phase | Status | Outcome |
 | --- | --- | --- |
 | Phase 0 — contract | Artifacts drafted; review/freeze pending | Agreed product, threat, event, lifecycle, architecture, ADR, and test contract |
-| Phase 1 — foundation | Not started | Buildable Go core with durable state and validated ingress |
-| Phase 2 — safe local workflow | Not started | Consent through verified local commit with session ownership |
-| Phase 3 — integrations and recovery | Not started | Adapters, provider jobs, retries, concurrency, and crash reconciliation |
-| Phase 4 — private alpha | Not started | Dogfoodable local/private release on supported OSes |
-| Phase 5 — public beta | Not started | Explicit-public, portfolio-quality, supportable beta release |
+| Phase 1 — foundation | Implementation in progress; exit not claimed | Buildable Go core with durable state and validated ingress |
+| Phase 2 — safe local workflow | Implementation in progress; exit not claimed | Consent through verified local commit with session ownership |
+| Phase 3 — integrations and recovery | Implementation in progress; exit not claimed | Adapters, provider jobs, retries, concurrency, and crash reconciliation |
+| Phase 4 — private alpha | CI/cross-build definition evidence; native/release gates open | Dogfoodable local/private release on supported OSes |
+| Phase 5 — public beta | Local public-preflight implementation; canary/beta gates open | Explicit-public, portfolio-quality, supportable beta release |
 
 No phase is complete because its code exists. The phase exit gate requires the
 listed deliverables, tests, security invariants, documentation, and review.
@@ -221,22 +221,39 @@ A work package is done only when all applicable conditions hold:
 9. Review confirms no force-push, destructive cleanup, unconsented public
    operation, stale verification, or unrelated user change can pass.
 
-## 9. Phase 1 next-action checklist
+## 9. Implementation slices, delivered evidence, and open gates
 
-- [ ] Review and freeze Phase 0 terminology, IDs, schema, lifecycle, threat
-      invariants, and the [test traceability matrix](test-strategy.md).
-- [ ] Resolve the remaining Phase 0 document status/link consistency issues and
-      record the approved event/result compatibility window.
-- [ ] Create the Go module, reproducible build/CI skeleton, and required OS
-      matrix without adding provider credentials or user-project fixtures.
-- [ ] Implement SQLite migrations, repository interfaces, restrictive local
-      state permissions, and deterministic test clocks/IDs.
-- [ ] Implement canonical event validation, receipt/deduplication, digesting,
-      capability degradation, and stable result/error codes.
-- [ ] Implement system Git/filesystem/process/provider ports and safe fakes;
-      make the first smoke suite network-denied.
-- [ ] Start `P2-01` only after the foundation exit tests pass; do not begin
-      provider publication work as a shortcut around local safety.
+The code currently contains implementation slices across phases. Their
+presence is not phase-exit evidence and does not waive any dependency or
+sequencing gate.
+
+Delivered where section 10 provides direct evidence:
+
+- [x] Go module, CLI/CI skeleton, and cross-build smoke definition.
+- [x] SQLite/state primitives, receipt and lifecycle transactions, and
+      restrictive local-state permissions.
+- [x] Canonical event/result validation, receipts/deduplication, digesting,
+      and stable lifecycle/audit evidence.
+- [x] Argument-safe Git/filesystem/process/provider ports and deterministic
+      fakes.
+- [x] Local public-preflight validation and canonical report digest.
+
+Open gates and next priorities:
+
+- [ ] Freeze Phase 0 terminology, IDs, schema, lifecycle, threat invariants,
+      and the [test traceability matrix](test-strategy.md); resolve remaining
+      document status/link consistency and record the approved compatibility
+      window.
+- [ ] Complete end-to-end owned candidate -> trusted verification -> local
+      commit orchestration.
+- [ ] Wire provider intent plus `verify`/`sync`/`retry` CLI behavior.
+- [ ] Run native hosted macOS and Windows coverage.
+- [ ] Run an opt-in disposable GitHub canary with exact postconditions and
+      allowlisted cleanup.
+- [ ] Recover or replace the absent 177-case prototype suite and reach the
+      >=609 release-test target.
+- [ ] Complete all Phase 0 freeze, phase-exit, external-provider, native-OS,
+      release, canary, and beta gates before claiming promotion.
 
 ## 10. Local implementation evidence (2026-09-01)
 

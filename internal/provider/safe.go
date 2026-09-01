@@ -36,6 +36,13 @@ var (
 	ErrRemoteBinding   = errors.New("git remote binding rejected")
 )
 
+// IsRetryable reports whether a provider failure is safe to retry. Only
+// explicitly transient provider categories are retryable; unknown failures
+// fail closed.
+func IsRetryable(err error) bool {
+	return err != nil && (errors.Is(err, ErrOffline) || errors.Is(err, ErrTimeout) || errors.Is(err, ErrRateLimit))
+}
+
 type ErrorKind string
 
 const (
