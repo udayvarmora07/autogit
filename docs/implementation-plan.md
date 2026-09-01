@@ -283,7 +283,10 @@ be exercised without a user repository or network credentials:
   `internal/coordinator`, `internal/gittransaction`, `internal/provider`,
   `internal/adapters`, and `internal/install`: tested durable job/outbox/lease,
   ownership/index, bounded verifier, durable git intent/reconciliation,
-  exact-provider, six-adapter contract matrix, and owned-config primitives.
+  exact-provider, six-adapter contract matrix, and owned-config primitives;
+  `gittransaction` additionally separates real-Git candidate preparation from
+  commit/ref mutation with exact-tree, unchanged-HEAD/index, and idempotent
+  recovery tests.
 - `internal/publication`: a pure local public-preflight package with no Git,
   provider, or network dependency; it validates consent, destination identity,
   candidate/history scans, verification evidence, file metadata, README/license

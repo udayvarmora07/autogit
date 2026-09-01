@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"autogit/internal/verification"
 )
 
 func TestCreateUsesIsolatedIndexAndOnlyAutoGitRef(t *testing.T) {
@@ -57,6 +59,320 @@ func TestCreateUsesIsolatedIndexAndOnlyAutoGitRef(t *testing.T) {
 	}
 	if got.State != "CREATED" || len(store.intents) != 1 || len(store.commits) != 1 {
 		t.Fatalf("store=%+v", store)
+	}
+}
+
+func TestPrepareBuildsCandidateWithoutDurableOrUserStateMutation(t *testing.T) {
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	writeFile(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	writeFile(t, filepath.Join(repo, "unrelated.txt"), "staged user work\n")
+	git(t, repo, "add", "--", "unrelated.txt")
+
+	store := &memoryIntentStore{}
+	tx := New(SystemRunner{}, store)
+	indexBefore := mustRead(t, filepath.Join(repo, ".git", "index"))
+	refsBefore := showRefs(t, repo)
+	headBefore := git(t, repo, "rev-parse", "HEAD")
+	prepared, err := tx.Prepare(context.Background(), Request{
+		ID: "prepare-only", RepoDir: repo,
+		Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Message:  "feat: prepare only", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == nil || prepared.TreeOID() == "" || prepared.CandidateDigest() == "" || prepared.ParentSHA() != headBefore {
+		t.Fatalf("prepared candidate=%+v", prepared)
+	}
+	if want := digest([]byte("git-tree\x00" + prepared.TreeOID())); prepared.CandidateDigest() != want {
+		t.Fatalf("candidate digest=%q want=%q", prepared.CandidateDigest(), want)
+	}
+	if got := git(t, repo, "ls-tree", "--name-only", prepared.TreeOID()); got != "owned.txt" {
+		t.Fatalf("candidate tree entries=%q", got)
+	}
+	if len(store.intents) != 0 || refsBefore != showRefs(t, repo) || headBefore != git(t, repo, "rev-parse", "HEAD") {
+		t.Fatalf("Prepare mutated durable Git state: intents=%d refs=%q", len(store.intents), showRefs(t, repo))
+	}
+	if string(indexBefore) != string(mustRead(t, filepath.Join(repo, ".git", "index"))) {
+		t.Fatal("Prepare changed user index")
+	}
+}
+
+func TestCommitPreparedCommitsExactlyCandidateAndPreservesUserState(t *testing.T) {
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	writeFile(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	writeFile(t, filepath.Join(repo, "unrelated.txt"), "staged user work\n")
+	git(t, repo, "add", "--", "unrelated.txt")
+	indexBefore := mustRead(t, filepath.Join(repo, ".git", "index"))
+	headBefore := git(t, repo, "rev-parse", "HEAD")
+	store := &memoryIntentStore{}
+	tx := New(SystemRunner{}, store)
+	prepared, err := tx.Prepare(context.Background(), Request{
+		ID: "commit-prepared", RepoDir: repo,
+		Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Message:  "feat: commit prepared", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := tx.CommitPrepared(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TreeOID != prepared.TreeOID() || got.CandidateDigest != prepared.CandidateDigest() {
+		t.Fatalf("commit=%+v prepared tree=%s digest=%s", got, prepared.TreeOID(), prepared.CandidateDigest())
+	}
+	if ref := git(t, repo, "rev-parse", "--verify", "refs/autogit/commits/commit-prepared"); ref != got.SHA {
+		t.Fatalf("AutoGit ref=%s commit=%s", ref, got.SHA)
+	}
+	if tree := git(t, repo, "show", "--format=%T", "--no-patch", got.SHA); tree != prepared.TreeOID() {
+		t.Fatalf("committed tree=%s prepared=%s", tree, prepared.TreeOID())
+	}
+	if content := git(t, repo, "show", got.SHA+":owned.txt"); content != "candidate" {
+		t.Fatalf("committed candidate content=%q", content)
+	}
+	if gotHead := git(t, repo, "rev-parse", "HEAD"); gotHead != headBefore {
+		t.Fatalf("current branch moved from %s to %s", headBefore, gotHead)
+	}
+	if string(indexBefore) != string(mustRead(t, filepath.Join(repo, ".git", "index"))) {
+		t.Fatal("CommitPrepared changed user index")
+	}
+}
+
+func TestCommitVerifiedCommitsOnlyWithRegistryProducedEvidence(t *testing.T) {
+	repo := newVerifiedCommitRepo(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "trusted", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := verification.VerificationPolicy{Visibility: "public"}
+	request := Request{ID: "verified-commit", RepoDir: repo,
+		Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Message:  "feat: verified commit", PolicyDigest: digest([]byte("policy")), VerifierDigest: registry.VerifierSetDigest, GuardDigest: digest([]byte("guard"))}
+	store := &memoryIntentStore{}
+	tx := New(SystemRunner{}, store)
+	prepared, err := tx.Prepare(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustedRequest := verification.TrustedRequest{CandidateDigest: prepared.CandidateDigest(), BaseDigest: trustedBaseDigest(prepared.BaseSHA()), PolicyDigest: prepared.PolicyDigest(), GuardDigest: prepared.GuardDigest(), Dir: repo}
+	result, err := registry.Verify(context.Background(), policy, trustedRequest, &commitVerificationRunner{})
+	if err != nil || !result.ValidFor(trustedRequest, policy, registry) {
+		t.Fatalf("registry evidence invalid: result=%#v err=%v", result, err)
+	}
+	indexBefore := mustRead(t, filepath.Join(repo, ".git", "index"))
+	headBefore := git(t, repo, "rev-parse", "HEAD")
+	refsBefore := showRefs(t, repo)
+	got, err := tx.CommitVerified(context.Background(), prepared, result, policy, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TreeOID != prepared.TreeOID() || git(t, repo, "show", "--format=%T", "--no-patch", got.SHA) != prepared.TreeOID() {
+		t.Fatalf("commit tree=%s prepared=%s", got.TreeOID, prepared.TreeOID())
+	}
+	if git(t, repo, "show", got.SHA+":owned.txt") != "candidate" {
+		t.Fatal("committed tree did not contain exact candidate")
+	}
+	if git(t, repo, "rev-parse", "HEAD") != headBefore || string(indexBefore) != string(mustRead(t, filepath.Join(repo, ".git", "index"))) {
+		t.Fatal("verified commit changed user HEAD or index")
+	}
+	if len(store.intents) != 1 || len(store.commits) != 1 || showRefs(t, repo) != got.SHA+" refs/autogit/commits/verified-commit\n"+refsBefore {
+		t.Fatalf("durable/ref state changed unexpectedly: intents=%d commits=%d refs=%q before=%q", len(store.intents), len(store.commits), showRefs(t, repo), refsBefore)
+	}
+}
+
+func TestCommitVerifiedRejectsEveryEvidenceBindingBeforeDurableMutation(t *testing.T) {
+	mutations := []struct {
+		name   string
+		mutate func(*verification.VerificationResult)
+	}{
+		{name: "candidate binding", mutate: func(r *verification.VerificationResult) {
+			r.Evidence[0].CandidateDigest = digest([]byte("other-candidate"))
+		}},
+		{name: "base binding", mutate: func(r *verification.VerificationResult) { r.Evidence[0].BaseDigest = digest([]byte("other-base")) }},
+		{name: "policy binding", mutate: func(r *verification.VerificationResult) { r.Evidence[0].PolicyDigest = digest([]byte("other-policy")) }},
+		{name: "guard binding", mutate: func(r *verification.VerificationResult) { r.Evidence[0].GuardDigest = digest([]byte("other-guard")) }},
+		{name: "tampered evidence", mutate: func(r *verification.VerificationResult) { r.Evidence[0].EvidenceDigest = digest([]byte("tampered")) }},
+	}
+	for _, tc := range mutations {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, prepared, result, policy, registry := verifiedPreparedAndEvidence(t, "reject-"+strings.ReplaceAll(strings.ToLower(tc.name), " ", "-"))
+			tc.mutate(&result)
+			store := &memoryIntentStore{}
+			tx := New(SystemRunner{}, store)
+			refsBefore := showRefs(t, repo)
+			if _, err := tx.CommitVerified(context.Background(), prepared, result, policy, registry); err == nil {
+				t.Fatal("tampered verification evidence accepted")
+			}
+			if len(store.intents) != 0 || len(store.commits) != 0 || refsBefore != showRefs(t, repo) {
+				t.Fatalf("rejected evidence mutated durable state: intents=%d commits=%d refs=%q", len(store.intents), len(store.commits), showRefs(t, repo))
+			}
+		})
+	}
+	// This catches a gate that validates only evidence fields and forgets the
+	// registry-produced verifier-set binding.
+	repo, prepared, result, policy, registry := verifiedPreparedAndEvidence(t, "reject-verifier-set")
+	result.VerifierSetDigest = digest([]byte("other-verifier-set"))
+	store := &memoryIntentStore{}
+	refsBefore := showRefs(t, repo)
+	if _, err := New(SystemRunner{}, store).CommitVerified(context.Background(), prepared, result, policy, registry); err == nil {
+		t.Fatal("tampered verifier-set evidence accepted")
+	}
+	if len(store.intents) != 0 || showRefs(t, repo) != refsBefore {
+		t.Fatal("tampered verifier-set evidence mutated durable state")
+	}
+}
+
+func TestCommitVerifiedRejectsNoVerifierDecisionAndPreparedVerifierMismatch(t *testing.T) {
+	repo := newVerifiedCommitRepo(t)
+	policy := verification.VerificationPolicy{Visibility: "public"}
+	noVerifierRegistry, err := verification.NewVerifierRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{ID: "reject-no-verifier", RepoDir: repo, Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}}, Message: "feat: reject no verifier", PolicyDigest: digest([]byte("policy")), VerifierDigest: noVerifierRegistry.VerifierSetDigest, GuardDigest: digest([]byte("guard"))}
+	store := &memoryIntentStore{}
+	tx := New(SystemRunner{}, store)
+	prepared, err := tx.Prepare(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustedRequest := verification.TrustedRequest{CandidateDigest: prepared.CandidateDigest(), BaseDigest: trustedBaseDigest(prepared.BaseSHA()), PolicyDigest: prepared.PolicyDigest(), GuardDigest: prepared.GuardDigest(), Dir: repo}
+	noVerifier, err := noVerifierRegistry.Verify(context.Background(), policy, trustedRequest, &commitVerificationRunner{})
+	if err != nil || noVerifier.Decision != verification.DecisionNoVerifier {
+		t.Fatalf("no-verifier result=%#v err=%v", noVerifier, err)
+	}
+	refsBefore := showRefs(t, repo)
+	if _, err := tx.CommitVerified(context.Background(), prepared, noVerifier, policy, noVerifierRegistry); err == nil {
+		t.Fatal("no-verifier decision accepted")
+	}
+	if len(store.intents) != 0 || showRefs(t, repo) != refsBefore {
+		t.Fatal("no-verifier decision mutated durable state")
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "trusted", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err = tx.Prepare(context.Background(), Request{ID: "reject-mismatched-set", RepoDir: repo, Snapshot: request.Snapshot, Message: "feat: reject mismatch", PolicyDigest: request.PolicyDigest, VerifierDigest: emptyDigest(), GuardDigest: request.GuardDigest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustedRequest = verification.TrustedRequest{CandidateDigest: prepared.CandidateDigest(), BaseDigest: trustedBaseDigest(prepared.BaseSHA()), PolicyDigest: prepared.PolicyDigest(), GuardDigest: prepared.GuardDigest(), Dir: repo}
+	result, err := registry.Verify(context.Background(), policy, trustedRequest, &commitVerificationRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refsBefore = showRefs(t, repo)
+	if _, err := tx.CommitVerified(context.Background(), prepared, result, policy, registry); err == nil {
+		t.Fatal("Prepared verifier digest mismatch accepted")
+	}
+	if len(store.intents) != 0 || showRefs(t, repo) != refsBefore {
+		t.Fatal("Prepared verifier mismatch mutated durable state")
+	}
+}
+
+func verifiedPreparedAndEvidence(t *testing.T, id string) (string, *Prepared, verification.VerificationResult, verification.VerificationPolicy, *verification.VerifierRegistry) {
+	t.Helper()
+	repo := newVerifiedCommitRepo(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "trusted", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := verification.VerificationPolicy{Visibility: "public"}
+	prepared, err := New(SystemRunner{}, &memoryIntentStore{}).Prepare(context.Background(), Request{ID: id, RepoDir: repo, Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}}, Message: "feat: evidence gate", PolicyDigest: digest([]byte("policy")), VerifierDigest: registry.VerifierSetDigest, GuardDigest: digest([]byte("guard"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := verification.TrustedRequest{CandidateDigest: prepared.CandidateDigest(), BaseDigest: trustedBaseDigest(prepared.BaseSHA()), PolicyDigest: prepared.PolicyDigest(), GuardDigest: prepared.GuardDigest(), Dir: repo}
+	result, err := registry.Verify(context.Background(), policy, req, &commitVerificationRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ValidFor(req, policy, registry) {
+		t.Fatal("test fixture produced invalid registry evidence")
+	}
+	return repo, prepared, result, policy, registry
+}
+
+func newVerifiedCommitRepo(t *testing.T) string {
+	t.Helper()
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	writeFile(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	return repo
+}
+
+func trustedBaseDigest(parent string) string { return digest([]byte(parent)) }
+
+type commitVerificationRunner struct{}
+
+func (*commitVerificationRunner) Run(_ context.Context, _ string, _ map[string]string, _ ...string) (verification.Result, error) {
+	return verification.Result{ExitCode: 0}, nil
+}
+
+func TestCommitPreparedRejectsHEADOrIndexChangeBeforeDurableMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*testing.T, string)
+	}{
+		{name: "HEAD", mutate: func(t *testing.T, repo string) {
+			git(t, repo, "commit", "--allow-empty", "-m", "chore: concurrent head")
+		}},
+		{name: "index", mutate: func(t *testing.T, repo string) {
+			writeFile(t, filepath.Join(repo, "unrelated.txt"), "concurrent staged work\n")
+			git(t, repo, "add", "--", "unrelated.txt")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newRepo(t)
+			git(t, repo, "config", "user.name", "AutoGit Test")
+			git(t, repo, "config", "user.email", "autogit@example.test")
+			writeFile(t, filepath.Join(repo, "owned.txt"), "base\n")
+			git(t, repo, "add", "--", "owned.txt")
+			git(t, repo, "commit", "-m", "chore: baseline")
+			store := &memoryIntentStore{}
+			tx := New(SystemRunner{}, store)
+			prepared, err := tx.Prepare(context.Background(), Request{
+				ID: "prepared-race-" + strings.ToLower(tc.name), RepoDir: repo,
+				Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+				Message:  "feat: prepared race", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(t, repo)
+			refsBefore := showRefs(t, repo)
+			if _, err := tx.CommitPrepared(context.Background(), prepared); err == nil {
+				t.Fatal("CommitPrepared accepted changed repository state")
+			}
+			if len(store.intents) != 0 || refsBefore != showRefs(t, repo) {
+				t.Fatalf("changed state caused durable mutation: intents=%d refs=%q", len(store.intents), showRefs(t, repo))
+			}
+		})
 	}
 }
 

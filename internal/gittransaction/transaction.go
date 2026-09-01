@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"autogit/internal/commit"
+	"autogit/internal/verification"
 )
 
 const maxOutput = 1 << 20
@@ -167,6 +168,71 @@ type Commit struct {
 	State                                                        string
 }
 
+// Prepared is an immutable candidate commit assembled from an observed
+// repository state. Its authoritative identity and observation data are
+// private so CommitPrepared cannot be redirected by caller mutation.
+type Prepared struct {
+	intent     Intent
+	root       string
+	indexPath  string
+	indexBytes []byte
+}
+
+func (p *Prepared) TreeOID() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.TreeOID
+}
+func (p *Prepared) CandidateDigest() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.CandidateDigest
+}
+func (p *Prepared) ParentSHA() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.ParentSHA
+}
+func (p *Prepared) BaseSHA() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.ParentSHA
+}
+func (p *Prepared) SnapshotDigest() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.SnapshotDigest
+}
+func (p *Prepared) MessageDigest() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.MessageDigest
+}
+func (p *Prepared) PolicyDigest() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.PolicyDigest
+}
+func (p *Prepared) VerifierDigest() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.VerifierDigest
+}
+func (p *Prepared) GuardDigest() string {
+	if p == nil {
+		return ""
+	}
+	return p.intent.GuardDigest
+}
+
 type Transaction struct {
 	git     Runner
 	intents IntentPort
@@ -213,42 +279,69 @@ func (t *Transaction) Create(ctx context.Context, req Request) (Commit, error) {
 	} else if !errors.Is(getErr, os.ErrNotExist) {
 		return Commit{}, getErr
 	}
-	parent, indexPath, indexBefore, err := observe(ctx, t.git, root)
+	prepared, err := t.Prepare(ctx, req)
 	if err != nil {
 		return Commit{}, err
 	}
+	return t.CommitPrepared(ctx, prepared)
+}
+
+// Prepare validates an immutable request and constructs its exact candidate
+// tree using a temporary index. It may create unreachable Git objects, but it
+// does not persist intent or mutate any ref, worktree, or user index.
+func (t *Transaction) Prepare(ctx context.Context, req Request) (*Prepared, error) {
+	if t == nil || t.git == nil {
+		return nil, errors.New("git transaction dependencies missing")
+	}
+	if err := validateRequest(req); err != nil {
+		return nil, err
+	}
+	root, err := repositoryRoot(ctx, t.git, req.RepoDir)
+	if err != nil {
+		return nil, err
+	}
+	entries, _, err := validateSnapshot(root, req.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return t.prepareValidated(ctx, req, root, entries)
+}
+
+func (t *Transaction) prepareValidated(ctx context.Context, req Request, root string, entries []SnapshotEntry) (*Prepared, error) {
+	parent, indexPath, indexBefore, err := observe(ctx, t.git, root)
+	if err != nil {
+		return nil, err
+	}
 	tmp, err := os.CreateTemp("", "autogit-index-")
 	if err != nil {
-		return Commit{}, fmt.Errorf("temporary index: %w", err)
+		return nil, fmt.Errorf("temporary index: %w", err)
 	}
 	index := tmp.Name()
 	_ = tmp.Close()
 	if err := os.Remove(index); err != nil && !os.IsNotExist(err) {
-		return Commit{}, err
+		return nil, err
 	}
 	defer os.Remove(index)
 	env := map[string]string{"GIT_INDEX_FILE": index}
 	// Candidate preparation writes only unreachable blob/tree objects and a
-	// temporary index. It cannot alter a ref, worktree, or user index. The
-	// durable intent is persisted below immediately before commit-tree and the
-	// AutoGit ref mutation; recovery never retries this ref effect blindly.
+	// temporary index. It cannot alter a ref, worktree, or user index.
 	if parent == "" {
 		if _, err = t.git.Run(ctx, root, env, "read-tree", "--empty"); err != nil {
-			return Commit{}, fmt.Errorf("initialize candidate index: %w", err)
+			return nil, fmt.Errorf("initialize candidate index: %w", err)
 		}
 	} else if _, err = t.git.Run(ctx, root, env, "read-tree", "--reset", parent); err != nil {
-		return Commit{}, fmt.Errorf("initialize candidate index: %w", err)
+		return nil, fmt.Errorf("initialize candidate index: %w", err)
 	}
 	for _, entry := range entries {
 		if entry.Delete {
 			if _, err = t.git.Run(ctx, root, env, "update-index", "--remove", "--", entry.Path); err != nil {
-				return Commit{}, fmt.Errorf("stage deletion: %w", err)
+				return nil, fmt.Errorf("stage deletion: %w", err)
 			}
 			continue
 		}
 		blobFile, fileErr := os.CreateTemp("", "autogit-blob-")
 		if fileErr != nil {
-			return Commit{}, fileErr
+			return nil, fileErr
 		}
 		blobPath := blobFile.Name()
 		if chmodErr := blobFile.Chmod(0600); chmodErr == nil {
@@ -261,51 +354,73 @@ func (t *Transaction) Create(ctx context.Context, req Request) (Commit, error) {
 		}
 		if fileErr != nil {
 			_ = os.Remove(blobPath)
-			return Commit{}, fmt.Errorf("snapshot blob: %w", fileErr)
+			return nil, fmt.Errorf("snapshot blob: %w", fileErr)
 		}
 		blobResult, blobErr := t.git.Run(ctx, root, env, "hash-object", "-w", "--", blobPath)
 		_ = os.Remove(blobPath)
 		if blobErr != nil {
-			return Commit{}, fmt.Errorf("write snapshot blob: %w", blobErr)
+			return nil, fmt.Errorf("write snapshot blob: %w", blobErr)
 		}
 		blob := strings.TrimSpace(blobResult.Output)
 		if !oidRE.MatchString(blob) {
-			return Commit{}, errors.New("git returned invalid snapshot blob")
+			return nil, errors.New("git returned invalid snapshot blob")
 		}
 		cacheInfo := fmt.Sprintf("%s,%s,%s", gitMode(entry.Mode), blob, entry.Path)
 		if _, err = t.git.Run(ctx, root, env, "update-index", "--add", "--cacheinfo", cacheInfo); err != nil {
-			return Commit{}, fmt.Errorf("stage snapshot: %w", err)
+			return nil, fmt.Errorf("stage snapshot: %w", err)
 		}
 	}
 	treeResult, err := t.git.Run(ctx, root, env, "write-tree")
 	if err != nil {
-		return Commit{}, fmt.Errorf("write candidate tree: %w", err)
+		return nil, fmt.Errorf("write candidate tree: %w", err)
 	}
 	tree := strings.TrimSpace(treeResult.Output)
 	if !oidRE.MatchString(tree) {
-		return Commit{}, errors.New("git returned invalid candidate tree")
+		return nil, errors.New("git returned invalid candidate tree")
 	}
 	if err := ensureUnchanged(ctx, t.git, root, parent, indexPath, indexBefore); err != nil {
-		return Commit{}, err
+		return nil, err
 	}
 
 	message := canonicalMessage(req.Message)
 	intent := Intent{ID: req.ID, RepoDir: root, Ref: refFor(req.ID, req.Ref), ParentSHA: parent, TreeOID: tree,
 		Message: message, CandidateDigest: treeDigest(tree), MessageDigest: messageDigest(message),
 		SnapshotDigest: snapshotDigest(entries), PolicyDigest: req.PolicyDigest, VerifierDigest: req.VerifierDigest, GuardDigest: req.GuardDigest}
-	if err := t.intents.PutCommitIntent(ctx, intent); err != nil {
+	return &Prepared{intent: intent, root: root, indexPath: indexPath, indexBytes: append([]byte(nil), indexBefore...)}, nil
+}
+
+// CommitPrepared persists the prepared identity immediately before creating
+// the commit object, then applies the existing guarded AutoGit ref protocol.
+func (t *Transaction) CommitPrepared(ctx context.Context, prepared *Prepared) (Commit, error) {
+	if t == nil || t.git == nil || t.intents == nil {
+		return Commit{}, errors.New("git transaction dependencies missing")
+	}
+	if prepared == nil || prepared.root == "" || prepared.indexPath == "" || validateIntent(prepared.intent) != nil {
+		return Commit{}, errors.New("invalid prepared candidate")
+	}
+	if err := ensureUnchanged(ctx, t.git, prepared.root, prepared.intent.ParentSHA, prepared.indexPath, prepared.indexBytes); err != nil {
 		return Commit{}, err
 	}
-	// A durable intent now exists before commit-tree or ref mutation.
+	if existing, getErr := t.intents.GetCommitIntent(ctx, prepared.intent.ID); getErr == nil {
+		if existing.RepoDir != prepared.intent.RepoDir {
+			return Commit{}, errors.New("commit intent repository conflict")
+		}
+		if existing != prepared.intent {
+			return Commit{}, errors.New("commit intent identity conflict")
+		}
+		return t.Recover(ctx, prepared.intent.ID)
+	} else if !errors.Is(getErr, os.ErrNotExist) {
+		return Commit{}, getErr
+	}
+
 	messageFile, err := os.CreateTemp("", "autogit-message-")
 	if err != nil {
-		_ = t.intents.RecordReconcile(ctx, req.ID, "message file: "+err.Error())
-		return Commit{}, err
+		return Commit{}, fmt.Errorf("message file: %w", err)
 	}
 	messagePath := messageFile.Name()
 	defer os.Remove(messagePath)
 	if err := messageFile.Chmod(0600); err == nil {
-		_, err = io.WriteString(messageFile, message)
+		_, err = io.WriteString(messageFile, prepared.intent.Message)
 	} else {
 		err = fmt.Errorf("message permissions: %w", err)
 	}
@@ -313,52 +428,106 @@ func (t *Transaction) Create(ctx context.Context, req Request) (Commit, error) {
 		err = closeErr
 	}
 	if err != nil {
-		_ = t.intents.RecordReconcile(ctx, req.ID, "message file: "+err.Error())
+		return Commit{}, fmt.Errorf("message file: %w", err)
+	}
+	if err := t.intents.PutCommitIntent(ctx, prepared.intent); err != nil {
 		return Commit{}, err
 	}
-	args := []string{"commit-tree", tree}
-	if parent != "" {
-		args = append(args, "-p", parent)
+	// A durable intent now exists before commit-tree or ref mutation.
+	args := []string{"commit-tree", prepared.intent.TreeOID}
+	if prepared.intent.ParentSHA != "" {
+		args = append(args, "-p", prepared.intent.ParentSHA)
 	}
 	args = append(args, "-F", messagePath)
-	commitResult, err := t.git.Run(ctx, root, env, args...)
+	commitResult, err := t.git.Run(ctx, prepared.root, nil, args...)
 	if err != nil {
-		_ = t.intents.RecordReconcile(ctx, req.ID, "commit-tree outcome unknown")
+		_ = t.intents.RecordReconcile(ctx, prepared.intent.ID, "commit-tree outcome unknown")
 		return Commit{}, fmt.Errorf("create commit object: %w", err)
 	}
 	sha := strings.TrimSpace(commitResult.Output)
 	if !oidRE.MatchString(sha) {
-		_ = t.intents.RecordReconcile(ctx, req.ID, "invalid commit object identity")
+		_ = t.intents.RecordReconcile(ctx, prepared.intent.ID, "invalid commit object identity")
 		return Commit{}, errors.New("git returned invalid commit sha")
 	}
-	if err := ensureUnchanged(ctx, t.git, root, parent, indexPath, indexBefore); err != nil {
-		_ = t.intents.RecordReconcile(ctx, req.ID, "repository changed before ref update")
+	if err := ensureUnchanged(ctx, t.git, prepared.root, prepared.intent.ParentSHA, prepared.indexPath, prepared.indexBytes); err != nil {
+		_ = t.intents.RecordReconcile(ctx, prepared.intent.ID, "repository changed before ref update")
 		return Commit{}, err
 	}
-	oldRef, err := inspectRef(ctx, t.git, root, intent.Ref)
+	oldRef, err := inspectRef(ctx, t.git, prepared.root, prepared.intent.Ref)
 	if err != nil {
-		return t.reconcile(ctx, req.ID, "inspect AutoGit ref: "+err.Error())
+		return t.reconcile(ctx, prepared.intent.ID, "inspect AutoGit ref: "+err.Error())
 	}
 	if oldRef != "" {
 		if oldRef != sha {
-			return t.reconcile(ctx, req.ID, "AutoGit ref already names a different commit")
+			return t.reconcile(ctx, prepared.intent.ID, "AutoGit ref already names a different commit")
 		}
-		if err := t.intents.RecordCommit(ctx, req.ID, sha); err != nil {
+		if err := t.intents.RecordCommit(ctx, prepared.intent.ID, sha); err != nil {
 			return Commit{}, err
 		}
-		return commitResultOf(intent, sha), nil
+		return commitResultOf(prepared.intent, sha), nil
 	}
-	if _, err := t.git.Run(ctx, root, nil, "update-ref", "--no-deref", intent.Ref, sha, ""); err != nil {
-		return t.reconcile(ctx, req.ID, "ref update outcome unknown")
+	if _, err := t.git.Run(ctx, prepared.root, nil, "update-ref", "--no-deref", prepared.intent.Ref, sha, ""); err != nil {
+		return t.reconcile(ctx, prepared.intent.ID, "ref update outcome unknown")
 	}
-	if err := verifyCommit(ctx, t.git, root, intent, sha); err != nil {
-		return t.reconcile(ctx, req.ID, "commit postcondition failed")
+	if err := verifyCommit(ctx, t.git, prepared.root, prepared.intent, sha); err != nil {
+		return t.reconcile(ctx, prepared.intent.ID, "commit postcondition failed")
 	}
-	if err := t.intents.RecordCommit(ctx, req.ID, sha); err != nil {
+	if err := t.intents.RecordCommit(ctx, prepared.intent.ID, sha); err != nil {
 		return Commit{}, err
 	}
-	return commitResultOf(intent, sha), nil
+	return commitResultOf(prepared.intent, sha), nil
 }
+
+// CommitVerified is the trusted-evidence gate for an immutable prepared
+// candidate. Verification is deliberately performed by the caller; this
+// method only validates that the resulting evidence is bound to this exact
+// candidate, parent, policy, guard, and frozen verifier registry before
+// entering the existing intent/ref commit protocol.
+func (t *Transaction) CommitVerified(ctx context.Context, prepared *Prepared, result verification.VerificationResult, policy verification.VerificationPolicy, registry *verification.VerifierRegistry) (Commit, error) {
+	if t == nil || t.git == nil || t.intents == nil {
+		return Commit{}, errors.New("git transaction dependencies missing")
+	}
+	if err := validatePrepared(prepared); err != nil {
+		return Commit{}, err
+	}
+	if registry == nil {
+		return Commit{}, errors.New("verifier registry is required")
+	}
+	if prepared.intent.VerifierDigest != registry.VerifierSetDigest {
+		return Commit{}, errors.New("prepared verifier set does not match registry")
+	}
+	if err := validateFrozenVerifierRegistry(registry); err != nil {
+		return Commit{}, err
+	}
+	request := verification.TrustedRequest{
+		CandidateDigest: prepared.intent.CandidateDigest,
+		BaseDigest:      parentDigest(prepared.intent.ParentSHA),
+		PolicyDigest:    prepared.intent.PolicyDigest,
+		GuardDigest:     prepared.intent.GuardDigest,
+		Dir:             prepared.root,
+	}
+	if !result.ValidFor(request, policy, registry) {
+		return Commit{}, errors.New("verification evidence is invalid for prepared candidate")
+	}
+	return t.CommitPrepared(ctx, prepared)
+}
+
+func validatePrepared(prepared *Prepared) error {
+	if prepared == nil || prepared.root == "" || prepared.indexPath == "" || prepared.root != prepared.intent.RepoDir || !filepath.IsAbs(prepared.root) || filepath.Clean(prepared.root) != prepared.root || validateIntent(prepared.intent) != nil {
+		return errors.New("invalid prepared candidate")
+	}
+	return nil
+}
+
+func validateFrozenVerifierRegistry(registry *verification.VerifierRegistry) error {
+	canonical, err := verification.NewVerifierRegistry(registry.Specs)
+	if err != nil || canonical.VerifierSetVersion != registry.VerifierSetVersion || canonical.VerifierSetDigest != registry.VerifierSetDigest || canonical.ConfigDigest != registry.ConfigDigest {
+		return errors.New("invalid or mutable verifier registry")
+	}
+	return nil
+}
+
+func parentDigest(parent string) string { return messageDigest(parent) }
 
 // Recover proves a prior intent's side effect from the AutoGit ref and commit
 // object. It never invokes commit-tree and therefore cannot duplicate a commit.
