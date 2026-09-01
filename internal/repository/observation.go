@@ -1,0 +1,292 @@
+package repository
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"unicode"
+)
+
+// CommandResult is the small read-only command result needed by repository
+// observation. Keeping this port local prevents observation from acquiring
+// Git mutation authority.
+type CommandResult struct{ Output string }
+
+type Runner interface {
+	Run(context.Context, string, map[string]string, ...string) (CommandResult, error)
+}
+
+// FileObservation is a bounded baseline observation. Content is retained only
+// in memory for immediate ownership comparison; durable callers should store
+// the resulting digests, not source bytes.
+type FileObservation struct {
+	Content []byte
+	Mode    os.FileMode
+	Present bool
+}
+
+type Baseline struct {
+	Head         string
+	IndexDigest  string
+	StatusDigest string
+	PathsDigest  string
+	Paths        []string
+	Files        map[string]FileObservation
+}
+
+// EventPayload returns the redacted facts suitable for a session.started
+// domain event. Raw paths, status text, and file contents never cross this
+// boundary.
+func (b Baseline) EventPayload() map[string]any {
+	payload := map[string]any{
+		"baseline_index":        b.IndexDigest,
+		"status_digest":         b.StatusDigest,
+		"baseline_paths_digest": b.PathsDigest,
+	}
+	if b.Head != "" {
+		payload["baseline_head"] = b.Head
+	}
+	return payload
+}
+
+func (b Baseline) Clone() Baseline {
+	n := b
+	n.Paths = append([]string(nil), b.Paths...)
+	n.Files = make(map[string]FileObservation, len(b.Files))
+	for name, file := range b.Files {
+		n.Files[name] = FileObservation{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+	}
+	return n
+}
+
+// CaptureBaseline records the repository state at a session/task boundary.
+// Git is queried read-only and changed files are captured without following
+// symlink components. An empty HEAD is valid for an unborn initial branch.
+func CaptureBaseline(ctx context.Context, runner Runner, root string) (Baseline, error) {
+	if runner == nil || root == "" {
+		return Baseline{}, errors.New("baseline runner and root are required")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Baseline{}, err
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return Baseline{}, fmt.Errorf("baseline root: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		return Baseline{}, errors.New("baseline root is not a directory")
+	}
+	headResult, headErr := runner.Run(ctx, abs, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	head := strings.TrimSpace(headResult.Output)
+	if headErr != nil && (head != "" || !isUnbornHeadError(headErr)) {
+		return Baseline{}, fmt.Errorf("read HEAD: %w", headErr)
+	}
+	if head != "" && !validObjectID(head) {
+		return Baseline{}, errors.New("invalid HEAD observation")
+	}
+
+	indexResult, err := runner.Run(ctx, abs, nil, "rev-parse", "--git-path", "index")
+	if err != nil {
+		return Baseline{}, fmt.Errorf("read index path: %w", err)
+	}
+	indexPath := strings.TrimSpace(indexResult.Output)
+	if indexPath == "" {
+		return Baseline{}, errors.New("empty index path")
+	}
+	if !filepath.IsAbs(indexPath) {
+		indexPath = filepath.Join(abs, indexPath)
+	}
+	indexBytes, err := os.ReadFile(indexPath)
+	if err != nil && !os.IsNotExist(err) {
+		return Baseline{}, fmt.Errorf("read index: %w", err)
+	}
+
+	statusResult, err := runner.Run(ctx, abs, nil, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	if err != nil {
+		return Baseline{}, fmt.Errorf("read status: %w", err)
+	}
+	paths, err := statusPaths(statusResult.Output)
+	if err != nil {
+		return Baseline{}, err
+	}
+	files := make(map[string]FileObservation, len(paths))
+	for _, name := range paths {
+		file, captureErr := captureBaselineFile(abs, name)
+		if captureErr != nil {
+			return Baseline{}, captureErr
+		}
+		files[name] = file
+	}
+	return Baseline{
+		Head:         head,
+		IndexDigest:  digestBytes(indexBytes),
+		StatusDigest: digestBytes([]byte(statusResult.Output)),
+		PathsDigest:  digestStrings(paths),
+		Paths:        paths,
+		Files:        files,
+	}, nil
+}
+
+func isUnbornHeadError(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 128
+}
+
+func statusPaths(raw string) ([]string, error) {
+	parts := strings.Split(raw, "\x00")
+	seen := map[string]bool{}
+	paths := make([]string, 0, len(parts))
+	for i := 0; i < len(parts); i++ {
+		record := parts[i]
+		if record == "" {
+			continue
+		}
+		if len(record) < 4 || record[2] != ' ' {
+			return nil, errors.New("invalid git status record")
+		}
+		name := record[3:]
+		if err := validateRelativePath(name); err != nil {
+			return nil, fmt.Errorf("invalid status path: %w", err)
+		}
+		add := func(path string) error {
+			if err := validateRelativePath(path); err != nil {
+				return fmt.Errorf("invalid status path: %w", err)
+			}
+			if !seen[path] {
+				seen[path] = true
+				paths = append(paths, path)
+			}
+			return nil
+		}
+		if err := add(name); err != nil {
+			return nil, err
+		}
+		if record[0] == 'R' || record[0] == 'C' || record[1] == 'R' || record[1] == 'C' {
+			if i+1 >= len(parts) || parts[i+1] == "" {
+				return nil, errors.New("rename status record is missing source path")
+			}
+			i++
+			if err := add(parts[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func captureBaselineFile(root, name string) (FileObservation, error) {
+	absolute, err := safeJoin(root, name)
+	if err != nil {
+		return FileObservation{}, err
+	}
+	if err := rejectSymlinkParents(root, absolute); err != nil {
+		return FileObservation{}, err
+	}
+	info, err := os.Lstat(absolute)
+	if os.IsNotExist(err) {
+		return FileObservation{Present: false}, nil
+	}
+	if err != nil {
+		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, readErr := os.Readlink(absolute)
+		if readErr != nil {
+			return FileObservation{}, readErr
+		}
+		return FileObservation{Content: []byte(target), Mode: info.Mode(), Present: true}, nil
+	}
+	if !info.Mode().IsRegular() {
+		return FileObservation{Mode: info.Mode(), Present: true}, nil
+	}
+	content, err := os.ReadFile(absolute)
+	if err != nil {
+		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
+	}
+	return FileObservation{Content: append([]byte(nil), content...), Mode: info.Mode(), Present: true}, nil
+}
+
+func safeJoin(root, name string) (string, error) {
+	if err := validateRelativePath(name); err != nil {
+		return "", err
+	}
+	absolute := filepath.Join(root, filepath.FromSlash(name))
+	rel, err := filepath.Rel(root, absolute)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errors.New("status path escapes repository root")
+	}
+	return absolute, nil
+}
+
+func validateRelativePath(name string) error {
+	if name == "" || strings.IndexByte(name, 0) >= 0 || filepath.IsAbs(filepath.FromSlash(name)) || strings.Contains(name, "\\") {
+		return errors.New("path is not a safe repository-relative path")
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return errors.New("path contains a control character")
+		}
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || part == "." || part == ".." {
+			return errors.New("path contains an unsafe component")
+		}
+	}
+	return nil
+}
+
+func rejectSymlinkParents(root, absolute string) error {
+	rel, err := filepath.Rel(root, absolute)
+	if err != nil {
+		return err
+	}
+	current := root
+	parts := strings.Split(rel, string(filepath.Separator))
+	for _, part := range parts[:len(parts)-1] {
+		current = filepath.Join(current, part)
+		info, statErr := os.Lstat(current)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				return nil
+			}
+			return statErr
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("status path contains a symlink component")
+		}
+	}
+	return nil
+}
+
+func validObjectID(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func digestBytes(value []byte) string {
+	h := sha256.Sum256(value)
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func digestStrings(values []string) string {
+	copyValues := append([]string(nil), values...)
+	sort.Strings(copyValues)
+	return digestBytes([]byte(strings.Join(copyValues, "\x00")))
+}

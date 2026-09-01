@@ -414,10 +414,13 @@ func validate(e Event, raw map[string]any) error {
 			return schema("E_SCHEMA", "invalid prompt answer")
 		}
 	}
-	for _, key := range []string{"base_head_digest", "tree_digest", "index_digest", "candidate_digest", "message_digest", "remote_digest"} {
+	for _, key := range []string{"baseline_index", "status_digest", "baseline_paths_digest", "base_head_digest", "tree_digest", "index_digest", "candidate_digest", "message_digest", "remote_digest"} {
 		if v, ok := e.Payload[key]; ok && !digestRE.MatchString(stringValue(v)) {
 			return schema("E_SCHEMA", "invalid evidence digest")
 		}
+	}
+	if v, ok := e.Payload["baseline_head"]; ok && !gitSHARe.MatchString(stringValue(v)) {
+		return schema("E_SCHEMA", "invalid baseline HEAD")
 	}
 	for _, key := range []string{"candidate_revision", "exit_code", "duration_ms"} {
 		if v, ok := e.Payload[key]; ok && !validNonNegativeInteger(v) {
@@ -459,7 +462,7 @@ func validateObjectKeys(name string, m map[string]any) error {
 		"ordering":    {"stream_id": true, "producer_seq": true, "causation_id": true, "correlation_id": true},
 		"idempotency": {"key": true, "attempt": true}, "capabilities": {"queue_state": true, "task_boundaries": true, "changed_paths": true, "monotonic_sequence": true},
 		"project": {"candidate_root": true, "client_cwd": true}, "extensions": {},
-		"payload": {"status": true, "state": true, "outcome": true, "reason": true, "error_code": true, "prompt_id": true, "prompt_kind": true, "blocking": true, "answer": true, "changes": true, "candidate_revision": true, "base_head_digest": true, "tree_digest": true, "index_digest": true, "candidate_digest": true, "verification_id": true, "verifier_set": true, "verifier_version": true, "exit_code": true, "duration_ms": true, "commit_job_id": true, "commit_sha": true, "message_digest": true, "push_job_id": true, "remote_digest": true, "ref": true, "extensions": true},
+		"payload": {"status": true, "state": true, "outcome": true, "reason": true, "error_code": true, "prompt_id": true, "prompt_kind": true, "blocking": true, "answer": true, "baseline_head": true, "baseline_index": true, "status_digest": true, "baseline_paths_digest": true, "changes": true, "candidate_revision": true, "base_head_digest": true, "tree_digest": true, "index_digest": true, "candidate_digest": true, "verification_id": true, "verifier_set": true, "verifier_version": true, "exit_code": true, "duration_ms": true, "commit_job_id": true, "commit_sha": true, "message_digest": true, "push_job_id": true, "remote_digest": true, "ref": true, "extensions": true},
 	}
 	allowed, exists := sets[name]
 	if !exists {
@@ -852,7 +855,7 @@ func (s *Store) Logs(ctx context.Context, repositoryID string, limit int) ([]Aud
 // project context are deliberately excluded from the durable causal buffer.
 func boundedPendingJSON(e Event) ([]byte, error) {
 	payload := map[string]any{}
-	for _, key := range []string{"status", "state", "outcome", "error_code", "prompt_id", "prompt_kind", "blocking", "candidate_revision", "base_head_digest", "tree_digest", "index_digest", "candidate_digest", "verification_id", "verifier_set", "verifier_version", "exit_code", "duration_ms", "commit_job_id", "commit_sha", "message_digest", "push_job_id", "remote_digest", "ref"} {
+	for _, key := range []string{"status", "state", "outcome", "error_code", "prompt_id", "prompt_kind", "blocking", "baseline_head", "baseline_index", "status_digest", "baseline_paths_digest", "candidate_revision", "base_head_digest", "tree_digest", "index_digest", "candidate_digest", "verification_id", "verifier_set", "verifier_version", "exit_code", "duration_ms", "commit_job_id", "commit_sha", "message_digest", "push_job_id", "remote_digest", "ref"} {
 		if value, ok := e.Payload[key]; ok {
 			payload[key] = value
 		}

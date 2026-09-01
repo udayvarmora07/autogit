@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"autogit/internal/repository"
 )
 
 func TestStorePersistsTypedJobAndOutboxAtomically(t *testing.T) {
@@ -115,8 +117,8 @@ func TestStoreUpgradesLegacyEvidenceColumnsAndSchemaVersion(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "3" {
-		t.Fatalf("schema version=%q, want 3", version)
+	if version != "4" {
+		t.Fatalf("schema version=%q, want 4", version)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(commits)`)
 	if err != nil {
@@ -196,6 +198,88 @@ func TestGitCommitIntentPersistsAcrossRestartAndContainsNoSnapshotBytes(t *testi
 	var tables int
 	if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='git_commit_intents'`).Scan(&tables); err != nil || tables != 1 {
 		t.Fatalf("intent table missing: count=%d err=%v", tables, err)
+	}
+}
+
+func TestSessionBaselinePersistsAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Session{ID: "session-1", RepositoryID: "repo-1", State: "ACTIVE", BaselineHead: "0123456789012345678901234567890123456789", BaselineIndex: "sha256:" + repeated('a'), StatusDigest: "sha256:" + repeated('b'), BaselinePathsDigest: "sha256:" + repeated('c'), ClientID: "codex", Revision: 1}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutSession(want) }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Session(context.Background(), want.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("session=%+v want %+v", got, want)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err = s.Session(context.Background(), want.ID)
+	if err != nil || got != want {
+		t.Fatalf("restarted session=%+v err=%v", got, err)
+	}
+}
+
+func TestRecordSessionBaselinePersistsOnlyBoundedRepositoryEvidence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	baseline := repository.Baseline{
+		Head:        "0123456789012345678901234567890123456789",
+		IndexDigest: "sha256:" + repeated('a'), StatusDigest: "sha256:" + repeated('b'), PathsDigest: "sha256:" + repeated('c'),
+		Paths: []string{"private.txt"}, Files: map[string]repository.FileObservation{"private.txt": {Content: []byte("private source"), Present: true}},
+	}
+	if err := s.RecordSessionBaseline(context.Background(), "session-2", "repo-2", "codex", baseline); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Session(context.Background(), "session-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaselineHead != baseline.Head || got.BaselineIndex != baseline.IndexDigest || got.StatusDigest != baseline.StatusDigest || got.BaselinePathsDigest != baseline.PathsDigest {
+		t.Fatalf("session baseline=%+v", got)
+	}
+	if got.State != "ACTIVE" || got.ClientID != "codex" {
+		t.Fatalf("session metadata=%+v", got)
+	}
+}
+
+func TestRecordSessionBaselineRejectsIdentityChangeOnReplay(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	base := repository.Baseline{Head: "0123456789012345678901234567890123456789", IndexDigest: "sha256:" + repeated('a'), StatusDigest: "sha256:" + repeated('b'), PathsDigest: "sha256:" + repeated('c')}
+	if err := s.RecordSessionBaseline(context.Background(), "session-3", "repo-3", "codex", base); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordSessionBaseline(context.Background(), "session-3", "repo-3", "codex", base); err != nil {
+		t.Fatalf("exact replay rejected: %v", err)
+	}
+	changed := base
+	changed.StatusDigest = "sha256:" + repeated('d')
+	if err := s.RecordSessionBaseline(context.Background(), "session-3", "repo-3", "codex", changed); err == nil {
+		t.Fatal("changed baseline replay accepted")
+	}
+	got, err := s.Session(context.Background(), "session-3")
+	if err != nil || got.StatusDigest != base.StatusDigest {
+		t.Fatalf("stored baseline changed after conflict: %+v err=%v", got, err)
 	}
 }
 
@@ -297,8 +381,8 @@ func TestStoreMigratesV2ToV3IntentTable(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "3" {
-		t.Fatalf("schema version=%q, want 3", version)
+	if version != "4" {
+		t.Fatalf("schema version=%q, want 4", version)
 	}
 }
 

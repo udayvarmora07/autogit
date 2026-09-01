@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"autogit/internal/gittransaction"
+	"autogit/internal/repository"
 )
 
 // Snapshot is a content observation at a baseline/current boundary. A caller
@@ -31,6 +32,7 @@ type Snapshot map[string]string
 type ObservedFile struct {
 	Content []byte
 	Mode    os.FileMode
+	Present bool
 }
 
 // ObservedSnapshot is the richer baseline/current form used when filesystem
@@ -62,6 +64,16 @@ type Candidate struct {
 	Paths                 []string
 }
 type Result struct{ Output string }
+
+type CaptureOptions struct {
+	// BeforeRead is intended for deterministic fault-injection tests and is
+	// never needed by normal callers.
+	BeforeRead  func(path string)
+	MaxFileSize int64
+}
+
+const defaultMaxCaptureSize int64 = 16 << 20
+
 type Runner interface {
 	Run(context.Context, string, map[string]string, ...string) (Result, error)
 }
@@ -85,7 +97,8 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 		}
 		seen[name] = true
 		old, had := baseline[name]
-		now, exists := current[name]
+		now, observed := current[name]
+		exists := observed && observedPresent(now)
 		if had {
 			if !exists || !sameObservation(old, now) {
 				// Baseline entries denote pre-existing changed paths. A
@@ -129,7 +142,7 @@ func (p Plan) OwnershipDigest() string { return p.ownershipDigest }
 func asObserved(snapshot Snapshot) ObservedSnapshot {
 	observed := make(ObservedSnapshot, len(snapshot))
 	for path, content := range snapshot {
-		observed[path] = ObservedFile{Content: []byte(content), Mode: 0644}
+		observed[path] = ObservedFile{Content: []byte(content), Mode: 0644, Present: true}
 	}
 	return observed
 }
@@ -145,10 +158,33 @@ func normalizedMode(mode os.FileMode) os.FileMode {
 	return mode
 }
 
+func observedPresent(file ObservedFile) bool {
+	return file.Present || file.Mode != 0 || file.Content != nil
+}
+
+// BuildCapturedPlanFromBaseline converts the real repository observation into
+// the staging ownership boundary and captures only the explicitly requested
+// current paths. Baseline file bytes remain in memory and are not persisted by
+// this package.
+func BuildCapturedPlanFromBaseline(root string, baseline repository.Baseline, requested []string) (Plan, error) {
+	ownedBaseline := make(ObservedSnapshot, len(baseline.Files))
+	for name, file := range baseline.Files {
+		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+	}
+	return BuildCapturedPlan(root, ownedBaseline, requested)
+}
+
 // CaptureObservedFiles reads an explicit set of regular files beneath root
 // into immutable observations. It does not walk a directory or infer paths;
 // callers must establish ownership before asking it to capture bytes.
 func CaptureObservedFiles(root string, paths []string) (ObservedSnapshot, error) {
+	return CaptureObservedFilesWithOptions(root, paths, CaptureOptions{})
+}
+
+// CaptureObservedFilesWithOptions is the race-aware capture boundary. It
+// checks the same path before and after reading, rejects replacement by a
+// different inode or file kind, and bounds bytes read into memory.
+func CaptureObservedFilesWithOptions(root string, paths []string, options CaptureOptions) (ObservedSnapshot, error) {
 	if root == "" {
 		return nil, errors.New("capture root is required")
 	}
@@ -165,6 +201,10 @@ func CaptureObservedFiles(root string, paths []string) (ObservedSnapshot, error)
 		return nil, errors.New("capture root is not a directory")
 	}
 	captured := make(ObservedSnapshot, len(paths))
+	maxFileSize := options.MaxFileSize
+	if maxFileSize <= 0 {
+		maxFileSize = defaultMaxCaptureSize
+	}
 	for _, name := range paths {
 		if err := safePath(name); err != nil {
 			return nil, err
@@ -187,13 +227,37 @@ func CaptureObservedFiles(root string, paths []string) (ObservedSnapshot, error)
 		if !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("capture %q: not a regular file", name)
 		}
+		if info.Size() > maxFileSize {
+			return nil, fmt.Errorf("capture %q exceeds capture limit", name)
+		}
+		if options.BeforeRead != nil {
+			options.BeforeRead(name)
+		}
+		beforeRead, err := os.Lstat(absolute)
+		if err != nil {
+			return nil, fmt.Errorf("capture %q changed during capture: %w", name, err)
+		}
+		if !sameFileObservation(info, beforeRead) || !beforeRead.Mode().IsRegular() {
+			return nil, fmt.Errorf("capture %q changed during capture", name)
+		}
 		content, err := os.ReadFile(absolute)
 		if err != nil {
 			return nil, fmt.Errorf("capture %q: %w", name, err)
 		}
-		captured[name] = ObservedFile{Content: append([]byte(nil), content...), Mode: info.Mode()}
+		afterRead, err := os.Lstat(absolute)
+		if err != nil || afterRead == nil || !sameFileObservation(beforeRead, afterRead) || !afterRead.Mode().IsRegular() {
+			return nil, fmt.Errorf("capture %q changed during capture", name)
+		}
+		if int64(len(content)) > maxFileSize {
+			return nil, fmt.Errorf("capture %q exceeds capture limit", name)
+		}
+		captured[name] = ObservedFile{Content: append([]byte(nil), content...), Mode: info.Mode(), Present: true}
 	}
 	return captured, nil
+}
+
+func sameFileObservation(a, b os.FileInfo) bool {
+	return os.SameFile(a, b) && a.Mode() == b.Mode() && a.Size() == b.Size() && a.ModTime() == b.ModTime()
 }
 
 func rejectSymlinkComponents(root, relative string) error {

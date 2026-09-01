@@ -157,6 +157,12 @@ Payload minimums:
 | Push | `push_job_id`, commit SHA, remote/ref identity digest, result/error code |
 | Session/task | state or outcome, with explicit reason for failure/cancellation |
 
+For `session.started`, the core may include the bounded baseline facts
+`baseline_head` (a Git object ID), `baseline_index`, `status_digest`, and
+`baseline_paths_digest` (SHA-256 digests). Raw status output, paths, and file
+contents are not event payload facts; the state store retains only these
+identity/digest values.
+
 Raw paths, diffs, source, command output, prompt text, credentials, tokens,
 remote URLs, and unredacted commit messages are not payload facts.
 

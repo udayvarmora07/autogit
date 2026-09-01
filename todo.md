@@ -38,6 +38,23 @@ security, provider, native-OS, or release gates.
 - [x] Provider, adapter, install, coordinator, and public-preflight building
   blocks with deterministic fake/contract tests.
 
+## Completed execution batch (2026-09-01)
+
+These eight bounded slices advance the next implementation order without
+claiming a phase exit:
+
+- [x] Repository observation port for real `HEAD`, index, and porcelain status.
+- [x] Deterministic status parsing with rename/copy source and destination.
+- [x] Fail-closed repository-relative path validation, including control and
+  escaping paths.
+- [x] Baseline file observations with mode, presence, regular-file, and
+  symlink-component handling.
+- [x] Direct baseline-to-staging ownership handoff for explicit requested
+  paths.
+- [x] Race-aware and size-bounded current-file capture with replacement tests.
+- [x] Durable session baseline schema migration and typed retrieval (v4).
+- [x] Idempotent baseline persistence plus redacted canonical event payloads.
+
 ## Next implementation order
 
 - [ ] Freeze Phase 0 terminology, requirement IDs, schema/lifecycle/threat

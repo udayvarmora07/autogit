@@ -88,6 +88,17 @@ func TestDecodeAppliesEmbeddedSchemaTypes(t *testing.T) {
 	}
 }
 
+func TestDecodeAcceptsSessionBaselineEvidence(t *testing.T) {
+	input := strings.Replace(validEvent, `"payload":{}`, `"payload":{"baseline_head":"0123456789012345678901234567890123456789","baseline_index":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","baseline_paths_digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`, 1)
+	e, err := Decode([]byte(input), 64<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Payload["baseline_head"] != "0123456789012345678901234567890123456789" {
+		t.Fatalf("baseline payload=%#v", e.Payload)
+	}
+}
+
 func TestStoreMakesDuplicateDeliveryAndDigestConflictDurable(t *testing.T) {
 	e, err := Decode([]byte(validEvent), 64<<10)
 	if err != nil {

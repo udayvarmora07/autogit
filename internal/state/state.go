@@ -19,12 +19,13 @@ import (
 	"time"
 
 	"autogit/internal/commit"
+	"autogit/internal/repository"
 
 	_ "modernc.org/sqlite"
 )
 
 const (
-	currentSchemaVersion  = 3
+	currentSchemaVersion  = 4
 	CommitRequested       = "COMMIT_REQUESTED"
 	CommitQueued          = "QUEUED"
 	CommitRunning         = "RUNNING"
@@ -75,9 +76,9 @@ type Policy struct {
 	Revision                                         int64
 }
 type Session struct {
-	ID, RepositoryID, State               string
-	BaselineHead, BaselineIndex, ClientID string
-	Revision                              int64
+	ID, RepositoryID, State                                                  string
+	BaselineHead, BaselineIndex, StatusDigest, BaselinePathsDigest, ClientID string
+	Revision                                                                 int64
 }
 type Task struct {
 	ID, SessionID, State string
@@ -181,7 +182,7 @@ CREATE TABLE IF NOT EXISTS commits (id TEXT PRIMARY KEY,candidate_digest TEXT NO
 CREATE TABLE IF NOT EXISTS git_commit_intents (id TEXT PRIMARY KEY,repo_dir TEXT NOT NULL,ref TEXT NOT NULL,parent_sha TEXT NOT NULL,tree_oid TEXT NOT NULL,message TEXT NOT NULL,candidate_digest TEXT NOT NULL,message_digest TEXT NOT NULL,snapshot_digest TEXT NOT NULL,policy_digest TEXT NOT NULL,verifier_digest TEXT NOT NULL,guard_digest TEXT NOT NULL,sha TEXT NOT NULL DEFAULT '',state TEXT NOT NULL,reason_code TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pushes (id TEXT PRIMARY KEY,commit_job_id TEXT NOT NULL,remote_digest TEXT,owner TEXT,name TEXT,ref TEXT,commit_sha TEXT NOT NULL,state TEXT NOT NULL,local_only INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS policies (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,decision TEXT,visibility TEXT,workflow TEXT,local_only INTEGER NOT NULL,public_consent INTEGER NOT NULL,revision INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,client_id TEXT,revision INTEGER NOT NULL);
+	CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,status_digest TEXT,baseline_paths_digest TEXT,client_id TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts (id TEXT PRIMARY KEY,task_id TEXT NOT NULL,kind TEXT,state TEXT,idempotency_key TEXT UNIQUE,blocking INTEGER NOT NULL,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS changesets (id TEXT PRIMARY KEY,task_id TEXT NOT NULL,base_sha TEXT,tree_digest TEXT,index_digest TEXT,state TEXT,revision INTEGER NOT NULL);
@@ -202,8 +203,12 @@ CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
 		_ = tx.Rollback()
 		return err
 	}
+	if err := ensureSessionBaselineColumns(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 	if version < currentSchemaVersion {
-		if version != 0 && version != 1 && version != 2 {
+		if version != 0 && version != 1 && version != 2 && version != 3 {
 			_ = tx.Rollback()
 			return fmt.Errorf("unsupported state schema version %d", version)
 		}
@@ -213,6 +218,36 @@ CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
 		}
 	}
 	return tx.Commit()
+}
+
+func ensureSessionBaselineColumns(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_info(sessions)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	present := map[string]bool{}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		present[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, column := range []string{"status_digest", "baseline_paths_digest"} {
+		if present[column] {
+			continue
+		}
+		if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add sessions.%s: %w", column, err)
+		}
+	}
+	return nil
 }
 
 func ensureCommitEvidenceColumns(tx *sql.Tx) error {
@@ -575,8 +610,53 @@ func (s *Store) Policy(id string) (Policy, error) {
 	return p, err
 }
 func (t *Tx) PutSession(x Session) error {
-	_, err := t.tx.Exec(`INSERT INTO sessions(id,repository_id,state,baseline_head,baseline_index,client_id,revision) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,baseline_head=excluded.baseline_head,baseline_index=excluded.baseline_index,revision=excluded.revision`, x.ID, x.RepositoryID, x.State, x.BaselineHead, x.BaselineIndex, x.ClientID, x.Revision)
+	_, err := t.tx.Exec(`INSERT INTO sessions(id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,client_id,revision) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,baseline_head=excluded.baseline_head,baseline_index=excluded.baseline_index,status_digest=excluded.status_digest,baseline_paths_digest=excluded.baseline_paths_digest,revision=excluded.revision`, x.ID, x.RepositoryID, x.State, x.BaselineHead, x.BaselineIndex, x.StatusDigest, x.BaselinePathsDigest, x.ClientID, x.Revision)
 	return err
+}
+
+func (s *Store) Session(ctx context.Context, id string) (Session, error) {
+	var x Session
+	err := s.db.QueryRowContext(ctx, `SELECT id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,client_id,revision FROM sessions WHERE id=?`, id).Scan(&x.ID, &x.RepositoryID, &x.State, &x.BaselineHead, &x.BaselineIndex, &x.StatusDigest, &x.BaselinePathsDigest, &x.ClientID, &x.Revision)
+	return x, err
+}
+
+// RecordSessionBaseline durably records only baseline identity and digests.
+// The source bytes and raw changed paths remain in the caller's in-memory
+// observation and are never written to the state database.
+func (s *Store) RecordSessionBaseline(ctx context.Context, sessionID, repositoryID, clientID string, baseline repository.Baseline) error {
+	if sessionID == "" || repositoryID == "" || clientID == "" || !validBaselineDigest(baseline.IndexDigest) || !validBaselineDigest(baseline.StatusDigest) || !validBaselineDigest(baseline.PathsDigest) || (baseline.Head != "" && !validObjectID(baseline.Head)) {
+		return errors.New("invalid session baseline")
+	}
+	return s.WithTx(ctx, func(tx *Tx) error {
+		var old Session
+		err := tx.tx.QueryRow(`SELECT id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,client_id,revision FROM sessions WHERE id=?`, sessionID).Scan(&old.ID, &old.RepositoryID, &old.State, &old.BaselineHead, &old.BaselineIndex, &old.StatusDigest, &old.BaselinePathsDigest, &old.ClientID, &old.Revision)
+		if err == nil {
+			if old.RepositoryID != repositoryID || old.ClientID != clientID || old.BaselineHead != baseline.Head || old.BaselineIndex != baseline.IndexDigest || old.StatusDigest != baseline.StatusDigest || old.BaselinePathsDigest != baseline.PathsDigest {
+				return errors.New("session baseline identity conflict")
+			}
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		return tx.PutSession(Session{ID: sessionID, RepositoryID: repositoryID, State: "ACTIVE", BaselineHead: baseline.Head, BaselineIndex: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, BaselinePathsDigest: baseline.PathsDigest, ClientID: clientID, Revision: 1})
+	})
+}
+
+func validBaselineDigest(value string) bool {
+	return gitDigestRE.MatchString(value)
+}
+
+func validObjectID(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 func (t *Tx) PutTask(x Task) error {
 	_, err := t.tx.Exec(`INSERT INTO tasks(id,session_id,state,revision) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,revision=excluded.revision`, x.ID, x.SessionID, x.State, x.Revision)

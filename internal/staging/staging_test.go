@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"autogit/internal/gittransaction"
+	"autogit/internal/repository"
 )
 
 func TestOwnershipExcludesPreexistingAndReportsOverlap(t *testing.T) {
@@ -153,6 +154,40 @@ func TestCaptureObservedFilesRejectsSymlinkComponent(t *testing.T) {
 	}
 }
 
+func TestCaptureObservedFilesRejectsPathReplacementDuringRead(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "candidate.txt")
+	if err := os.WriteFile(path, []byte("before\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "outside.txt")
+	if err := os.WriteFile(target, []byte("outside\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := CaptureObservedFilesWithOptions(root, []string{"candidate.txt"}, CaptureOptions{
+		BeforeRead: func(name string) {
+			if name == "candidate.txt" {
+				_ = os.Remove(path)
+				_ = os.Symlink(target, path)
+			}
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed during capture") {
+		t.Fatalf("replacement was accepted: %v", err)
+	}
+}
+
+func TestCaptureObservedFilesRejectsOversizedFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte("123456789"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := CaptureObservedFilesWithOptions(root, []string{"large.txt"}, CaptureOptions{MaxFileSize: 8})
+	if err == nil || !strings.Contains(err.Error(), "exceeds capture limit") {
+		t.Fatalf("oversized file was accepted: %v", err)
+	}
+}
+
 func TestBuildCapturedPlanDerivesOwnedSnapshotFromFilesystem(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "new.sh")
@@ -166,6 +201,40 @@ func TestBuildCapturedPlanDerivesOwnedSnapshotFromFilesystem(t *testing.T) {
 	entries := plan.CandidateSnapshot()
 	if len(entries) != 1 || entries[0].Path != "new.sh" || entries[0].Mode.Perm() != 0755 || string(entries[0].Content) != "#!/bin/sh\necho owned\n" {
 		t.Fatalf("candidate snapshot = %#v", entries)
+	}
+}
+
+func TestBuildCapturedPlanFromBaselineExcludesPreexistingPaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("user work\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "owned.txt"), []byte("candidate\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	baseline := repository.Baseline{Files: map[string]repository.FileObservation{
+		"existing.txt": {Content: []byte("user work\n"), Mode: 0644, Present: true},
+	}}
+	plan, err := BuildCapturedPlanFromBaseline(root, baseline, []string{"existing.txt", "owned.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 1 || entries[0].Path != "owned.txt" || entries[0].Mode.Perm() != 0755 {
+		t.Fatalf("candidate=%#v", entries)
+	}
+}
+
+func TestBuildCapturedPlanFromBaselineBlocksChangedPreexistingPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("changed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	baseline := repository.Baseline{Files: map[string]repository.FileObservation{
+		"existing.txt": {Content: []byte("before\n"), Mode: 0644, Present: true},
+	}}
+	if _, err := BuildCapturedPlanFromBaseline(root, baseline, []string{"existing.txt"}); err == nil {
+		t.Fatal("changed preexisting path was owned")
 	}
 }
 

@@ -269,7 +269,11 @@ be exercised without a user repository or network credentials:
   prohibition, and separate public-consent requirement.
 - `internal/repository`: canonical repository/worktree discovery and keyed
   non-reversible identities, including nested working directories and linked
-  worktree metadata checks.
+  worktree metadata checks; it now exposes a read-only baseline observation
+  boundary for HEAD, index/status digests, changed-path rename pairs, and
+  bounded in-memory file fingerprints. `internal/staging` can consume that
+  observation directly, while `internal/state` persists only the bounded
+  session evidence and rejects changed-baseline replays.
 - `internal/gitport`: argument-array execution with bounded output and exact
   SHA-to-`refs/heads/<ref>` push construction.
 - `internal/historyscan`: bounded, read-only exact-candidate-SHA history
@@ -318,7 +322,9 @@ be exercised without a user repository or network credentials:
   process boundary for trusted verifier argv.
 
 The following planned gates remain open and are not represented as completed:
-baseline/ownership derivation from session state, full trusted verification
+full session-driven baseline orchestration (the observation, staging, and
+durable evidence slices are implemented, but the CLI/session coordinator still
+needs wiring), full trusted verification
 policy configuration wiring, complete adapter discovery/installation and
 workflow orchestration in the CLI,
 the complete CLI publication/provider workflow, provider intent wiring from the
