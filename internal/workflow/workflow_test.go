@@ -160,6 +160,8 @@ func TestRunPlanCommitsOnlyTheOwnedPlanSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wantOwnership := plan.OwnershipDigest()
+	plan.Digest = "tampered public display digest"
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +192,42 @@ func TestRunPlanCommitsOnlyTheOwnedPlanSnapshot(t *testing.T) {
 	}
 	if content := git(t, repo, "show", got.Commit.SHA+":owned.txt"); content != "owned candidate" {
 		t.Fatalf("committed content=%q", content)
+	}
+	if got.OwnershipDigest != wantOwnership {
+		t.Fatalf("ownership digest=%q, want %q", got.OwnershipDigest, wantOwnership)
+	}
+	scanOnly, err := digest(got.Scan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GuardDigest == scanOnly {
+		t.Fatal("guard evidence did not bind the ownership digest")
+	}
+}
+
+func TestRunPlanRejectsEmptyPlanBeforeScanning(t *testing.T) {
+	repo := newRepository(t)
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	scanned := false
+	_, err = (Service{
+		Git:     gittransaction.SystemRunner{},
+		Intents: gittransaction.NewStateIntentPort(db),
+		Scanner: mutatingScanner{mutate: func() { scanned = true }},
+	}).RunPlan(context.Background(), Request{
+		ID:            "empty-plan",
+		RepositoryDir: repo,
+		Message:       "feat: reject empty plan",
+		Policy:        policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+	}, staging.Plan{})
+	if err == nil || !strings.Contains(err.Error(), "owned plan is empty") {
+		t.Fatalf("error=%v", err)
+	}
+	if scanned {
+		t.Fatal("empty plan reached scanner")
 	}
 }
 

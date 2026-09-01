@@ -288,9 +288,11 @@ be exercised without a user repository or network credentials:
   deletions as ambiguous, retains an explicitly observed file mode, and
   exposes a deep-copied immutable candidate snapshot directly compatible with
   `gittransaction`. It can capture explicit regular files from a canonical
-  root, rejects a final symlink, and derives a plan from that capture;
-  `workflow.RunPlan` accepts candidate bytes only from this ownership plan.
-  `gittransaction`
+  root, rejects symlinks at every path component, derives a plan from that
+  capture, and binds content, mode, and deletion state into a private ownership
+  digest. `workflow.RunPlan` rejects empty plans and accepts candidate bytes
+  only from this ownership plan; its guard evidence binds that immutable plan
+  digest. `gittransaction`
   additionally separates real-Git candidate preparation from commit/ref
   mutation with exact-tree, unchanged-HEAD/index, and idempotent recovery
   tests.

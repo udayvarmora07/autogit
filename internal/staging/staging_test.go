@@ -83,6 +83,24 @@ func TestBuildObservedPlanPreservesExecutableModeInCandidateSnapshot(t *testing.
 	}
 }
 
+func TestBuildObservedPlanDigestBindsObservedMode(t *testing.T) {
+	regular, err := BuildObservedPlan(nil, ObservedSnapshot{
+		"script.sh": {Content: []byte("echo same\n"), Mode: 0644},
+	}, []string{"script.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err := BuildObservedPlan(nil, ObservedSnapshot{
+		"script.sh": {Content: []byte("echo same\n"), Mode: 0755},
+	}, []string{"script.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if regular.Digest == executable.Digest {
+		t.Fatalf("mode change reused ownership digest %q", regular.Digest)
+	}
+}
+
 func TestCaptureObservedFilesCopiesRegularFileContentAndMode(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "script.sh")
@@ -115,6 +133,23 @@ func TestCaptureObservedFilesRejectsSymlink(t *testing.T) {
 	}
 	if _, err := CaptureObservedFiles(root, []string{"link.txt"}); err == nil {
 		t.Fatal("symlink was accepted as a candidate file")
+	}
+}
+
+func TestCaptureObservedFilesRejectsSymlinkComponent(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, "target")
+	if err := os.Mkdir(targetDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "file.txt"), []byte("target\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(targetDir, filepath.Join(root, "linked")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := CaptureObservedFiles(root, []string{"linked/file.txt"}); err == nil {
+		t.Fatal("symlinked parent directory was accepted")
 	}
 }
 

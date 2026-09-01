@@ -48,11 +48,12 @@ type Change struct {
 type SnapshotEntry = gittransaction.SnapshotEntry
 
 type Plan struct {
-	Paths     []string
-	Changes   []Change
-	Digest    string
-	BaseTree  string
-	candidate []SnapshotEntry
+	Paths           []string
+	Changes         []Change
+	Digest          string
+	BaseTree        string
+	candidate       []SnapshotEntry
+	ownershipDigest string
 }
 type Candidate struct {
 	Digest                string // canonical digest derived from TreeOID
@@ -108,12 +109,22 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 	sort.Slice(p.Changes, func(i, j int) bool { return p.Changes[i].Path < p.Changes[j].Path })
 	sort.Slice(p.candidate, func(i, j int) bool { return p.candidate[i].Path < p.candidate[j].Path })
 	h := sha256.New()
-	for _, c := range p.Changes {
-		fmt.Fprintf(h, "%s\x00%s\x00%s\x00", c.Path, c.Operation, c.Content)
+	for _, entry := range p.candidate {
+		fmt.Fprintf(h, "%s\x00%o\x00%t\x00", entry.Path, uint32(entry.Mode), entry.Delete)
+		if !entry.Delete {
+			_, _ = h.Write(entry.Content)
+		}
+		_, _ = h.Write([]byte{0})
 	}
 	p.Digest = "sha256:" + hex.EncodeToString(h.Sum(nil))
+	p.ownershipDigest = p.Digest
 	return p, nil
 }
+
+// OwnershipDigest returns the plan identity derived from its private immutable
+// candidate snapshot. Unlike the public Digest display field, it cannot be
+// altered by a caller after plan construction.
+func (p Plan) OwnershipDigest() string { return p.ownershipDigest }
 
 func asObserved(snapshot Snapshot) ObservedSnapshot {
 	observed := make(ObservedSnapshot, len(snapshot))
@@ -166,6 +177,9 @@ func CaptureObservedFiles(root string, paths []string) (ObservedSnapshot, error)
 		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 			return nil, errors.New("capture path escapes root")
 		}
+		if err := rejectSymlinkComponents(canonicalRoot, filepath.FromSlash(name)); err != nil {
+			return nil, err
+		}
 		info, err := os.Lstat(absolute)
 		if err != nil {
 			return nil, fmt.Errorf("capture %q: %w", name, err)
@@ -180,6 +194,21 @@ func CaptureObservedFiles(root string, paths []string) (ObservedSnapshot, error)
 		captured[name] = ObservedFile{Content: append([]byte(nil), content...), Mode: info.Mode()}
 	}
 	return captured, nil
+}
+
+func rejectSymlinkComponents(root, relative string) error {
+	current := root
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("capture path contains a symlink")
+		}
+	}
+	return nil
 }
 
 // BuildCapturedPlan captures the current bytes for explicit requested paths,

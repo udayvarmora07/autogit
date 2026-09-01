@@ -27,11 +27,14 @@ security, provider, native-OS, or release gates.
   at entry so an injected scanner/verifier or caller cannot alter the
   scan/verification/commit input after work begins.
 - [x] Explicit filesystem capture: `internal/staging` captures a named regular
-  file beneath a canonical root into copied bytes and mode, rejects a final
-  symlink, and can build an owned plan from that capture.
+  file beneath a canonical root into copied bytes and mode, rejects symlinks
+  at every path component, and can build an owned plan from that capture.
 - [x] Ownership-plan workflow handoff: `workflow.RunPlan` replaces any raw
   caller snapshot with `staging.Plan.CandidateSnapshot`, preventing candidate
   bytes from diverging from ownership evidence.
+- [x] Ownership digest binding: plan identity covers candidate bytes, mode, and
+  deletion state; `RunPlan` rejects empty plans and binds the immutable plan
+  digest into guard evidence.
 - [x] Provider, adapter, install, coordinator, and public-preflight building
   blocks with deterministic fake/contract tests.
 
@@ -41,10 +44,10 @@ security, provider, native-OS, or release gates.
   invariants, test-traceability matrix, and compatibility window.
 - [ ] Capture durable session/task baselines from real repository observations
   (HEAD, index, status, modes, and owned paths), then feed them into staging.
-- [ ] Extend real filesystem snapshot capture to reject symlink components and
-  race substitutions, and preserve rename/delete, ignore, linked-worktree,
-  Unicode/control-path, and concurrent-writer rules; explicit regular-file
-  content/mode capture and final-symlink rejection are covered.
+- [ ] Extend real filesystem snapshot capture to detect race substitutions and
+  preserve rename/delete, ignore, linked-worktree, Unicode/control-path, and
+  concurrent-writer rules; explicit regular-file content/mode capture and
+  component-symlink rejection are covered.
 - [ ] Load frozen trusted verifier configuration from policy/configuration and
   wire it into `verify` plus the session-driven local workflow.
 - [ ] Wire `sync` to reconcile lifecycle state, derive an owned candidate,

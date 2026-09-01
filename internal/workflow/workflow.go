@@ -22,22 +22,24 @@ import (
 // callers supply captured bytes rather than paths for the transaction to read
 // from a mutable worktree.
 type Request struct {
-	ID            string
-	RepositoryDir string
-	Snapshot      []gittransaction.SnapshotEntry
-	Message       string
-	Policy        policy.Policy
-	Verifiers     *verification.VerifierRegistry
+	ID              string
+	RepositoryDir   string
+	Snapshot        []gittransaction.SnapshotEntry
+	Message         string
+	Policy          policy.Policy
+	Verifiers       *verification.VerifierRegistry
+	ownershipDigest string
 }
 
 // Result contains the evidence that authorized the local commit. It contains
 // no source content, prompt material, command output, or secret findings.
 type Result struct {
-	Commit       gittransaction.Commit
-	Verification verification.VerificationResult
-	Scan         security.ScanResult
-	PolicyDigest string
-	GuardDigest  string
+	Commit          gittransaction.Commit
+	Verification    verification.VerificationResult
+	Scan            security.ScanResult
+	PolicyDigest    string
+	GuardDigest     string
+	OwnershipDigest string
 }
 
 // Service dependencies are deliberately narrow so callers cannot bypass a
@@ -54,6 +56,13 @@ type Service struct {
 // pairing plan evidence with different bytes.
 func (s Service) RunPlan(ctx context.Context, req Request, plan staging.Plan) (Result, error) {
 	req.Snapshot = plan.CandidateSnapshot()
+	if len(req.Snapshot) == 0 {
+		return Result{}, errors.New("owned plan is empty")
+	}
+	req.ownershipDigest = plan.OwnershipDigest()
+	if req.ownershipDigest == "" {
+		return Result{}, errors.New("owned plan evidence is missing")
+	}
 	return s.Run(ctx, req)
 }
 
@@ -84,15 +93,16 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	snapshot := securitySnapshot(req.Snapshot)
 	scanResult := scan.Scan(ctx, snapshot)
-	guardDigest, err := digest(scanResult)
+	guardDigest, err := digest(guardEvidence{Scan: scanResult, OwnershipDigest: req.ownershipDigest})
 	if err != nil {
 		return Result{}, fmt.Errorf("encode guard evidence: %w", err)
 	}
+	guardResult := Result{Scan: scanResult, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}
 	if !scanResult.Safe() {
-		return Result{Scan: scanResult, GuardDigest: guardDigest}, errors.New("security scan blocked candidate")
+		return guardResult, errors.New("security scan blocked candidate")
 	}
 	if req.Verifiers == nil || s.VerifierRunner == nil {
-		return Result{Scan: scanResult, GuardDigest: guardDigest}, errors.New("trusted verifier configuration is required")
+		return guardResult, errors.New("trusted verifier configuration is required")
 	}
 	policyDigest, err := digest(req.Policy)
 	if err != nil {
@@ -110,7 +120,7 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 		GuardDigest:    guardDigest,
 	})
 	if err != nil {
-		return Result{Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest}, err
+		return Result{Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}, err
 	}
 
 	verificationPolicy := verification.VerificationPolicy{
@@ -125,7 +135,7 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 		Dir:             info.Root,
 	}
 	verificationResult, err := req.Verifiers.Verify(ctx, verificationPolicy, verificationRequest, s.VerifierRunner)
-	result := Result{Verification: verificationResult, Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest}
+	result := Result{Verification: verificationResult, Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}
 	if err != nil {
 		return result, fmt.Errorf("verify candidate: %w", err)
 	}
@@ -138,6 +148,11 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	result.Commit = committed
 	return result, nil
+}
+
+type guardEvidence struct {
+	Scan            security.ScanResult `json:"scan"`
+	OwnershipDigest string              `json:"ownership_digest,omitempty"`
 }
 
 func cloneSnapshot(entries []gittransaction.SnapshotEntry) []gittransaction.SnapshotEntry {
