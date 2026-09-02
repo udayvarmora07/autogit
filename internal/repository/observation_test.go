@@ -64,6 +64,22 @@ func TestCaptureBaselineRecordsHeadIndexStatusAndOwnedFileFingerprints(t *testin
 	}
 }
 
+func TestObservationEnvironmentDoesNotInheritCredentials(t *testing.T) {
+	t.Setenv("GH_TOKEN", "secret")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	env := strings.Join(observationEnvironment(nil), "\n")
+	for _, name := range []string{"GH_TOKEN=", "AWS_SECRET_ACCESS_KEY="} {
+		if strings.Contains(env, name) {
+			t.Fatalf("credential leaked to observation environment: %s", name)
+		}
+	}
+	for _, name := range []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_SYSTEM=" + os.DevNull, "GIT_CONFIG_GLOBAL=" + os.DevNull} {
+		if !strings.Contains(env, name) {
+			t.Fatalf("git config isolation missing: %s", name)
+		}
+	}
+}
+
 func TestCaptureCommittedFilesReadsOnlyRequestedRegularTreeEntries(t *testing.T) {
 	root := t.TempDir()
 	head := strings.Repeat("a", 40)

@@ -308,7 +308,7 @@ func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
 	if !ok || !validGitRemoteAlias(alias) {
 		return remoteBindingError()
 	}
-	res, runErr := p.Runner.Run(ctx, p.Dir, "remote", "get-url", "--push", "--", alias)
+	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "get-url", "--push", "--", alias)...)
 	if len(res.Output) > maxOutput {
 		return ErrOutputLimit
 	}
@@ -322,7 +322,7 @@ func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
 	if err != nil {
 		return err
 	}
-	res, runErr = p.Runner.Run(ctx, p.Dir, args...)
+	res, runErr = p.Runner.Run(ctx, p.Dir, safeGitArgs(args...)...)
 	if runErr != nil || res.Err != nil {
 		return classifyFailure(runErrOrResult(runErr, res.Err), res.Output)
 	}
@@ -330,6 +330,10 @@ func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
 		return ErrOutputLimit
 	}
 	return nil
+}
+
+func safeGitArgs(args ...string) []string {
+	return append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper="}, args...)
 }
 
 const maxOutput = 1 << 20

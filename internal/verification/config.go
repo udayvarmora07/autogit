@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -180,4 +182,38 @@ func LoadRegistryFile(path string, max int64) (*VerifierRegistry, error) {
 		return nil, err
 	}
 	return LoadRegistry(raw, max)
+}
+
+// LoadTrustedRegistryFile is the execution-time loader. Verifier registries
+// are executable policy, so callers must keep them in AutoGit's protected
+// state directory rather than accepting a repository- or adapter-supplied
+// path. LoadRegistryFile remains available for read-only inspection/import.
+func LoadTrustedRegistryFile(path, trustedDir string, max int64) (*VerifierRegistry, error) {
+	if path == "" || trustedDir == "" {
+		return nil, errors.New("trusted verifier path and state directory are required")
+	}
+	root, err := filepath.Abs(trustedDir)
+	if err != nil {
+		return nil, err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, errors.New("trusted verifier state directory is invalid")
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return nil, errors.New("trusted verifier state directory is invalid")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return nil, errors.New("trusted verifier state directory permissions are too broad")
+	}
+	candidate, err := filepath.Abs(path)
+	if err != nil || filepath.Clean(candidate) != candidate {
+		return nil, errors.New("trusted verifier path is invalid")
+	}
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return nil, errors.New("trusted verifier configuration must be inside state directory")
+	}
+	return LoadRegistryFile(candidate, max)
 }

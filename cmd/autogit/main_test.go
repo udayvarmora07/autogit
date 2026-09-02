@@ -141,7 +141,7 @@ func TestVerifyReconstructsCleanSessionWithoutCreatingCommitIntent(t *testing.T)
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
+	verifierConfig := filepath.Join(stateDir, "verifiers.json")
 	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestSyncCompleteCreatesVerifiedAutoGitCommitFromCleanSession(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
+	verifierConfig := filepath.Join(stateDir, "verifiers.json")
 	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}

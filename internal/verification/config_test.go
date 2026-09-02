@@ -86,6 +86,13 @@ func TestLoadRegistryEnforcesInputAndVerifierLimits(t *testing.T) {
 	if _, err := LoadRegistry([]byte(strings.Repeat("x", 100)), 0); err == nil {
 		t.Fatal("zero input limit accepted")
 	}
+	for _, name := range []string{"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "LD_DEBUG"} {
+		spec := validVerifierConfigSpec(t, "loader")
+		spec["environment"] = map[string]string{name: "/tmp/loader.so"}
+		if _, err := LoadRegistry(verifierConfigJSON(t, []map[string]any{spec}), 1<<20); err == nil {
+			t.Fatalf("loader injection variable accepted: %s", name)
+		}
+	}
 }
 
 func TestLoadRegistryFileReadsBoundedConfiguration(t *testing.T) {
@@ -124,5 +131,26 @@ func TestLoadRegistryFileRejectsBroadUnixPermissions(t *testing.T) {
 	}
 	if _, err := LoadRegistryFile(path, 1<<20); err == nil {
 		t.Fatal("broad-permission verifier configuration accepted")
+	}
+}
+
+func TestLoadTrustedRegistryFileRequiresProtectedStateDirectory(t *testing.T) {
+	state := t.TempDir()
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "verifiers.json")
+	if err := os.WriteFile(path, verifierConfigJSON(t, nil), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTrustedRegistryFile(path, state, 1<<20); err == nil {
+		t.Fatal("verifier configuration outside protected state directory accepted")
+	}
+	inside := filepath.Join(state, "verifiers.json")
+	if err := os.WriteFile(inside, verifierConfigJSON(t, nil), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTrustedRegistryFile(inside, state, 1<<20); err != nil {
+		t.Fatalf("protected verifier configuration rejected: %v", err)
 	}
 }

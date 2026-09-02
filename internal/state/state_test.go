@@ -114,6 +114,26 @@ func TestCommitJobIdentityCannotBeReplacedByRetry(t *testing.T) {
 	}
 }
 
+func TestRecordCommitJobUpdatesAtomically(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	job := CommitJob{ID: "atomic-job", CandidateDigest: "sha256:" + repeated('a'), MessageDigest: "sha256:" + repeated('b'), State: CommitRequested}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutCommitJob(job) }); err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("d", 40)
+	if err := s.RecordCommitJob(context.Background(), job.ID, sha); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.CommitJob(job.ID)
+	if err != nil || got.CommitSHA != sha || got.State != CommitCreated {
+		t.Fatalf("job=%+v err=%v", got, err)
+	}
+}
+
 func TestStoreUpgradesLegacyEvidenceColumnsAndSchemaVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	db, err := sql.Open("sqlite", path)

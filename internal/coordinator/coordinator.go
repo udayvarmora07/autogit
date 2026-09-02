@@ -127,13 +127,7 @@ func (s *StateStore) CommitStatus(_ context.Context, id string) (string, string,
 	return j.State, j.CommitSHA, CommitRequest{ID: j.ID, CandidateDigest: j.CandidateDigest, BaseSHA: j.BaseSHA, MessageDigest: j.MessageDigest, PolicyDigest: j.PolicyDigest, VerifierDigest: j.VerifierDigest, GuardDigest: j.GuardDigest}, e
 }
 func (s *StateStore) RecordCommit(ctx context.Context, id, sha string) error {
-	j, e := s.DB.CommitJob(id)
-	if e != nil {
-		return e
-	}
-	j.CommitSHA = sha
-	j.State = state.CommitCreated
-	return s.DB.WithTx(ctx, func(tx *state.Tx) error { return tx.PutCommitJob(j) })
+	return s.DB.RecordCommitJob(ctx, id, sha)
 }
 func (s *StateStore) RecordReconcile(ctx context.Context, id string) error {
 	j, e := s.DB.CommitJob(id)

@@ -113,6 +113,23 @@ func TestBuildObservedPlanDigestBindsObservedMode(t *testing.T) {
 	}
 }
 
+func TestBuildObservedPlanRejectsFileKindChanges(t *testing.T) {
+	_, err := BuildObservedPlan(
+		ObservedSnapshot{"link": {Content: nil, Mode: os.ModeSymlink, Present: true, Symlink: true}},
+		ObservedSnapshot{"link": {Content: []byte("outside"), Mode: 0644, Present: true}},
+		[]string{"link"},
+	)
+	if err == nil {
+		t.Fatal("file-kind change was accepted")
+	}
+}
+
+func TestSafePathRejectsControlCharacters(t *testing.T) {
+	if err := safePath("bad\nname"); err == nil {
+		t.Fatal("control-character path accepted")
+	}
+}
+
 func TestCaptureObservedFilesCopiesRegularFileContentAndMode(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "script.sh")

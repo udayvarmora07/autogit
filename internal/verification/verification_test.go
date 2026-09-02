@@ -46,6 +46,14 @@ func TestVerifyCancelsAtTimeoutAndBoundsOutput(t *testing.T) {
 	}
 }
 
+func TestTrustedArgvRejectsInterpreterLaunchers(t *testing.T) {
+	for _, name := range []string{"python", "python3", "node", "perl", "ruby"} {
+		if err := trustedArgv([]string{"/usr/bin/" + name, "script"}); err == nil {
+			t.Fatalf("interpreter launcher accepted: %s", name)
+		}
+	}
+}
+
 type runner struct {
 	out  string
 	args []string

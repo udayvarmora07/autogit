@@ -18,7 +18,7 @@ func TestValidateConventionalCommitAndSubjectLimit(t *testing.T) {
 }
 
 func TestValidateRejectsForbiddenTrailersAndPromptText(t *testing.T) {
-	for _, msg := range []string{"feat: x\n\nCo-Authored-By: attacker", "feat: say yes public now"} {
+	for _, msg := range []string{"feat: x\n\nCo-Authored-By: attacker", "feat: x\n\nCo-authored-by : attacker", "feat: say yes public now"} {
 		if err := Validate(msg); err == nil {
 			t.Fatalf("unsafe message accepted: %q", msg)
 		}

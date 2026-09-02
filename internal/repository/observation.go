@@ -35,7 +35,7 @@ func (r SystemRunner) Run(ctx context.Context, dir string, env map[string]string
 	if max <= 0 {
 		max = 1 << 20
 	}
-	command := exec.CommandContext(ctx, executable, args...)
+	command := exec.CommandContext(ctx, executable, observationArgs(executable, args...)...)
 	command.Dir = dir
 	command.Env = observationEnvironment(env)
 	output := &boundedObservationOutput{max: max}
@@ -67,16 +67,19 @@ func (b *boundedObservationOutput) Write(value []byte) (int, error) {
 }
 
 func observationEnvironment(extra map[string]string) []string {
-	env := make([]string, 0, len(os.Environ())+len(extra)+3)
+	env := make([]string, 0, len(os.Environ())+len(extra)+7)
 	for _, item := range os.Environ() {
 		key := item
 		if at := strings.IndexByte(item, '='); at >= 0 {
 			key = item[:at]
 		}
-		if strings.HasPrefix(key, "GIT_") || strings.HasPrefix(key, "SSH_") || key == "CDPATH" {
+		upper := strings.ToUpper(key)
+		if strings.HasPrefix(upper, "GIT_") || strings.HasPrefix(upper, "SSH_") || key == "CDPATH" {
 			continue
 		}
-		env = append(env, item)
+		if upper == "PATH" || upper == "HOME" || upper == "TMPDIR" || upper == "SYSTEMROOT" || strings.HasPrefix(upper, "LANG") || strings.HasPrefix(upper, "LC_") {
+			env = append(env, item)
+		}
 	}
 	keys := make([]string, 0, len(extra))
 	for key := range extra {
@@ -84,9 +87,24 @@ func observationEnvironment(extra map[string]string) []string {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		env = append(env, key+"="+extra[key])
+		upper := strings.ToUpper(key)
+		if upper == "PATH" || upper == "HOME" || upper == "TMPDIR" || upper == "SYSTEMROOT" || strings.HasPrefix(upper, "LANG") || strings.HasPrefix(upper, "LC_") {
+			env = append(env, key+"="+extra[key])
+		}
 	}
+	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	return env
+}
+
+func safeGitArgs(args ...string) []string {
+	return append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper="}, args...)
+}
+
+func observationArgs(executable string, args ...string) []string {
+	if filepath.Base(executable) == "git" || executable == "git" {
+		return safeGitArgs(args...)
+	}
+	return args
 }
 
 type Runner interface {
@@ -132,6 +150,7 @@ type FileObservation struct {
 	Content []byte
 	Mode    os.FileMode
 	Present bool
+	Symlink bool
 }
 
 type Baseline struct {
@@ -173,7 +192,7 @@ func (b Baseline) Clone() Baseline {
 	n.Paths = append([]string(nil), b.Paths...)
 	n.Files = make(map[string]FileObservation, len(b.Files))
 	for name, file := range b.Files {
-		n.Files[name] = FileObservation{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+		n.Files[name] = FileObservation{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present, Symlink: file.Symlink}
 	}
 	return n
 }
@@ -454,7 +473,7 @@ func captureBaselineFile(root, name string, maxFileSize int64, beforeRead func(s
 		if statErr != nil || !sameFileObservation(info, before) {
 			return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
 		}
-		target, readErr := os.Readlink(absolute)
+		_, readErr := os.Readlink(absolute)
 		if readErr != nil {
 			return FileObservation{}, readErr
 		}
@@ -462,7 +481,7 @@ func captureBaselineFile(root, name string, maxFileSize int64, beforeRead func(s
 		if statErr != nil || !sameFileObservation(before, after) {
 			return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
 		}
-		return FileObservation{Content: []byte(target), Mode: info.Mode(), Present: true}, nil
+		return FileObservation{Mode: info.Mode(), Present: true, Symlink: true}, nil
 	}
 	if !info.Mode().IsRegular() {
 		return FileObservation{Mode: info.Mode(), Present: true}, nil
@@ -477,7 +496,16 @@ func captureBaselineFile(root, name string, maxFileSize int64, beforeRead func(s
 	if err != nil || !sameFileObservation(info, before) || !before.Mode().IsRegular() {
 		return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
 	}
-	content, err := os.ReadFile(absolute)
+	file, err := os.Open(absolute)
+	if err != nil {
+		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !sameFileObservation(before, opened) || !opened.Mode().IsRegular() {
+		return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
 	if err != nil {
 		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
 	}

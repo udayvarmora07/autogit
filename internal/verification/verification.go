@@ -113,6 +113,8 @@ func trustedArgv(argv []string) error {
 	switch base {
 	case "sh", "bash", "dash", "zsh", "fish", "cmd", "cmd.exe", "powershell", "pwsh", "env", "xargs", "nohup", "sudo", "doas":
 		return errors.New("shell verifier is not allowed")
+	case "python", "python2", "python3", "node", "perl", "ruby", "php":
+		return errors.New("interpreter verifier is not allowed")
 	}
 	for _, a := range argv {
 		if strings.IndexByte(a, 0) >= 0 {

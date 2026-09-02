@@ -378,7 +378,7 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
 		return cliError{"E_SCOPE", "sync session does not match repository or client"}
 	}
-	registry, err := verification.LoadRegistryFile(options.Verifiers, 0)
+	registry, err := verification.LoadTrustedRegistryFile(options.Verifiers, dir, 0)
 	if err != nil {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}
@@ -481,7 +481,7 @@ func runVerify(args []string, dir string, out io.Writer) error {
 	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
 		return cliError{"E_SCOPE", "verify session does not match repository or client"}
 	}
-	registry, err := verification.LoadRegistryFile(options.Verifiers, 0)
+	registry, err := verification.LoadTrustedRegistryFile(options.Verifiers, dir, 0)
 	if err != nil {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}

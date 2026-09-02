@@ -9,12 +9,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"autogit/internal/gittransaction"
 	"autogit/internal/repository"
@@ -33,6 +35,7 @@ type ObservedFile struct {
 	Content []byte
 	Mode    os.FileMode
 	Present bool
+	Symlink bool
 }
 
 // ObservedSnapshot is the richer baseline/current form used when filesystem
@@ -104,6 +107,9 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 		now, observed := current[name]
 		exists := observed && observedPresent(now)
 		if had {
+			if old.Symlink != now.Symlink {
+				return Plan{}, fmt.Errorf("ambiguous file kind for %q", name)
+			}
 			if !exists || !sameObservation(old, now) {
 				// Baseline entries denote pre-existing changed paths. A
 				// later edit or deletion cannot be attributed to this
@@ -116,6 +122,9 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 		}
 		if !exists && !had {
 			continue
+		}
+		if now.Symlink {
+			return Plan{}, fmt.Errorf("symlink candidate is not supported for %q", name)
 		}
 		op := "added"
 		p.Paths = append(p.Paths, name)
@@ -152,7 +161,7 @@ func asObserved(snapshot Snapshot) ObservedSnapshot {
 }
 
 func sameObservation(left, right ObservedFile) bool {
-	return normalizedMode(left.Mode) == normalizedMode(right.Mode) && bytes.Equal(left.Content, right.Content)
+	return left.Symlink == right.Symlink && normalizedMode(left.Mode) == normalizedMode(right.Mode) && bytes.Equal(left.Content, right.Content)
 }
 
 func normalizedMode(mode os.FileMode) os.FileMode {
@@ -163,7 +172,7 @@ func normalizedMode(mode os.FileMode) os.FileMode {
 }
 
 func observedPresent(file ObservedFile) bool {
-	return file.Present || file.Mode != 0 || file.Content != nil
+	return file.Present || file.Mode != 0 || file.Content != nil || file.Symlink
 }
 
 // BuildCapturedPlanFromBaseline converts the real repository observation into
@@ -173,7 +182,7 @@ func observedPresent(file ObservedFile) bool {
 func BuildCapturedPlanFromBaseline(root string, baseline repository.Baseline, requested []string) (Plan, error) {
 	ownedBaseline := make(ObservedSnapshot, len(baseline.Files))
 	for name, file := range baseline.Files {
-		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present, Symlink: file.Symlink}
 	}
 	return BuildCapturedPlan(root, ownedBaseline, requested)
 }
@@ -184,11 +193,11 @@ func BuildCapturedPlanFromBaseline(root string, baseline repository.Baseline, re
 func BuildPlanFromBaselines(baseline, current repository.Baseline, requested []string) (Plan, error) {
 	ownedBaseline := make(ObservedSnapshot, len(baseline.Files))
 	for name, file := range baseline.Files {
-		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present, Symlink: file.Symlink}
 	}
 	ownedCurrent := make(ObservedSnapshot, len(current.Files))
 	for name, file := range current.Files {
-		ownedCurrent[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+		ownedCurrent[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present, Symlink: file.Symlink}
 	}
 	return BuildObservedPlan(ownedBaseline, ownedCurrent, requested)
 }
@@ -259,7 +268,17 @@ func CaptureObservedFilesWithOptions(root string, paths []string, options Captur
 		if !sameFileObservation(info, beforeRead) || !beforeRead.Mode().IsRegular() {
 			return nil, fmt.Errorf("capture %q changed during capture", name)
 		}
-		content, err := os.ReadFile(absolute)
+		file, err := os.Open(absolute)
+		if err != nil {
+			return nil, fmt.Errorf("capture %q: %w", name, err)
+		}
+		opened, err := file.Stat()
+		if err != nil || !sameFileObservation(beforeRead, opened) || !opened.Mode().IsRegular() {
+			_ = file.Close()
+			return nil, fmt.Errorf("capture %q changed during capture", name)
+		}
+		content, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
+		_ = file.Close()
 		if err != nil {
 			return nil, fmt.Errorf("capture %q: %w", name, err)
 		}
@@ -358,6 +377,11 @@ func safePath(s string) error {
 	}
 	if len(s) >= 2 && s[1] == ':' {
 		return errors.New("unsafe path")
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return errors.New("unsafe path")
+		}
 	}
 	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if part == "." || part == ".." {

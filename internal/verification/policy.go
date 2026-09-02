@@ -418,7 +418,7 @@ func validateEnvironment(env map[string]string) error {
 
 func unsafeEnvironmentName(k string) bool {
 	u := strings.ToUpper(k)
-	for _, term := range []string{"SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL", "PRIVATE_KEY", "AUTH", "SSH_", "AWS_", "GIT_CONFIG", "GIT_SSH", "HOME", "USERPROFILE", "XDG_"} {
+	for _, term := range []string{"SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL", "PRIVATE_KEY", "AUTH", "SSH_", "AWS_", "GIT_CONFIG", "GIT_SSH", "HOME", "USERPROFILE", "XDG_", "LD_", "DYLD_"} {
 		if strings.Contains(u, term) {
 			return true
 		}

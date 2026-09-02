@@ -56,6 +56,7 @@ var digestRE = regexp.MustCompile(`^(sha256|hmac-sha256):[a-f0-9]{64}$`)
 var auditDigestRE = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 var auditReasonRE = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 var gitSHARe = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+var opaqueRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`)
 var eventTypes = map[string]bool{"session.started": true, "session.idle": true, "session.ended": true, "session.crashed": true, "session.recovered": true, "prompt.submitted": true, "prompt.requested": true, "prompt.queued": true, "prompt.presented": true, "prompt.answered": true, "prompt.expired": true, "prompt.cancelled": true, "task.started": true, "task.updated": true, "task.completion_candidate": true, "task.completed": true, "task.failed": true, "task.cancelled": true, "tool.started": true, "tool.completed": true, "files.changed": true, "model.stopped": true, "repository.discovered": true, "policy.consent_requested": true, "policy.set": true, "change.detected": true, "change.staged": true, "change.invalidated": true, "verification.requested": true, "verification.started": true, "verification.passed": true, "verification.failed": true, "verification.invalidated": true, "commit.requested": true, "commit.created": true, "commit.failed": true, "commit.reconciled": true, "push.requested": true, "push.succeeded": true, "push.failed": true, "push.skipped": true}
 var ingressTypes = map[string]bool{"session.started": true, "session.idle": true, "session.ended": true, "prompt.submitted": true, "task.started": true, "task.updated": true, "task.completed": true, "task.failed": true, "tool.started": true, "tool.completed": true, "files.changed": true, "model.stopped": true}
 var domainTypes = map[string]bool{"repository.discovered": true, "policy.consent_requested": true, "policy.set": true, "session.crashed": true, "session.recovered": true, "prompt.requested": true, "prompt.queued": true, "prompt.presented": true, "prompt.answered": true, "prompt.expired": true, "prompt.cancelled": true, "task.completion_candidate": true, "task.completed": true, "task.failed": true, "task.cancelled": true, "change.detected": true, "change.staged": true, "change.invalidated": true, "verification.requested": true, "verification.started": true, "verification.passed": true, "verification.failed": true, "verification.invalidated": true, "commit.requested": true, "commit.created": true, "commit.failed": true, "commit.reconciled": true, "push.requested": true, "push.succeeded": true, "push.failed": true, "push.skipped": true}
@@ -453,7 +454,7 @@ func numberValue(v any) (int64, bool) {
 	}
 }
 func opaque(s string) bool {
-	return len(s) > 0 && len(s) <= 256 && regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`).MatchString(s)
+	return len(s) > 0 && len(s) <= 256 && opaqueRe.MatchString(s)
 }
 func validateObjectKeys(name string, m map[string]any) error {
 	sets := map[string]map[string]bool{

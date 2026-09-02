@@ -325,6 +325,35 @@ func (s *Store) CommitJob(id string) (CommitJob, error) {
 	return j, err
 }
 
+// RecordCommitJob performs the commit result transition in the same database
+// transaction as its identity check. This prevents a second process from
+// overwriting a result after a caller read the job state.
+func (s *Store) RecordCommitJob(ctx context.Context, id, sha string) error {
+	if !gitCommitSHARE.MatchString(sha) || id == "" {
+		return ErrInvalidGitCommitSHA
+	}
+	return s.WithTx(ctx, func(tx *Tx) error {
+		result, err := tx.tx.Exec(`UPDATE commits SET commit_sha=?,state=?,updated_at=? WHERE id=? AND (commit_sha='' OR commit_sha=?)`, sha, CommitCreated, time.Now().UnixNano(), id, sha)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			var exists int
+			if err := tx.tx.QueryRow(`SELECT 1 FROM commits WHERE id=?`, id).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+				return os.ErrNotExist
+			} else if err != nil {
+				return err
+			}
+			return errors.New("commit result identity conflict")
+		}
+		return nil
+	})
+}
+
 var (
 	gitCommitSHARE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 	gitIntentIDRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -565,23 +594,35 @@ func (s *Store) AcquireLease(ctx context.Context, l Lease, now int64) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
 	var owner string
 	var exp int64
-	err = tx.QueryRow(`SELECT owner,expires_at FROM leases WHERE lease_key=?`, l.Key).Scan(&owner, &exp)
+	err = conn.QueryRowContext(ctx, `SELECT owner,expires_at FROM leases WHERE lease_key=?`, l.Key).Scan(&owner, &exp)
 	if err == nil && exp > now && owner != l.Owner {
-		_ = tx.Rollback()
 		return errors.New("lease held")
 	}
-	_, err = tx.Exec(`INSERT INTO leases(lease_key,owner,expires_at) VALUES(?,?,?) ON CONFLICT(lease_key) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at`, l.Key, l.Owner, l.ExpiresAt)
+	_, err = conn.ExecContext(ctx, `INSERT INTO leases(lease_key,owner,expires_at) VALUES(?,?,?) ON CONFLICT(lease_key) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at`, l.Key, l.Owner, l.ExpiresAt)
 	if err != nil {
-		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 func (s *Store) ReleaseLease(key, owner string) error {
 	_, err := s.db.Exec(`DELETE FROM leases WHERE lease_key=? AND owner=?`, key, owner)

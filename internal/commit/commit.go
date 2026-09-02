@@ -42,9 +42,17 @@ func Validate(message string) error {
 		return fmt.Errorf("message is not Conventional Commit format")
 	}
 	lower := strings.ToLower(message)
-	for _, bad := range []string{"co-authored-by:", "signed-off-by:", "gh-token", "yes public", "password", "secret"} {
-		if strings.Contains(lower, bad) {
-			return fmt.Errorf("forbidden trailer or sensitive content")
+	for _, line := range strings.Split(lower, "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, trailer := range []string{"co-authored-by", "signed-off-by"} {
+			if strings.HasPrefix(trimmed, trailer) && strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(trimmed, trailer)), ":") {
+				return fmt.Errorf("forbidden trailer or sensitive content")
+			}
+		}
+		for _, bad := range []string{"gh-token", "yes public", "password", "secret"} {
+			if strings.Contains(trimmed, bad) {
+				return fmt.Errorf("forbidden trailer or sensitive content")
+			}
 		}
 	}
 	return nil
