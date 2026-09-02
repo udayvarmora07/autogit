@@ -85,6 +85,8 @@ flowchart LR
 | TM-022 | Disclosure/Elevation | GitHub publication triggers hostile CI or third-party automation. | High | Medium | Display remote workflow risk, least-privilege token, safe branch mode, no secrets in verification environment, provider permissions review. |
 | TM-023 | Tampering | Oversize guard reads worktree size instead of staged blob or fails cross-platform. | High | Medium | Inspect candidate Git blob/object sizes with portable APIs; scanner error blocks. |
 | TM-024 | Disclosure | Local-only mode contacts provider through status/auth/push or existing remote. | Critical | High | Enforce network-denied policy before provider resolution; integration test with existing remotes and network observer. |
+| TM-025 | Elevation/Spoofing | A verifier registry supplied by an adapter or repository executes an unapproved program. | Critical | High | Execution-time loading requires a regular 0600 file inside AutoGit's protected state directory; freeze and digest the registry before verification; reject shell/interpreter launchers and bound environment, output, and time. |
+| TM-026 | Elevation/Disclosure | Git observation evaluates repository-local hooks, fsmonitor, credential, SSH, or ambient-secret configuration. | Critical | Medium | Resolve Git to a canonical executable; use a minimal environment; disable hooks, fsmonitor, SSH command, credential helpers, system/global config, terminal prompts, and optional locks on every AutoGit Git invocation. |
 
 ## 5. Abuse and misuse cases
 
@@ -103,6 +105,11 @@ flowchart LR
 - AutoGit crashes after Git/provider success but before recording success.
 - A malicious path contains newlines/control sequences to forge diagnostics.
 - A fake binary earlier in `PATH` reports success or steals credentials.
+- An adapter points `--verifiers` at a repository or temporary file containing a
+  program that exfiltrates source or credentials before verification.
+- A repository-local Git configuration attempts to activate hooks, fsmonitor,
+  SSH commands, credential helpers, or inherited loader variables during an
+  observation or commit transaction.
 
 ## 6. Non-negotiable safety invariants
 
@@ -174,4 +181,3 @@ state this clearly and make evidence inspectable. Public publication remains a
 developer decision. Any mode that executes repository code inherits some risk;
 where strong OS sandboxing is unavailable, AutoGit must disclose the limitation
 and require an explicit trusted-project policy rather than claiming isolation.
-

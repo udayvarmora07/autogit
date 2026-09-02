@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -71,8 +72,9 @@ func (r SystemRunner) Run(ctx context.Context, dir string, env map[string]string
 // output budget while retaining the same controlled environment and direct
 // argv execution as Run.
 func (r SystemRunner) RunBounded(ctx context.Context, dir string, env map[string]string, max int, args ...string) (Result, error) {
-	if r.Executable == "" {
-		r.Executable = "git"
+	executable, err := canonicalExecutable(r.Executable)
+	if err != nil {
+		return Result{}, err
 	}
 	if max <= 0 {
 		max = r.MaxOutput
@@ -80,16 +82,39 @@ func (r SystemRunner) RunBounded(ctx context.Context, dir string, env map[string
 	if max <= 0 {
 		max = maxOutput
 	}
-	c := exec.CommandContext(ctx, r.Executable, transactionArgs(r.Executable, args...)...)
+	c := exec.CommandContext(ctx, executable, transactionArgs(executable, args...)...)
 	c.Dir = dir
 	c.Env = controlledEnv(env)
 	b := &boundedBuffer{max: max}
 	c.Stdout, c.Stderr = b, b
-	err := c.Run()
+	err = c.Run()
 	if b.truncated && err == nil {
 		err = io.ErrShortBuffer
 	}
 	return Result{Output: string(b.buf), Err: err, Truncated: b.truncated}, err
+}
+
+func canonicalExecutable(path string) (string, error) {
+	if path == "" {
+		path = "git"
+	}
+	resolved, err := exec.LookPath(path)
+	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+		return "", errors.New("invalid Git executable")
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
+	if err != nil {
+		return "", errors.New("invalid Git executable")
+	}
+	canon := filepath.Join(parent, filepath.Base(resolved))
+	info, err := os.Lstat(canon)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", errors.New("invalid Git executable")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
+		return "", errors.New("invalid Git executable")
+	}
+	return canon, nil
 }
 
 func controlledEnv(extra map[string]string) []string {
@@ -445,7 +470,7 @@ func (t *Transaction) CommitPrepared(ctx context.Context, prepared *Prepared) (C
 		return Commit{}, err
 	}
 	// A durable intent now exists before commit-tree or ref mutation.
-	args := []string{"commit-tree", prepared.intent.TreeOID}
+	args := []string{"-c", "user.name=AutoGit", "-c", "user.email=autogit@localhost", "commit-tree", prepared.intent.TreeOID}
 	if prepared.intent.ParentSHA != "" {
 		args = append(args, "-p", prepared.intent.ParentSHA)
 	}

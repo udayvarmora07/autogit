@@ -133,9 +133,10 @@ func TestRunWithVerifierConfigRejectsMissingTrustedConfigurationBeforeGit(t *tes
 	}
 	defer db.Close()
 	_, err = (Service{
-		Git:            gittransaction.SystemRunner{},
-		Intents:        gittransaction.NewStateIntentPort(db),
-		VerifierRunner: verification.ExecRunner{},
+		Git:                gittransaction.SystemRunner{},
+		Intents:            gittransaction.NewStateIntentPort(db),
+		VerifierRunner:     verification.ExecRunner{},
+		TrustedVerifierDir: t.TempDir(),
 	}).RunWithVerifierConfig(context.Background(), Request{
 		ID:            "missing-verifier-config",
 		RepositoryDir: repo,

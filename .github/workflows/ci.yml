@@ -26,8 +26,8 @@ jobs:
           - os: windows-latest
             race: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -63,8 +63,8 @@ jobs:
           - goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -75,3 +75,30 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '0'
         run: go build ./...
+
+  security:
+    name: security analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: govulncheck
+        shell: bash
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - name: gosec
+        shell: bash
+        # These rules flag deliberate security boundaries: validated argv
+        # execution, bounded path reads, restrictive chmod, Git's SHA-1
+        # object format, and cleanup/diagnostic constants.
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.22.8 -exclude=G101,G104,G204,G302,G304,G401,G505 ./...
+      - name: secret scan
+        shell: bash
+        run: |
+          if git grep -nI -E -e '-----BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE KEY-----|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}' -- ':!.github/workflows/ci.yml' ':!internal/security/*'; then
+            echo "credential-shaped content found in tracked source"
+            exit 1
+          fi

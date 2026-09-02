@@ -145,6 +145,32 @@ func TestApplyRefusesToOverwriteAChangedConfig(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsParentDirectorySwapAfterPlanning(t *testing.T) {
+	root := t.TempDir()
+	inside := filepath.Join(root, "inside")
+	outside := t.TempDir()
+	if err := os.Mkdir(inside, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(inside, "client.json")
+	plan, err := Plan(ConfigSpec{Adapter: "codex", Path: path, Format: FormatJSON}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(inside); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, inside); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := Apply(plan); !errors.Is(err, ErrScope) {
+		t.Fatalf("parent swap error=%v, want ErrScope", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "client.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside target was modified: %v", err)
+	}
+}
+
 func fileMode(path string) os.FileMode {
 	info, _ := os.Stat(path)
 	return info.Mode()

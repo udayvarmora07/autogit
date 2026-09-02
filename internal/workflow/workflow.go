@@ -45,11 +45,13 @@ type Result struct {
 // Service dependencies are deliberately narrow so callers cannot bypass a
 // scanner, frozen verifier set, or durable Git intent protocol.
 type Service struct {
-	Git            gittransaction.Runner
-	Intents        gittransaction.IntentPort
-	Scanner        security.CandidateScanner
-	VerifierRunner verification.Runner
-	Lease          Lease
+	Git                gittransaction.Runner
+	Intents            gittransaction.IntentPort
+	Scanner            security.CandidateScanner
+	VerifierRunner     verification.Runner
+	Lease              Lease
+	TrustedVerifierDir string
+	IdentityKey        []byte
 }
 
 // Lease serializes local commit/ref effects for one canonical repository
@@ -66,7 +68,12 @@ func (s Service) RunWithVerifierConfig(ctx context.Context, req Request, configP
 	if configPath == "" {
 		return Result{}, errors.New("trusted verifier configuration path is required")
 	}
-	registry, err := verification.LoadRegistryFile(configPath, 0)
+	var registry *verification.VerifierRegistry
+	var err error
+	if s.TrustedVerifierDir == "" {
+		return Result{}, errors.New("trusted verifier state directory is required")
+	}
+	registry, err = verification.LoadTrustedRegistryFile(configPath, s.TrustedVerifierDir, 0)
 	if err != nil {
 		return Result{}, fmt.Errorf("load verifier configuration: %w", err)
 	}
@@ -114,6 +121,9 @@ func (s Service) Run(ctx context.Context, req Request) (result Result, err error
 	}
 	if s.Lease != nil {
 		info, discoverErr := repository.Discover(req.RepositoryDir)
+		if len(s.IdentityKey) > 0 {
+			info, discoverErr = repository.DiscoverWithKey(req.RepositoryDir, s.IdentityKey)
+		}
 		if discoverErr != nil {
 			return result, fmt.Errorf("resolve repository writer: %w", discoverErr)
 		}

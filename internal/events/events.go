@@ -544,7 +544,7 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(`PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS event_receipts (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL, disposition TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS pending_events (event_id TEXT PRIMARY KEY, causation_id TEXT NOT NULL, payload BLOB NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (revision INTEGER PRIMARY KEY AUTOINCREMENT, repository_id TEXT NOT NULL DEFAULT '', disposition TEXT NOT NULL DEFAULT '', reason_code TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lifecycle_projections (repository_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, state BLOB NOT NULL, updated_at TEXT NOT NULL);`); err != nil {
+	if _, err = db.Exec(`PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS event_receipts (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL, disposition TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS event_revision_sequence (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO event_revision_sequence(id,revision) VALUES(1,COALESCE((SELECT MAX(revision) FROM event_receipts),0)); CREATE TABLE IF NOT EXISTS pending_events (event_id TEXT PRIMARY KEY, causation_id TEXT NOT NULL, payload BLOB NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (revision INTEGER PRIMARY KEY AUTOINCREMENT, repository_id TEXT NOT NULL DEFAULT '', disposition TEXT NOT NULL DEFAULT '', reason_code TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lifecycle_projections (repository_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, state BLOB NOT NULL, updated_at TEXT NOT NULL);`); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -558,6 +558,17 @@ func OpenStore(path string) (*Store, error) {
 	}
 	_ = os.Chmod(path, 0600)
 	return &Store{db: db}, nil
+}
+
+func nextReceiptRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
+	if _, err := tx.ExecContext(ctx, `UPDATE event_revision_sequence SET revision=revision+1 WHERE id=1`); err != nil {
+		return 0, err
+	}
+	var revision int64
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM event_revision_sequence WHERE id=1`).Scan(&revision); err != nil {
+		return 0, err
+	}
+	return revision, nil
 }
 
 func ensureAuditRepositoryColumn(db *sql.DB) error {
@@ -697,8 +708,8 @@ func (s *Store) AcceptAndProject(ctx context.Context, e Event, projector Project
 			return Receipt{}, err
 		}
 	}
-	rev := int64(0)
-	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision),0)+1 FROM event_receipts`).Scan(&rev); err != nil {
+	rev, err := nextReceiptRevision(ctx, tx)
+	if err != nil {
 		return Receipt{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO event_receipts(event_id,idempotency_key,payload_digest,disposition,revision,created_at) VALUES(?,?,?,?,?,?)`, e.EventID, key, e.Digest, projected.Disposition, rev, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
@@ -912,7 +923,8 @@ func (s *Store) Accept(ctx context.Context, e Event) (Receipt, error) {
 	if !errors.Is(idErr, sql.ErrNoRows) || !errors.Is(keyErr, sql.ErrNoRows) {
 		return Receipt{}, idErr
 	}
-	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision),0)+1 FROM event_receipts`).Scan(&rev); err != nil {
+	rev, err = nextReceiptRevision(ctx, tx)
+	if err != nil {
 		return Receipt{}, err
 	}
 	disp := Accepted

@@ -215,5 +215,10 @@ func LoadTrustedRegistryFile(path, trustedDir string, max int64) (*VerifierRegis
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return nil, errors.New("trusted verifier configuration must be inside state directory")
 	}
+	parent := filepath.Dir(candidate)
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil || resolvedParent != parent {
+		return nil, errors.New("trusted verifier configuration parent is unsafe")
+	}
 	return LoadRegistryFile(candidate, max)
 }

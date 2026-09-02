@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -52,11 +53,13 @@ var (
 	ErrStale     = errors.New("configuration changed after planning")
 )
 
+var adapterNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,63}$`)
+
 // Plan validates the target and computes a complete desired file without
 // touching disk. roots must be explicit absolute directories supplied by the
 // caller (normally a CLI flag or a platform discovery result).
 func Plan(spec ConfigSpec, roots []string) (InstallPlan, error) {
-	if spec.Adapter == "" || spec.Path == "" {
+	if spec.Adapter == "" || !adapterNameRE.MatchString(spec.Adapter) || spec.Path == "" {
 		return InstallPlan{}, fmt.Errorf("%w: adapter and path required", ErrScope)
 	}
 	if spec.Format == "" {
@@ -113,6 +116,10 @@ func Apply(p InstallPlan) error {
 	dir := filepath.Dir(p.Path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
+	}
+	canonicalDir, err := filepath.EvalSymlinks(dir)
+	if err != nil || canonicalDir != dir {
+		return ErrScope
 	}
 	if info, err := os.Lstat(p.Path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {

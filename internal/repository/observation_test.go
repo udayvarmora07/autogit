@@ -16,6 +16,16 @@ type observationRunner struct {
 	dirs    []string
 }
 
+type boundedObservationRunner struct {
+	observationRunner
+	limits []int64
+}
+
+func (r *boundedObservationRunner) RunBounded(ctx context.Context, dir string, env map[string]string, max int64, args ...string) (CommandResult, error) {
+	r.limits = append(r.limits, max)
+	return r.observationRunner.Run(ctx, dir, env, args...)
+}
+
 func (r *observationRunner) Run(_ context.Context, dir string, _ map[string]string, args ...string) (CommandResult, error) {
 	r.calls = append(r.calls, append([]string(nil), args...))
 	r.dirs = append(r.dirs, dir)
@@ -95,6 +105,22 @@ func TestCaptureCommittedFilesReadsOnlyRequestedRegularTreeEntries(t *testing.T)
 	file, ok := files["owned.txt"]
 	if !ok || !file.Present || string(file.Content) != "committed content\n" || file.Mode.Perm() != 0755 {
 		t.Fatalf("files=%+v", files)
+	}
+}
+
+func TestCaptureCommittedFilesUsesPerBlobBoundedRunner(t *testing.T) {
+	root := t.TempDir()
+	head := strings.Repeat("a", 40)
+	object := strings.Repeat("b", 40)
+	runner := &boundedObservationRunner{observationRunner: observationRunner{outputs: map[string]string{
+		"ls-tree\x00-z\x00--full-tree\x00" + head + "\x00--\x00owned.txt": "100644 blob " + object + "\towned.txt\x00",
+		"cat-file\x00blob\x00" + object:                                   "large committed content\n",
+	}}}
+	if _, err := CaptureCommittedFiles(context.Background(), runner, root, head, []string{"owned.txt"}, 64); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.limits) != 2 || runner.limits[0] != 64 || runner.limits[1] != 64 {
+		t.Fatalf("bounded limits=%v, want one limit per Git operation", runner.limits)
 	}
 }
 

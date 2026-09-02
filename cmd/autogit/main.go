@@ -351,7 +351,7 @@ func runSync(args []string, dir string, out io.Writer) error {
 	}
 	defer db.Close()
 	if options.Complete {
-		return runSyncComplete(context.Background(), options, dir, info, db, out)
+		return runSyncComplete(context.Background(), options, dir, info, key, db, out)
 	}
 	baseline, err := session.New(db).CaptureAndRecord(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths})
 	if err != nil {
@@ -367,7 +367,7 @@ func runSync(args []string, dir string, out io.Writer) error {
 	return json.NewEncoder(out).Encode(result)
 }
 
-func runSyncComplete(ctx context.Context, options syncOptions, dir string, info repository.Info, db *state.Store, out io.Writer) error {
+func runSyncComplete(ctx context.Context, options syncOptions, dir string, info repository.Info, identityKey []byte, db *state.Store, out io.Writer) error {
 	durable, err := db.Session(ctx, options.Session)
 	if errors.Is(err, sql.ErrNoRows) {
 		return cliError{"E_NOT_FOUND", "sync session was not found"}
@@ -393,7 +393,7 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 	if err != nil {
 		return cliError{"E_SCOPE", safeMessage(err.Error())}
 	}
-	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, Lease: coordinator.StateLease{DB: db}}
+	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, Lease: coordinator.StateLease{DB: db}, TrustedVerifierDir: dir, IdentityKey: identityKey}
 	result, err := workflowService.RunPlan(ctx, localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Policy: loadPolicy(dir, info.RepoID), Verifiers: registry}, plan)
 	if err != nil {
 		return cliError{"E_COMMIT", safeMessage(err.Error())}
@@ -496,7 +496,7 @@ func runVerify(args []string, dir string, out io.Writer) error {
 	if err != nil {
 		return cliError{"E_SCOPE", safeMessage(err.Error())}
 	}
-	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}}
+	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, TrustedVerifierDir: dir, IdentityKey: key}
 	result, err := workflowService.VerifyPlan(context.Background(), localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Policy: loadPolicy(dir, info.RepoID), Verifiers: registry}, plan)
 	if err != nil {
 		return cliError{"E_VERIFY", safeMessage(err.Error())}

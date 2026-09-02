@@ -154,3 +154,21 @@ func TestLoadTrustedRegistryFileRequiresProtectedStateDirectory(t *testing.T) {
 		t.Fatalf("protected verifier configuration rejected: %v", err)
 	}
 }
+
+func TestLoadTrustedRegistryFileRejectsSymlinkedParentInsideStateDirectory(t *testing.T) {
+	state := t.TempDir()
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "verifiers.json"), verifierConfigJSON(t, nil), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(state, "nested")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := LoadTrustedRegistryFile(filepath.Join(link, "verifiers.json"), state, 1<<20); err == nil {
+		t.Fatal("verifier configuration through a parent symlink was accepted")
+	}
+}

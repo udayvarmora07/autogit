@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 )
 
 type Result struct {
@@ -19,22 +22,43 @@ type Runner struct {
 }
 
 func (r Runner) Run(ctx context.Context, dir string, args ...string) (Result, error) {
-	if r.Executable == "" {
-		r.Executable = "git"
+	executable, err := canonicalExecutable(r.Executable)
+	if err != nil {
+		return Result{}, err
 	}
 	if r.MaxOutput <= 0 {
 		r.MaxOutput = 1 << 20
 	}
-	c := exec.CommandContext(ctx, r.Executable, args...)
+	c := exec.CommandContext(ctx, executable, args...)
 	c.Dir = dir
 	b := &cappedBuffer{max: r.MaxOutput}
 	c.Stdout = b
 	c.Stderr = b
-	err := c.Run()
+	err = c.Run()
 	if b.limited && err == nil {
 		err = io.ErrShortBuffer
 	}
 	return Result{Output: string(b.b), Err: err, Truncated: b.limited}, err
+}
+
+func canonicalExecutable(path string) (string, error) {
+	if path == "" {
+		path = "git"
+	}
+	resolved, err := exec.LookPath(path)
+	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+		return "", fmt.Errorf("invalid Git executable")
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
+	if err != nil {
+		return "", fmt.Errorf("invalid Git executable")
+	}
+	canon := filepath.Join(parent, filepath.Base(resolved))
+	info, err := os.Lstat(canon)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0) {
+		return "", fmt.Errorf("invalid Git executable")
+	}
+	return canon, nil
 }
 
 var shaRE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)

@@ -131,6 +131,38 @@ func TestStoreMakesDuplicateDeliveryAndDigestConflictDurable(t *testing.T) {
 	}
 }
 
+func TestReceiptRevisionSequenceDoesNotReuseDeletedRevisions(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	first, err := Decode([]byte(validEvent), 64<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Accept(context.Background(), first); err != nil || got.Revision != 1 {
+		t.Fatalf("first receipt=%+v err=%v", got, err)
+	}
+	second, err := Decode([]byte(strings.Replace(strings.Replace(validEvent, "01J7N6X8P5K2V4W6FQ8M9ABCDF", "01J7N6X8P5K2V4W6FQ8M9ABCDG", 1), "idle-1", "idle-2", 1)), 64<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Accept(context.Background(), second); err != nil || got.Revision != 2 {
+		t.Fatalf("second receipt=%+v err=%v", got, err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM event_receipts`); err != nil {
+		t.Fatal(err)
+	}
+	third, err := Decode([]byte(strings.Replace(strings.Replace(validEvent, "01J7N6X8P5K2V4W6FQ8M9ABCDF", "01J7N6X8P5K2V4W6FQ8M9ABCDH", 1), "idle-1", "idle-3", 1)), 64<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Accept(context.Background(), third); err != nil || got.Revision != 3 {
+		t.Fatalf("third receipt=%+v err=%v", got, err)
+	}
+}
+
 func TestStoreBuffersMissingCausation(t *testing.T) {
 	raw := strings.Replace(validEvent, `"causation_id"`, `"causation_id"`, 1)
 	raw = strings.Replace(raw, `"ordering":{"stream_id":"repo/session"}`, `"ordering":{"stream_id":"repo/session","causation_id":"01J7N6X8P5K2V4W6FQ8M9ABCD0"}`, 1)

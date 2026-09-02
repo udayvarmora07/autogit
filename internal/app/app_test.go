@@ -108,6 +108,7 @@ func TestSessionStartedIngressCapturesBaselineBeforeReceipt(t *testing.T) {
 	baselineStore := &appBaselineStore{}
 	baseline := repository.Baseline{Head: "0123456789012345678901234567890123456789", IndexDigest: "sha256:" + strings.Repeat("1", 64), StatusDigest: "sha256:" + strings.Repeat("2", 64), PathsDigest: "sha256:" + strings.Repeat("3", 64)}
 	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Resolver = func(string) (repository.Info, error) { return repository.Discover(root) }
 	a.Baselines = &session.Service{Runner: appBaselineRunner{}, Store: baselineStore, Capture: func(context.Context, repository.Runner, string) (repository.Baseline, error) { return baseline, nil }}
 	input := hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCDF", "session.started", "started", `,"session_id":"session"`, "", "")
 	var raw map[string]any
@@ -115,6 +116,7 @@ func TestSessionStartedIngressCapturesBaselineBeforeReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["scope"].(map[string]any)["worktree_id"] = info.WorktreeID
 	raw["project"] = map[string]any{"candidate_root": root}
 	inputBytes, err := json.Marshal(raw)
 	if err != nil {
@@ -147,6 +149,7 @@ func TestSessionStartedIngressDoesNotAcceptWhenBaselineCaptureFails(t *testing.T
 	}
 	defer s.Close()
 	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Resolver = func(string) (repository.Info, error) { return repository.Discover(root) }
 	a.Baselines = &session.Service{Runner: appBaselineRunner{}, Store: &appBaselineStore{}, Capture: func(context.Context, repository.Runner, string) (repository.Baseline, error) {
 		return repository.Baseline{}, errors.New("baseline unavailable")
 	}}
@@ -156,6 +159,7 @@ func TestSessionStartedIngressDoesNotAcceptWhenBaselineCaptureFails(t *testing.T
 		t.Fatal(err)
 	}
 	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["scope"].(map[string]any)["worktree_id"] = info.WorktreeID
 	raw["project"] = map[string]any{"candidate_root": root}
 	inputBytes, err := json.Marshal(raw)
 	if err != nil {
@@ -274,6 +278,39 @@ func TestHookRejectsProjectIdentityMismatchBeforeReceipt(t *testing.T) {
 	}
 	if _, err = a.Hook(context.Background(), input); err == nil || events.CodeOf(err) != "E_SCOPE" {
 		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestHookRejectsProjectWorktreeIdentityMismatchBeforeReceipt(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := New(s, policy.Policy{}, nil)
+	a.Resolver = func(string) (repository.Info, error) { return repository.Discover(root) }
+	input := hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCDH", "session.idle", "idle", `,"session_id":"session"`, "", "")
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(input), &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["scope"].(map[string]any)["worktree_id"] = "sha256:" + strings.Repeat("f", 64)
+	raw["project"] = map[string]any{"candidate_root": root}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Hook(context.Background(), b); err == nil || events.CodeOf(err) != "E_SCOPE" {
+		t.Fatalf("worktree mismatch error=%v", err)
 	}
 }
 

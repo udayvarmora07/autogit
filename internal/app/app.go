@@ -71,7 +71,7 @@ func (a *App) CompleteSession(ctx context.Context, started session.Started, id, 
 type Resolver func(string) (repository.Info, error)
 
 func New(s *events.Store, p policy.Policy, provider Provider) *App {
-	return &App{Store: s, Policy: p, Provider: provider, Resolver: repository.Discover, Reducer: lifecycle.NewReducer(lifecycle.Config{})}
+	return &App{Store: s, Policy: p, Provider: provider, Reducer: lifecycle.NewReducer(lifecycle.Config{})}
 }
 func (a *App) Hook(ctx context.Context, input []byte) (Result, error) {
 	return a.hook(ctx, input, false)
@@ -106,10 +106,10 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 		}
 		resolve := a.Resolver
 		if resolve == nil {
-			resolve = repository.Discover
+			return Result{}, &events.Error{Code: "E_SCOPE", Message: "trusted repository resolver is not configured"}
 		}
 		info, resolveErr := resolve(candidate)
-		if resolveErr != nil || info.RepoID != stringValue(e.Scope["repo_id"]) {
+		if resolveErr != nil || info.RepoID != stringValue(e.Scope["repo_id"]) || info.WorktreeID == "" || info.WorktreeID != stringValue(e.Scope["worktree_id"]) {
 			return Result{}, &events.Error{Code: "E_SCOPE", Message: "event project does not match repository identity"}
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,11 +28,24 @@ type SystemRunner struct {
 }
 
 func (r SystemRunner) Run(ctx context.Context, dir string, env map[string]string, args ...string) (CommandResult, error) {
-	executable := r.Executable
-	if executable == "" {
-		executable = "git"
+	return r.runBounded(ctx, dir, env, int64(r.MaxOutput), args...)
+}
+
+// RunBounded applies an operation-specific output budget. This is used when a
+// single Git blob may be larger than the normal diagnostic budget.
+func (r SystemRunner) RunBounded(ctx context.Context, dir string, env map[string]string, max int64, args ...string) (CommandResult, error) {
+	return r.runBounded(ctx, dir, env, max, args...)
+}
+
+func (r SystemRunner) runBounded(ctx context.Context, dir string, env map[string]string, requested int64, args ...string) (CommandResult, error) {
+	executable, err := canonicalExecutable(r.Executable)
+	if err != nil {
+		return CommandResult{}, err
 	}
 	max := r.MaxOutput
+	if requested > 0 {
+		max = int(requested)
+	}
 	if max <= 0 {
 		max = 1 << 20
 	}
@@ -40,11 +54,34 @@ func (r SystemRunner) Run(ctx context.Context, dir string, env map[string]string
 	command.Env = observationEnvironment(env)
 	output := &boundedObservationOutput{max: max}
 	command.Stdout, command.Stderr = output, output
-	err := command.Run()
+	err = command.Run()
 	if output.truncated && err == nil {
 		err = io.ErrShortBuffer
 	}
 	return CommandResult{Output: string(output.bytes)}, err
+}
+
+func canonicalExecutable(path string) (string, error) {
+	if path == "" {
+		path = "git"
+	}
+	resolved, err := exec.LookPath(path)
+	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+		return "", errors.New("invalid Git executable")
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
+	if err != nil {
+		return "", errors.New("invalid Git executable")
+	}
+	canon := filepath.Join(parent, filepath.Base(resolved))
+	info, err := os.Lstat(canon)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", errors.New("invalid Git executable")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
+		return "", errors.New("invalid Git executable")
+	}
+	return canon, nil
 }
 
 type boundedObservationOutput struct {
@@ -125,14 +162,14 @@ func (r SystemRunner) IsIgnored(ctx context.Context, root, name string) (bool, e
 	if err := validateRelativePath(name); err != nil {
 		return false, err
 	}
-	executable := r.Executable
-	if executable == "" {
-		executable = "git"
+	executable, err := canonicalExecutable(r.Executable)
+	if err != nil {
+		return false, err
 	}
-	command := exec.CommandContext(ctx, executable, "check-ignore", "--quiet", "--", name)
+	command := exec.CommandContext(ctx, executable, observationArgs(executable, "check-ignore", "--quiet", "--", name)...)
 	command.Dir = root
 	command.Env = observationEnvironment(nil)
-	err := command.Run()
+	err = command.Run()
 	if err == nil {
 		return true, nil
 	}
@@ -244,7 +281,7 @@ func CaptureCommittedFiles(ctx context.Context, runner Runner, root, head string
 			files[name] = FileObservation{}
 			continue
 		}
-		treeResult, runErr := runner.Run(ctx, abs, nil, "ls-tree", "-z", "--full-tree", head, "--", name)
+		treeResult, runErr := runObservation(ctx, runner, abs, nil, maxFileSize, "ls-tree", "-z", "--full-tree", head, "--", name)
 		if runErr != nil {
 			return nil, fmt.Errorf("read committed tree entry %q: %w", name, runErr)
 		}
@@ -262,7 +299,7 @@ func CaptureCommittedFiles(ctx context.Context, runner Runner, root, head string
 		if mode != 0100644 && mode != 0100755 {
 			return nil, fmt.Errorf("committed tree entry %q is not a regular file", name)
 		}
-		blobResult, runErr := runner.Run(ctx, abs, nil, "cat-file", "blob", object)
+		blobResult, runErr := runObservation(ctx, runner, abs, nil, maxFileSize, "cat-file", "blob", object)
 		if runErr != nil {
 			return nil, fmt.Errorf("read committed file %q: %w", name, runErr)
 		}
@@ -276,6 +313,17 @@ func CaptureCommittedFiles(ctx context.Context, runner Runner, root, head string
 		files[name] = FileObservation{Content: append([]byte(nil), []byte(blobResult.Output)...), Mode: fileMode, Present: true}
 	}
 	return files, nil
+}
+
+type boundedRunner interface {
+	RunBounded(context.Context, string, map[string]string, int64, ...string) (CommandResult, error)
+}
+
+func runObservation(ctx context.Context, runner Runner, dir string, env map[string]string, max int64, args ...string) (CommandResult, error) {
+	if bounded, ok := runner.(boundedRunner); ok {
+		return bounded.RunBounded(ctx, dir, env, max, args...)
+	}
+	return runner.Run(ctx, dir, env, args...)
 }
 
 func parseCommittedTreeEntry(raw string) (mode int64, object, name string, present bool, err error) {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -65,6 +66,9 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
+	if root == string(filepath.Separator) || root == home {
+		return Info{}, errors.New("protected repository root")
+	}
 	gst, err := os.Lstat(gitPath)
 	if err != nil {
 		return Info{}, errors.New("not a git repository")
@@ -90,6 +94,7 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 		if err != nil {
 			return Info{}, err
 		}
+		linkedGitDir := common
 		// Linked worktrees point at $COMMON/worktrees/<name>. Resolve their
 		// commondir marker so repository identity is shared while worktree
 		// identity remains distinct.
@@ -106,10 +111,47 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 				}
 			}
 		}
+		if err := verifyLinkedWorktree(root, linkedGitDir); err != nil {
+			return Info{}, err
+		}
 	}
 	repoID := digest(key, "repo", common)
 	workID := digest(key, "worktree", root)
 	return Info{Root: root, CommonDir: common, RepoID: repoID, WorktreeID: workID}, nil
+}
+
+func verifyLinkedWorktree(root, expectedGitDir string) error {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return errors.New("Git executable is unavailable")
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(git))
+	if err != nil {
+		return errors.New("Git executable is invalid")
+	}
+	git = filepath.Join(parent, filepath.Base(git))
+	if info, statErr := os.Lstat(git); statErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return errors.New("Git executable is invalid")
+	}
+	cmd := exec.Command(git, "-C", root, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir")
+	cmd.Env = []string{"PATH=" + filepath.Dir(git), "HOME=" + os.TempDir(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_SYSTEM=" + os.DevNull, "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_TERMINAL_PROMPT=0"}
+	out, err := cmd.Output()
+	if err != nil {
+		return errors.New("invalid linked worktree metadata")
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 {
+		return errors.New("invalid linked worktree metadata")
+	}
+	actualRoot, err := filepath.EvalSymlinks(lines[0])
+	if err != nil || actualRoot != root {
+		return errors.New("linked worktree root mismatch")
+	}
+	actualGit, err := filepath.EvalSymlinks(lines[1])
+	if err != nil || actualGit != expectedGitDir {
+		return errors.New("linked worktree gitdir mismatch")
+	}
+	return nil
 }
 func digest(key []byte, kind, value string) string {
 	h := hmac.New(sha256.New, key)

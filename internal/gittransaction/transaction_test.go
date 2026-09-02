@@ -425,6 +425,26 @@ func TestSystemRunnerBoundsOutputAndHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestCommitTreeUsesExplicitAutoGitIdentityInsteadOfRepositoryConfig(t *testing.T) {
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "Attacker")
+	git(t, repo, "config", "user.email", "attacker@example.test")
+	writeFile(t, filepath.Join(repo, "owned.txt"), "candidate\n")
+	db := &memoryIntentStore{}
+	got, err := New(SystemRunner{}, db).Create(context.Background(), Request{
+		ID: "explicit-identity", RepoDir: repo,
+		Snapshot: []SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Message:  "feat: explicit identity", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	author := git(t, repo, "show", "-s", "--format=%an <%ae>", got.SHA)
+	if author != "AutoGit <autogit@localhost>" {
+		t.Fatalf("commit author=%q, want explicit AutoGit identity", author)
+	}
+}
+
 func TestValidateIntentRejectsNonCanonicalRepositoryAndMessage(t *testing.T) {
 	base := testPersistentIntent("validate")
 	for name, mutate := range map[string]func(*Intent){
@@ -741,8 +761,11 @@ func (r *editAfterTreeRunner) Run(ctx context.Context, dir string, env map[strin
 }
 
 func (r *countingRunner) Run(ctx context.Context, dir string, env map[string]string, args ...string) (Result, error) {
-	if len(args) > 0 && args[0] == "commit-tree" {
-		r.commitTrees++
+	for _, arg := range args {
+		if arg == "commit-tree" {
+			r.commitTrees++
+			break
+		}
 	}
 	return r.base.Run(ctx, dir, env, args...)
 }

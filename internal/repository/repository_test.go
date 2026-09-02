@@ -15,6 +15,21 @@ func TestDiscoverRejectsHomeAndFilesystemRoot(t *testing.T) {
 	}
 }
 
+func TestDiscoverRejectsRepositoryFoundAtHomeAfterWalkingUp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "project")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(home, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Discover(root); err == nil {
+		t.Fatal("repository rooted at HOME was accepted")
+	}
+}
+
 func TestDiscoverCanonicalizesRepositoryAndProvidesStableIdentities(t *testing.T) {
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {

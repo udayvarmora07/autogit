@@ -73,6 +73,7 @@ func TestHookSessionStartedRecordsRepositoryBaselineBeforeReturning(t *testing.T
 		t.Fatal(err)
 	}
 	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["scope"].(map[string]any)["worktree_id"] = info.WorktreeID
 	raw["project"] = map[string]any{"candidate_root": root}
 	inputBytes, err := json.Marshal(raw)
 	if err != nil {
