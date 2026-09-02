@@ -182,8 +182,10 @@ func TestSystemRunnerExecutesReadOnlyGitWithArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(result.Output) != canonical {
-		t.Fatalf("output=%q want=%q", result.Output, canonical)
+	got := filepath.Clean(filepath.FromSlash(strings.TrimSpace(result.Output)))
+	want := filepath.Clean(canonical)
+	if got != want {
+		t.Fatalf("output=%q want=%q", got, want)
 	}
 }
 
