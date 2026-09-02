@@ -168,6 +168,52 @@ func TestCaptureBaselineWithOptionsCapturesExplicitCleanPaths(t *testing.T) {
 	}
 }
 
+func TestCaptureBaselineRejectsExplicitIgnoredPath(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("ignored.txt\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ignored.txt"), []byte("not for the candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CaptureBaselineWithOptions(context.Background(), SystemRunner{}, root, BaselineOptions{Paths: []string{"ignored.txt"}}); err == nil {
+		t.Fatal("explicit ignored path was accepted")
+	}
+}
+
+func TestCaptureBaselineRejectsFileReplacementDuringRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("replacement race fixture requires Unix rename semantics")
+	}
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "race.txt")
+	if err := os.WriteFile(path, []byte("before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &observationRunner{outputs: map[string]string{
+		"rev-parse\x00--verify\x00--quiet\x00HEAD^{commit}":       "0123456789012345678901234567890123456789\n",
+		"rev-parse\x00--git-path\x00index":                        filepath.Join(root, ".git", "index") + "\n",
+		"status\x00--porcelain=v1\x00-z\x00--untracked-files=all": "?? race.txt\x00",
+	}}
+	if _, err := CaptureBaselineWithOptions(context.Background(), runner, root, BaselineOptions{BeforeRead: func(string) {
+		replacement := filepath.Join(root, "replacement.txt")
+		if writeErr := os.WriteFile(replacement, []byte("replacement\n"), 0600); writeErr != nil {
+			t.Fatalf("replacement write: %v", writeErr)
+		}
+		if renameErr := os.Rename(replacement, path); renameErr != nil {
+			t.Fatalf("replacement rename: %v", renameErr)
+		}
+	}}); err == nil {
+		t.Fatal("file replacement during baseline capture was accepted")
+	}
+}
+
 func TestSystemRunnerExecutesReadOnlyGitWithArguments(t *testing.T) {
 	root := t.TempDir()
 	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {

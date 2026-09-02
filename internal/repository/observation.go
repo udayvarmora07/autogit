@@ -92,6 +92,38 @@ type Runner interface {
 	Run(context.Context, string, map[string]string, ...string) (CommandResult, error)
 }
 
+// IgnoreChecker is the optional read-only capability used to validate paths
+// explicitly supplied by an adapter. Git status already omits ignored files,
+// but an explicit path must not bypass that policy.
+type IgnoreChecker interface {
+	IsIgnored(context.Context, string, string) (bool, error)
+}
+
+// IsIgnored asks Git's configured ignore engine about one repository-relative
+// path. A non-zero exit status of one means the path is not ignored; other
+// failures are returned because ignore policy must fail closed.
+func (r SystemRunner) IsIgnored(ctx context.Context, root, name string) (bool, error) {
+	if err := validateRelativePath(name); err != nil {
+		return false, err
+	}
+	executable := r.Executable
+	if executable == "" {
+		executable = "git"
+	}
+	command := exec.CommandContext(ctx, executable, "check-ignore", "--quiet", "--", name)
+	command.Dir = root
+	command.Env = observationEnvironment(nil)
+	err := command.Run()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("check ignore policy: %w", err)
+}
+
 // FileObservation is a bounded baseline observation. Content is retained only
 // in memory for immediate ownership comparison; durable callers should store
 // the resulting digests, not source bytes.
@@ -113,6 +145,9 @@ type Baseline struct {
 type BaselineOptions struct {
 	MaxFileSize int64
 	Paths       []string
+	// BeforeRead is a deterministic fault-injection hook for callers that
+	// need to exercise replacement races. Production callers leave it nil.
+	BeforeRead func(string)
 }
 
 const defaultBaselineFileSize int64 = 16 << 20
@@ -212,6 +247,15 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 		if err := validateRelativePath(name); err != nil {
 			return Baseline{}, fmt.Errorf("invalid baseline path: %w", err)
 		}
+		if checker, ok := runner.(IgnoreChecker); ok {
+			ignored, ignoreErr := checker.IsIgnored(ctx, abs, name)
+			if ignoreErr != nil {
+				return Baseline{}, fmt.Errorf("check baseline path policy: %w", ignoreErr)
+			}
+			if ignored {
+				return Baseline{}, fmt.Errorf("baseline path is ignored: %q", name)
+			}
+		}
 		if !seenPaths[name] {
 			seenPaths[name] = true
 			paths = append(paths, name)
@@ -220,7 +264,7 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 	sort.Strings(paths)
 	files := make(map[string]FileObservation, len(paths))
 	for _, name := range paths {
-		file, captureErr := captureBaselineFile(abs, name, maxFileSize)
+		file, captureErr := captureBaselineFile(abs, name, maxFileSize, options.BeforeRead)
 		if captureErr != nil {
 			return Baseline{}, captureErr
 		}
@@ -289,7 +333,7 @@ func statusPaths(raw string) ([]string, error) {
 	return paths, nil
 }
 
-func captureBaselineFile(root, name string, maxFileSize int64) (FileObservation, error) {
+func captureBaselineFile(root, name string, maxFileSize int64, beforeRead func(string)) (FileObservation, error) {
 	absolute, err := safeJoin(root, name)
 	if err != nil {
 		return FileObservation{}, err
@@ -305,9 +349,20 @@ func captureBaselineFile(root, name string, maxFileSize int64) (FileObservation,
 		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
+		if beforeRead != nil {
+			beforeRead(name)
+		}
+		before, statErr := os.Lstat(absolute)
+		if statErr != nil || !sameFileObservation(info, before) {
+			return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
+		}
 		target, readErr := os.Readlink(absolute)
 		if readErr != nil {
 			return FileObservation{}, readErr
+		}
+		after, statErr := os.Lstat(absolute)
+		if statErr != nil || !sameFileObservation(before, after) {
+			return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
 		}
 		return FileObservation{Content: []byte(target), Mode: info.Mode(), Present: true}, nil
 	}
@@ -317,14 +372,29 @@ func captureBaselineFile(root, name string, maxFileSize int64) (FileObservation,
 	if info.Size() > maxFileSize {
 		return FileObservation{}, fmt.Errorf("observe %q exceeds baseline capture limit", name)
 	}
+	if beforeRead != nil {
+		beforeRead(name)
+	}
+	before, err := os.Lstat(absolute)
+	if err != nil || !sameFileObservation(info, before) || !before.Mode().IsRegular() {
+		return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
+	}
 	content, err := os.ReadFile(absolute)
 	if err != nil {
 		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
+	}
+	after, err := os.Lstat(absolute)
+	if err != nil || !sameFileObservation(before, after) || !after.Mode().IsRegular() {
+		return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
 	}
 	if int64(len(content)) > maxFileSize {
 		return FileObservation{}, fmt.Errorf("observe %q exceeds baseline capture limit", name)
 	}
 	return FileObservation{Content: append([]byte(nil), content...), Mode: info.Mode(), Present: true}, nil
+}
+
+func sameFileObservation(a, b os.FileInfo) bool {
+	return a != nil && b != nil && os.SameFile(a, b) && a.Mode() == b.Mode() && a.Size() == b.Size() && a.ModTime() == b.ModTime()
 }
 
 func safeJoin(root, name string) (string, error) {

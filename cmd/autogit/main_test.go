@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"autogit/internal/events"
+	"autogit/internal/provider"
 	"autogit/internal/repository"
 	"autogit/internal/state"
 )
@@ -158,6 +159,22 @@ func TestRetryRejectsTerminalJobBeforeProviderDiscovery(t *testing.T) {
 	err = run([]string{"retry", "--id", jobID, "--repo", root, "--remote", "origin"}, strings.NewReader(""), &out)
 	if err == nil || !strings.HasPrefix(err.Error(), "E_STATE:") {
 		t.Fatalf("terminal retry error=%v output=%s", err, out.String())
+	}
+}
+
+func TestRetryCoordinatorUsesDurableWriterLease(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	coord := retryCoordinator(db, &provider.LocalOnlyProvider{}, "retry-owner")
+	if coord.Lease == nil {
+		t.Fatal("retry coordinator has no durable writer lease")
+	}
+	if coord.Owner != "retry-owner" {
+		t.Fatalf("owner=%q", coord.Owner)
 	}
 }
 

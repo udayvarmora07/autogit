@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"autogit/internal/provider"
 	"autogit/internal/state"
@@ -64,6 +65,37 @@ type Coordinator struct {
 	Provider Provider
 	Lease    Lease
 	Owner    string
+}
+
+// StateLease adapts the durable state lease record to the coordinator's
+// writer-serialization port. Callers can inject Now for deterministic expiry
+// tests; production uses the wall clock and a bounded default TTL.
+type StateLease struct {
+	DB  *state.Store
+	TTL time.Duration
+	Now func() time.Time
+}
+
+func (l StateLease) Acquire(ctx context.Context, key, owner string) error {
+	if l.DB == nil {
+		return errors.New("state lease database is missing")
+	}
+	now := time.Now()
+	if l.Now != nil {
+		now = l.Now()
+	}
+	ttl := l.TTL
+	if ttl <= 0 {
+		ttl = 2 * time.Minute
+	}
+	return l.DB.AcquireLease(ctx, state.Lease{Key: key, Owner: owner, ExpiresAt: now.Add(ttl).UnixNano()}, now.UnixNano())
+}
+
+func (l StateLease) Release(_ context.Context, key, owner string) error {
+	if l.DB == nil {
+		return errors.New("state lease database is missing")
+	}
+	return l.DB.ReleaseLease(key, owner)
 }
 
 func (r CommitRequest) EvidenceMatches(e CommitEvidence) bool {
@@ -157,7 +189,7 @@ func (s *StateStore) MarkPushRetry(ctx context.Context, id string) error {
 	return s.DB.WithTx(ctx, func(tx *state.Tx) error { return tx.PutPushJob(j) })
 }
 
-func (c Coordinator) Commit(ctx context.Context, r CommitRequest) error {
+func (c Coordinator) Commit(ctx context.Context, r CommitRequest) (err error) {
 	if c.Store == nil || c.Git == nil {
 		return errors.New("commit coordinator dependencies missing")
 	}
@@ -187,7 +219,11 @@ func (c Coordinator) Commit(ctx context.Context, r CommitRequest) error {
 		if err := c.Lease.Acquire(ctx, r.ID, c.Owner); err != nil {
 			return err
 		}
-		defer c.Lease.Release(ctx, r.ID, c.Owner)
+		defer func() {
+			if releaseErr := c.Lease.Release(ctx, r.ID, c.Owner); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
+		}()
 	}
 	if err := c.Store.PutCommitIntent(ctx, r); err != nil {
 		return err
@@ -236,7 +272,7 @@ func (c Coordinator) RecoverCommit(ctx context.Context, r CommitRequest) error {
 	}
 	return c.Store.RecordCommit(ctx, r.ID, sha)
 }
-func (c Coordinator) Push(ctx context.Context, r PushRequest) error {
+func (c Coordinator) Push(ctx context.Context, r PushRequest) (err error) {
 	if c.Store == nil {
 		return errors.New("push coordinator store missing")
 	}
@@ -264,6 +300,21 @@ func (c Coordinator) Push(ctx context.Context, r PushRequest) error {
 	}
 	if c.Provider == nil {
 		return errors.New("push provider missing")
+	}
+	if c.Lease != nil {
+		leaseOwner := c.Owner
+		if leaseOwner == "" {
+			leaseOwner = r.ID
+		}
+		leaseKey := r.Owner + "/" + r.Name + "/" + r.Ref
+		if err := c.Lease.Acquire(ctx, leaseKey, leaseOwner); err != nil {
+			return err
+		}
+		defer func() {
+			if releaseErr := c.Lease.Release(ctx, leaseKey, leaseOwner); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
+		}()
 	}
 	outcome, confirmErr := c.Provider.ConfirmPush(ctx, r)
 	if outcome == PushConflict {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"autogit/internal/provider"
 	"autogit/internal/state"
@@ -30,6 +31,19 @@ func TestCommitIntentPrecedesEffectAndRecoveryAvoidsDuplicate(t *testing.T) {
 	}
 	if g.calls != 1 {
 		t.Fatal("recovery repeated commit")
+	}
+}
+
+func TestCommitReportsLeaseReleaseFailureAfterCommitOutcome(t *testing.T) {
+	s := newMemoryStore()
+	lease := &recordingLease{releaseErr: errors.New("lease release failed")}
+	g := &fakeGit{sha: "0123456789abcdef0123456789abcdef01234567", trace: s.trace}
+	r := validCommitRequest("lease-release-commit")
+	if err := (Coordinator{Store: s, Git: g, Lease: lease, Owner: "worker"}).Commit(context.Background(), r); err == nil || !strings.Contains(err.Error(), "lease release failed") {
+		t.Fatalf("error=%v, want lease release failure", err)
+	}
+	if status, _, _, err := s.CommitStatus(context.Background(), r.ID); err != nil || status != state.CommitCreated {
+		t.Fatalf("status=%q err=%v, want created commit retained", status, err)
 	}
 }
 
@@ -89,6 +103,32 @@ func TestPushRequiresExactPostconditionAndIsIdempotent(t *testing.T) {
 	p2 := &fakeProvider{}
 	if err := (Coordinator{Store: s2, Provider: p2}).Push(context.Background(), r); err == nil || s2.status[r.ID] != "RETRY_WAIT" {
 		t.Fatalf("err=%v status=%s", err, s2.status[r.ID])
+	}
+}
+
+func TestPushSerializesProviderEffectsWithWriterLease(t *testing.T) {
+	s := newMemoryStore()
+	lease := &recordingLease{}
+	p := &fakeProvider{confirmed: true}
+	r := PushRequest{ID: "leased-push", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	if err := (Coordinator{Store: s, Provider: p, Lease: lease, Owner: "worker"}).Push(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if lease.acquired != "owner/repo/main" || lease.owner != "worker" || lease.released != lease.acquired || p.confirms != 1 {
+		t.Fatalf("lease=%+v confirms=%d", lease, p.confirms)
+	}
+}
+
+func TestPushReportsLeaseReleaseFailureAfterProviderOutcome(t *testing.T) {
+	s := newMemoryStore()
+	lease := &recordingLease{releaseErr: errors.New("lease release failed")}
+	p := &fakeProvider{confirmed: true}
+	r := PushRequest{ID: "lease-release", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	if err := (Coordinator{Store: s, Provider: p, Lease: lease, Owner: "worker"}).Push(context.Background(), r); err == nil || !strings.Contains(err.Error(), "lease release failed") {
+		t.Fatalf("error=%v, want lease release failure", err)
+	}
+	if s.status[r.ID] != state.PushSucceeded {
+		t.Fatalf("state=%q, want succeeded provider outcome retained", s.status[r.ID])
 	}
 }
 
@@ -153,6 +193,28 @@ func TestRetryPushResumesOnlyRetryableExactIntent(t *testing.T) {
 	}
 	if p.confirms != 1 {
 		t.Fatal("non-retryable state invoked provider")
+	}
+}
+
+func TestStateLeaseSerializesOwnersUntilRelease(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Unix(100, 0)
+	lease := StateLease{DB: db, TTL: time.Minute, Now: func() time.Time { return now }}
+	if err := lease.Acquire(context.Background(), "repo/worktree/main", "owner-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Acquire(context.Background(), "repo/worktree/main", "owner-b"); err == nil {
+		t.Fatal("second owner acquired an active lease")
+	}
+	if err := lease.Release(context.Background(), "repo/worktree/main", "owner-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Acquire(context.Background(), "repo/worktree/main", "owner-b"); err != nil {
+		t.Fatalf("owner acquired after release: %v", err)
 	}
 }
 
@@ -337,6 +399,24 @@ type memoryStore struct {
 	pushes         map[string]PushRequest
 	markBlockedErr error
 	markRetryErr   error
+}
+
+type recordingLease struct {
+	acquired, released, owner string
+	releaseErr                error
+}
+
+func (l *recordingLease) Acquire(_ context.Context, key, owner string) error {
+	l.acquired, l.owner = key, owner
+	return nil
+}
+
+func (l *recordingLease) Release(_ context.Context, key, owner string) error {
+	if owner != l.owner {
+		return errors.New("lease owner changed")
+	}
+	l.released = key
+	return l.releaseErr
 }
 
 func newMemoryStore() *memoryStore {

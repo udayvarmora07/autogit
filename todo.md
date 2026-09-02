@@ -146,3 +146,13 @@ These eight bounded slices were implemented with focused red-green tests:
   optional worktree identity without leaking baseline content.
 - [x] Application exposes session completion only through the verified
   workflow port.
+- [x] Explicit baseline paths consult Git ignore policy through a read-only
+  capability and reject ignored candidates.
+- [x] Repository baseline file capture checks identity before and after reads,
+  including deterministic replacement-race coverage.
+- [x] Added a durable state-backed lease adapter and applied writer leases to
+  provider confirmation/push effects.
+- [x] Wired the CLI retry coordinator to the durable writer lease and surfaced
+  commit-lease release failures after preserving the durable commit result.
+- [x] Applied canonical repository/worktree writer leases to local workflow
+  commit/ref effects while keeping read-only verification outside the lease.

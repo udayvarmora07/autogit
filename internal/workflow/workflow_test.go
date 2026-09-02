@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,7 @@ func TestRunCreatesVerifiedOwnedCommitWithoutChangingSharedState(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	lease := &recordingWorkflowLease{}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +48,7 @@ func TestRunCreatesVerifiedOwnedCommitWithoutChangingSharedState(t *testing.T) {
 		Git:            gittransaction.SystemRunner{},
 		Intents:        gittransaction.NewStateIntentPort(db),
 		VerifierRunner: verifierRunner{},
+		Lease:          lease,
 	}).Run(context.Background(), Request{
 		ID:            "owned-commit",
 		RepositoryDir: repo,
@@ -71,6 +74,26 @@ func TestRunCreatesVerifiedOwnedCommitWithoutChangingSharedState(t *testing.T) {
 	if index := read(t, filepath.Join(repo, ".git", "index")); string(index) != string(indexBefore) {
 		t.Fatal("shared index changed")
 	}
+	if lease.acquired == "" || lease.released != lease.acquired || lease.owner != "owned-commit" {
+		t.Fatalf("lease=%+v", lease)
+	}
+}
+
+type recordingWorkflowLease struct {
+	acquired, released, owner string
+}
+
+func (l *recordingWorkflowLease) Acquire(_ context.Context, key, owner string) error {
+	l.acquired, l.owner = key, owner
+	return nil
+}
+
+func (l *recordingWorkflowLease) Release(_ context.Context, key, owner string) error {
+	if owner != l.owner {
+		return errors.New("workflow lease owner changed")
+	}
+	l.released = key
+	return nil
 }
 
 func TestRunBlocksSecretBeforePreparingGitCandidate(t *testing.T) {

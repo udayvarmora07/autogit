@@ -49,6 +49,15 @@ type Service struct {
 	Intents        gittransaction.IntentPort
 	Scanner        security.CandidateScanner
 	VerifierRunner verification.Runner
+	Lease          Lease
+}
+
+// Lease serializes local commit/ref effects for one canonical repository
+// worktree. Verification and candidate preparation remain outside the lease
+// because they operate on immutable evidence and do not mutate refs.
+type Lease interface {
+	Acquire(context.Context, string, string) error
+	Release(context.Context, string, string) error
 }
 
 // RunWithVerifierConfig loads and freezes trusted verifier configuration at
@@ -98,10 +107,28 @@ func (s Service) VerifyPlan(ctx context.Context, req Request, plan staging.Plan)
 // Run creates a local AutoGit ref only after consent, a security scan, and
 // trusted verification all bind to the exact immutable candidate. It never
 // publishes a remote or moves the user's current branch.
-func (s Service) Run(ctx context.Context, req Request) (Result, error) {
+func (s Service) Run(ctx context.Context, req Request) (result Result, err error) {
 	result, tx, prepared, verificationPolicy, err := s.prepareAndVerify(ctx, req)
 	if err != nil {
 		return result, err
+	}
+	if s.Lease != nil {
+		info, discoverErr := repository.Discover(req.RepositoryDir)
+		if discoverErr != nil {
+			return result, fmt.Errorf("resolve repository writer: %w", discoverErr)
+		}
+		leaseKey := info.RepoID + "/" + info.WorktreeID
+		if info.WorktreeID == "" {
+			leaseKey = info.RepoID
+		}
+		if err := s.Lease.Acquire(ctx, leaseKey, req.ID); err != nil {
+			return result, err
+		}
+		defer func() {
+			if releaseErr := s.Lease.Release(ctx, leaseKey, req.ID); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
+		}()
 	}
 	committed, err := tx.CommitVerified(ctx, prepared, result.Verification, verificationPolicy, req.Verifiers)
 	if err != nil {

@@ -410,7 +410,7 @@ func runRetry(args []string, dir string, out io.Writer) error {
 	gitRunner := provider.SystemRunner{Executable: gitPath, WorkingDir: info.Root}
 	pusher := provider.GitPusher{Runner: gitRunner, Dir: info.Root, AllowedRemotes: map[string]string{job.Owner + "/" + job.Name: options.Remote}}
 	publication := provider.GH{Runner: ghRunner, Pusher: pusher}
-	coord := coordinator.Coordinator{Store: coordinator.NewStateStore(db), Provider: coordinator.PublicationProviderAdapter{Provider: publication}}
+	coord := retryCoordinator(db, publication, options.ID)
 	if err := coord.RetryPush(context.Background(), options.ID); err != nil {
 		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
 		if statusErr == nil && status == state.PushRetryWait {
@@ -419,6 +419,15 @@ func runRetry(args []string, dir string, out io.Writer) error {
 		return cliError{"E_PUSH", safeMessage(err.Error())}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "PUSH_RETRIED", "job_id": options.ID})
+}
+
+func retryCoordinator(db *state.Store, publication provider.PublicationProvider, owner string) coordinator.Coordinator {
+	return coordinator.Coordinator{
+		Store:    coordinator.NewStateStore(db),
+		Provider: coordinator.PublicationProviderAdapter{Provider: publication},
+		Lease:    coordinator.StateLease{DB: db},
+		Owner:    owner,
+	}
 }
 
 func trustedExecutable(name string) (string, error) {
