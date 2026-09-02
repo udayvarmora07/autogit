@@ -268,6 +268,31 @@ func TestInstallRoutesThroughClientRegistryAndRejectsUnsupported(t *testing.T) {
 	}
 }
 
+func TestConfigExplainLoadsTrustedVerifierConfiguration(t *testing.T) {
+	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "verifiers.json")
+	config, err := json.Marshal(map[string]any{"version": "1", "verifiers": []any{map[string]any{
+		"name": "tests", "version": "1", "argv": []string{exe}, "applicable": true,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"config", "explain", "--verifiers", path}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"verifier_set_digest":"sha256:`) || !strings.Contains(out.String(), `"verifier_config_digest":"sha256:`) {
+		t.Fatalf("config explanation=%s", out.String())
+	}
+}
+
 func TestInstallPassesCanonicalRootIntoCodexHook(t *testing.T) {
 	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
 	root := filepath.Join(t.TempDir(), "project's-root")

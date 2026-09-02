@@ -76,6 +76,23 @@ claiming a phase exit:
 - [ ] Complete supported-client discovery, adapter installation, and workflow
   orchestration without granting adapters Git mutation authority.
 
+## Completed execution batch (2026-09-02)
+
+These eight additional bounded slices were implemented with focused red-green
+tests:
+
+- [x] Added a session baseline service that captures through the repository
+  observation port and persists only bounded durable evidence.
+- [x] Added strict trusted-verifier JSON configuration loading into the frozen
+  verifier registry.
+- [x] Wired verifier configuration digests and counts into `config explain`.
+- [x] Added an explicit maximum file-size boundary to repository baselines.
+- [x] Rejected symlinked and non-regular trusted verifier configuration files.
+- [x] Rejected duplicate JSON keys in trusted verifier configuration.
+- [x] Enforced restrictive Unix permissions for trusted verifier configuration.
+- [x] Rejected overflowing or excessive verifier timeout values before duration
+  conversion.
+
 ## Required validation and release gates
 
 - [ ] Restore or replace the missing 177 prototype cases and reach the >=609

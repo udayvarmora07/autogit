@@ -126,6 +126,24 @@ func TestCaptureBaselineRejectsStatusPathThatEscapesRoot(t *testing.T) {
 	}
 }
 
+func TestCaptureBaselineWithOptionsRejectsOversizedObservedFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte("123456"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &observationRunner{outputs: map[string]string{
+		"rev-parse\x00--verify\x00--quiet\x00HEAD^{commit}":       "0123456789012345678901234567890123456789\n",
+		"rev-parse\x00--git-path\x00index":                        filepath.Join(root, ".git", "index") + "\n",
+		"status\x00--porcelain=v1\x00-z\x00--untracked-files=all": "?? large.txt\x00",
+	}}
+	if _, err := CaptureBaselineWithOptions(context.Background(), runner, root, BaselineOptions{MaxFileSize: 5}); err == nil {
+		t.Fatal("oversized baseline file accepted")
+	}
+}
+
 func TestBaselineEventPayloadContainsOnlyBoundedEvidence(t *testing.T) {
 	baseline := Baseline{Head: "0123456789012345678901234567890123456789", IndexDigest: "sha256:" + strings.Repeat("a", 64), StatusDigest: "sha256:" + strings.Repeat("b", 64), PathsDigest: "sha256:" + strings.Repeat("c", 64), Paths: []string{"secret.txt"}}
 	payload := baseline.EventPayload()

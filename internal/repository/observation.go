@@ -41,6 +41,12 @@ type Baseline struct {
 	Files        map[string]FileObservation
 }
 
+type BaselineOptions struct {
+	MaxFileSize int64
+}
+
+const defaultBaselineFileSize int64 = 16 << 20
+
 // EventPayload returns the redacted facts suitable for a session.started
 // domain event. Raw paths, status text, and file contents never cross this
 // boundary.
@@ -70,8 +76,18 @@ func (b Baseline) Clone() Baseline {
 // Git is queried read-only and changed files are captured without following
 // symlink components. An empty HEAD is valid for an unborn initial branch.
 func CaptureBaseline(ctx context.Context, runner Runner, root string) (Baseline, error) {
+	return CaptureBaselineWithOptions(ctx, runner, root, BaselineOptions{})
+}
+
+// CaptureBaselineWithOptions records the same read-only repository facts as
+// CaptureBaseline while bounding every regular file retained in memory.
+func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string, options BaselineOptions) (Baseline, error) {
 	if runner == nil || root == "" {
 		return Baseline{}, errors.New("baseline runner and root are required")
+	}
+	maxFileSize := options.MaxFileSize
+	if maxFileSize <= 0 {
+		maxFileSize = defaultBaselineFileSize
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -120,7 +136,7 @@ func CaptureBaseline(ctx context.Context, runner Runner, root string) (Baseline,
 	}
 	files := make(map[string]FileObservation, len(paths))
 	for _, name := range paths {
-		file, captureErr := captureBaselineFile(abs, name)
+		file, captureErr := captureBaselineFile(abs, name, maxFileSize)
 		if captureErr != nil {
 			return Baseline{}, captureErr
 		}
@@ -184,7 +200,7 @@ func statusPaths(raw string) ([]string, error) {
 	return paths, nil
 }
 
-func captureBaselineFile(root, name string) (FileObservation, error) {
+func captureBaselineFile(root, name string, maxFileSize int64) (FileObservation, error) {
 	absolute, err := safeJoin(root, name)
 	if err != nil {
 		return FileObservation{}, err
@@ -209,9 +225,15 @@ func captureBaselineFile(root, name string) (FileObservation, error) {
 	if !info.Mode().IsRegular() {
 		return FileObservation{Mode: info.Mode(), Present: true}, nil
 	}
+	if info.Size() > maxFileSize {
+		return FileObservation{}, fmt.Errorf("observe %q exceeds baseline capture limit", name)
+	}
 	content, err := os.ReadFile(absolute)
 	if err != nil {
 		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
+	}
+	if int64(len(content)) > maxFileSize {
+		return FileObservation{}, fmt.Errorf("observe %q exceeds baseline capture limit", name)
 	}
 	return FileObservation{Content: append([]byte(nil), content...), Mode: info.Mode(), Present: true}, nil
 }

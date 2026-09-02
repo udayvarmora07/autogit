@@ -22,6 +22,7 @@ import (
 	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/security"
+	"autogit/internal/verification"
 )
 
 type cliError struct{ Code, Message string }
@@ -124,6 +125,10 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if cmd == "config" && len(args) > 1 && args[1] != "explain" {
 			return cliError{"E_USAGE", "config supports explain"}
 		}
+		verifierPath := flag(args[1:], "--verifiers")
+		if verifierPath != "" && cmd != "config" {
+			return cliError{"E_USAGE", "--verifiers is supported by config explain"}
+		}
 		root := flag(args[1:], "--repo")
 		var repoID string
 		if root != "" {
@@ -146,6 +151,15 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		}
 		if cmd == "config" {
 			result["reason_code"] = "CONFIG_EXPLAIN"
+			if verifierPath != "" {
+				registry, loadErr := verification.LoadRegistryFile(verifierPath, 1<<20)
+				if loadErr != nil {
+					return cliError{"E_VERIFIER_CONFIG", safeMessage(loadErr.Error())}
+				}
+				result["verifier_count"] = len(registry.Specs)
+				result["verifier_set_digest"] = registry.VerifierSetDigest
+				result["verifier_config_digest"] = registry.ConfigDigest
+			}
 		}
 		if cmd == "status" {
 			projection, projectionErr := lifecycleStatus(s, repoID)
