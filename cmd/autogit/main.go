@@ -16,12 +16,16 @@ import (
 
 	"autogit/internal/adapters"
 	"autogit/internal/app"
+	"autogit/internal/coordinator"
 	"autogit/internal/events"
 	"autogit/internal/install"
 	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
+	"autogit/internal/provider"
 	"autogit/internal/repository"
 	"autogit/internal/security"
+	"autogit/internal/session"
+	"autogit/internal/state"
 	"autogit/internal/verification"
 )
 
@@ -68,6 +72,18 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	dir, err := stateDir()
 	if err != nil {
 		return err
+	}
+	if cmd == "retry" {
+		if err := validateRetryArgs(args[1:]); err != nil {
+			return err
+		}
+		return runRetry(args[1:], dir, out)
+	}
+	if cmd == "sync" {
+		if err := validateSyncArgs(args[1:]); err != nil {
+			return err
+		}
+		return runSync(args[1:], dir, out)
 	}
 	if cmd == "logs" {
 		root := flag(args[1:], "--repo")
@@ -224,11 +240,193 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return logsErr
 		}
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "LOGS", "logs": logs})
-	case "verify", "sync", "retry":
+	case "verify", "sync":
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "unsupported", "action": "none", "reason_code": "E_UNIMPLEMENTED", "operation": cmd})
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}
+}
+
+type retryOptions struct {
+	ID, Repo, Remote string
+}
+
+type syncOptions struct {
+	Repo, Session, Client string
+	Paths                 []string
+}
+
+func validateSyncArgs(args []string) error {
+	_, err := parseSyncArgs(args)
+	return err
+}
+
+func parseSyncArgs(args []string) (syncOptions, error) {
+	var options syncOptions
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name != "--repo" && name != "--session" && name != "--client" && name != "--path" {
+			return syncOptions{}, cliError{"E_USAGE", "sync supports --repo, --session, --client, and repeated --path"}
+		}
+		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return syncOptions{}, cliError{"E_USAGE", name + " requires a value"}
+		}
+		if name != "--path" && seen[name] {
+			return syncOptions{}, cliError{"E_USAGE", name + " may be provided once"}
+		}
+		switch name {
+		case "--repo":
+			options.Repo = args[i+1]
+		case "--session":
+			options.Session = args[i+1]
+		case "--client":
+			options.Client = args[i+1]
+		case "--path":
+			options.Paths = append(options.Paths, args[i+1])
+		}
+		seen[name] = true
+		i++
+	}
+	if options.Repo == "" || options.Session == "" || options.Client == "" || len(options.Paths) == 0 {
+		return syncOptions{}, cliError{"E_SCOPE", "--repo, --session, --client, and at least one --path are required for sync"}
+	}
+	return options, nil
+}
+
+func runSync(args []string, dir string, out io.Writer) error {
+	options, err := parseSyncArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0700)
+	key, err := loadIdentityKey(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKey(options.Repo, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	db, err := state.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	baseline, err := session.New(db).CaptureAndRecord(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths})
+	if err != nil {
+		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
+	}
+	result := baseline.EventPayload()
+	result["schema_version"] = "autogit.result/1"
+	result["disposition"] = "accepted"
+	result["action"] = "checkpoint"
+	result["reason_code"] = "SYNC_BASELINE_CAPTURED"
+	result["repo_id"] = info.RepoID
+	result["session_id"] = options.Session
+	return json.NewEncoder(out).Encode(result)
+}
+
+func validateRetryArgs(args []string) error {
+	_, err := parseRetryArgs(args)
+	return err
+}
+
+func parseRetryArgs(args []string) (retryOptions, error) {
+	var options retryOptions
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name != "--id" && name != "--repo" && name != "--remote" {
+			return retryOptions{}, cliError{"E_USAGE", "retry supports --id, --repo, and --remote"}
+		}
+		if seen[name] || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return retryOptions{}, cliError{"E_USAGE", name + " requires one value and may be provided once"}
+		}
+		seen[name] = true
+		switch name {
+		case "--id":
+			options.ID = args[i+1]
+		case "--repo":
+			options.Repo = args[i+1]
+		case "--remote":
+			options.Remote = args[i+1]
+		}
+		i++
+	}
+	if options.ID == "" {
+		return retryOptions{}, cliError{"E_SCOPE", "--id is required for retry"}
+	}
+	if options.Repo == "" || options.Remote == "" {
+		return retryOptions{}, cliError{"E_SCOPE", "--repo and --remote are required for retry"}
+	}
+	return options, nil
+}
+
+func runRetry(args []string, dir string, out io.Writer) error {
+	options, err := parseRetryArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0700)
+	key, err := loadIdentityKey(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKey(options.Repo, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	db, err := state.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	job, err := db.PushJob(options.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cliError{"E_NOT_FOUND", "retry job was not found"}
+	}
+	if err != nil {
+		return cliError{"E_STATE", "cannot read retry job"}
+	}
+	if job.State != state.PushRetryWait {
+		return cliError{"E_STATE", "retry job is not waiting for retry"}
+	}
+	ghPath, err := trustedExecutable("gh")
+	if err != nil {
+		return cliError{"E_PROVIDER", "gh is unavailable"}
+	}
+	gitPath, err := trustedExecutable("git")
+	if err != nil {
+		return cliError{"E_PROVIDER", "git is unavailable"}
+	}
+	ghRunner := provider.SystemRunner{Executable: ghPath, WorkingDir: info.Root}
+	gitRunner := provider.SystemRunner{Executable: gitPath, WorkingDir: info.Root}
+	pusher := provider.GitPusher{Runner: gitRunner, Dir: info.Root, AllowedRemotes: map[string]string{job.Owner + "/" + job.Name: options.Remote}}
+	publication := provider.GH{Runner: ghRunner, Pusher: pusher}
+	coord := coordinator.Coordinator{Store: coordinator.NewStateStore(db), Provider: coordinator.PublicationProviderAdapter{Provider: publication}}
+	if err := coord.RetryPush(context.Background(), options.ID); err != nil {
+		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
+		if statusErr == nil && status == state.PushRetryWait {
+			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "pending", "action": "retry", "reason_code": "PUSH_RETRY_WAIT", "retryable": true, "job_id": options.ID})
+		}
+		return cliError{"E_PUSH", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "PUSH_RETRIED", "job_id": options.ID})
+}
+
+func trustedExecutable(name string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
 }
 
 func runHook(args []string, in io.Reader, out io.Writer) error {

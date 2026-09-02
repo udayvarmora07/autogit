@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"autogit/internal/repository"
+	"autogit/internal/staging"
 )
 
 type Request struct {
@@ -59,4 +60,18 @@ func (s Service) CaptureAndRecord(ctx context.Context, req Request) (repository.
 		return repository.Baseline{}, err
 	}
 	return baseline, nil
+}
+
+// BuildOwnedPlan bridges the in-memory baseline captured at session start to
+// the staging ownership boundary at the current boundary. Only explicit
+// adapter-requested paths are read; the durable store is never consulted for
+// source bytes.
+func (s Service) BuildOwnedPlan(req Request, baseline repository.Baseline) (staging.Plan, error) {
+	if req.Root == "" {
+		return staging.Plan{}, errors.New("owned plan root is required")
+	}
+	if len(req.Paths) == 0 {
+		return staging.Plan{}, errors.New("owned plan paths are required")
+	}
+	return staging.BuildCapturedPlanFromBaseline(req.Root, baseline, req.Paths)
 }

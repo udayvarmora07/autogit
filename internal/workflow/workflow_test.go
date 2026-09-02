@@ -102,6 +102,32 @@ func TestRunBlocksSecretBeforePreparingGitCandidate(t *testing.T) {
 	}
 }
 
+func TestRunWithVerifierConfigRejectsMissingTrustedConfigurationBeforeGit(t *testing.T) {
+	repo := newRepository(t)
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = (Service{
+		Git:            gittransaction.SystemRunner{},
+		Intents:        gittransaction.NewStateIntentPort(db),
+		VerifierRunner: verification.ExecRunner{},
+	}).RunWithVerifierConfig(context.Background(), Request{
+		ID:            "missing-verifier-config",
+		RepositoryDir: repo,
+		Snapshot:      []gittransaction.SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Message:       "feat: verify configured candidate",
+		Policy:        policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+	}, filepath.Join(t.TempDir(), "missing.json"))
+	if err == nil || !strings.Contains(err.Error(), "verifier configuration") {
+		t.Fatalf("missing trusted config error=%v", err)
+	}
+	if _, err := db.GitCommitIntent(context.Background(), "missing-verifier-config"); !os.IsNotExist(err) {
+		t.Fatalf("missing config persisted a Git intent: %v", err)
+	}
+}
+
 func TestRunUsesSnapshotCapturedBeforeScannerMutation(t *testing.T) {
 	repo := newRepository(t)
 	git(t, repo, "config", "user.name", "AutoGit Test")
@@ -202,6 +228,44 @@ func TestRunPlanCommitsOnlyTheOwnedPlanSnapshot(t *testing.T) {
 	}
 	if got.GuardDigest == scanOnly {
 		t.Fatal("guard evidence did not bind the ownership digest")
+	}
+}
+
+func TestVerifyPlanReturnsEvidenceWithoutCreatingCommitIntent(t *testing.T) {
+	repo := newRepository(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	write(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+	plan, err := staging.BuildObservedPlan(nil, staging.ObservedSnapshot{"owned.txt": {Content: []byte("candidate\n"), Mode: 0644}}, []string{"owned.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "test", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verifierRunner{}}).VerifyPlan(context.Background(), Request{
+		ID: "verify-only", RepositoryDir: repo, Message: "feat: verify candidate", Policy: policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, Verifiers: registry,
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verification.Passed || result.Commit.SHA != "" || result.OwnershipDigest != plan.OwnershipDigest() {
+		t.Fatalf("verify result=%+v", result)
+	}
+	if _, err := db.GitCommitIntent(context.Background(), "verify-only"); !os.IsNotExist(err) {
+		t.Fatalf("verify-only operation persisted Git intent: %v", err)
 	}
 }
 

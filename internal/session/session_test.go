@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"autogit/internal/repository"
+	"autogit/internal/staging"
 )
 
 type fakeRunner struct{ baseline repository.Baseline }
@@ -96,4 +97,20 @@ func TestCaptureAndRecordCapturesExplicitOwnedPathsWithDefaultCapture(t *testing
 	if file, ok := got.Files["owned.txt"]; !ok || string(file.Content) != "baseline\n" {
 		t.Fatalf("baseline=%+v", got)
 	}
+}
+
+func TestBuildOwnedPlanBridgesDurableBaselineToCurrentOwnedFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := New(&fakeStore{})
+	plan, err := service.BuildOwnedPlan(Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: root, Paths: []string{"new.txt"}}, repository.Baseline{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.CandidateSnapshot()) != 1 || plan.CandidateSnapshot()[0].Path != "new.txt" || string(plan.CandidateSnapshot()[0].Content) != "candidate\n" {
+		t.Fatalf("plan=%+v candidate=%+v", plan, plan.CandidateSnapshot())
+	}
+	var _ staging.Plan = plan
 }

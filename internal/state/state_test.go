@@ -50,6 +50,24 @@ func TestStorePersistsTypedJobAndOutboxAtomically(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsMalformedPushIntent(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, job := range []PushJob{
+		{ID: "push-1", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: "not-a-sha", State: PushRequested},
+		{ID: "push-2", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40), State: "UNKNOWN"},
+		{ID: "push-3", Owner: "owner/name", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40), State: PushRequested},
+	} {
+		err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutPushJob(job) })
+		if err == nil {
+			t.Fatalf("malformed push job accepted: %+v", job)
+		}
+	}
+}
+
 func TestStoreRejectsUnsafeFilePermissions(t *testing.T) {
 	d := t.TempDir()
 	p := filepath.Join(d, "state.db")

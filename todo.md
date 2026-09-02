@@ -119,3 +119,16 @@ passing verification:
 - [x] Added a production-default session service constructor.
 - [x] Carried explicit owned paths through default session baseline capture.
 - [x] Accepted both Git exit-code forms for an unborn `HEAD`.
+
+## Completed execution batch (next operations loop)
+
+These eight bounded slices were implemented with focused red-green tests:
+
+- [x] Added explicit `retry` CLI job, repository, and remote binding parsing.
+- [x] Rejected terminal retry jobs before provider executable discovery.
+- [x] Validated durable push-job identity and lifecycle state before storage.
+- [x] Bridged session baselines into explicit current owned staging plans.
+- [x] Added workflow verification configuration loading at the trusted boundary.
+- [x] Added bounded `sync` CLI validation for explicit session ownership paths.
+- [x] Wired `sync` to capture and persist a redacted repository baseline.
+- [x] Added verify-only owned-plan evidence without commit intent or ref effects.

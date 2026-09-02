@@ -328,6 +328,7 @@ func (s *Store) CommitJob(id string) (CommitJob, error) {
 var (
 	gitCommitSHARE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 	gitIntentIDRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	gitRefRE       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 	gitDigestRE    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
@@ -487,6 +488,9 @@ func stableReconcileCode(reason string) string {
 	return "RECONCILE_REQUIRED"
 }
 func (t *Tx) PutPushJob(j PushJob) error {
+	if !validPushJob(j) {
+		return errors.New("invalid push job")
+	}
 	now := j.UpdatedAt
 	if now == 0 {
 		now = time.Now().UnixNano()
@@ -502,6 +506,21 @@ func (t *Tx) PutPushJob(j PushJob) error {
 	}
 	_, err = t.tx.Exec(`INSERT INTO pushes(id,commit_job_id,remote_digest,owner,name,ref,commit_sha,state,local_only,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at`, j.ID, j.CommitJobID, j.RemoteDigest, j.Owner, j.Name, j.Ref, j.CommitSHA, j.State, j.LocalOnly, j.CreatedAt, now)
 	return err
+}
+
+func validPushJob(j PushJob) bool {
+	if !gitIntentIDRE.MatchString(j.ID) || !gitIntentIDRE.MatchString(j.Owner) || !gitIntentIDRE.MatchString(j.Name) || !gitRefRE.MatchString(j.Ref) || !gitCommitSHARE.MatchString(j.CommitSHA) {
+		return false
+	}
+	if strings.Contains(j.Ref, "..") || strings.Contains(j.Ref, "@{") || strings.HasSuffix(strings.ToLower(j.Ref), ".lock") {
+		return false
+	}
+	switch j.State {
+	case PushRequested, PushRetryWait, PushSucceeded, PushBlocked, PushSkippedLocal:
+		return true
+	default:
+		return false
+	}
 }
 func (s *Store) PushJob(id string) (PushJob, error) {
 	var j PushJob

@@ -51,6 +51,20 @@ type Service struct {
 	VerifierRunner verification.Runner
 }
 
+// RunWithVerifierConfig loads and freezes trusted verifier configuration at
+// the workflow boundary before any candidate Git intent is prepared.
+func (s Service) RunWithVerifierConfig(ctx context.Context, req Request, configPath string) (Result, error) {
+	if configPath == "" {
+		return Result{}, errors.New("trusted verifier configuration path is required")
+	}
+	registry, err := verification.LoadRegistryFile(configPath, 0)
+	if err != nil {
+		return Result{}, fmt.Errorf("load verifier configuration: %w", err)
+	}
+	req.Verifiers = registry
+	return s.Run(ctx, req)
+}
+
 // RunPlan accepts a candidate only through staging's ownership boundary. Any
 // raw snapshot in req is intentionally replaced, preventing a caller from
 // pairing plan evidence with different bytes.
@@ -66,25 +80,53 @@ func (s Service) RunPlan(ctx context.Context, req Request, plan staging.Plan) (R
 	return s.Run(ctx, req)
 }
 
+// VerifyPlan runs guards and trusted verification for an owned plan without
+// persisting a commit intent or moving an AutoGit ref.
+func (s Service) VerifyPlan(ctx context.Context, req Request, plan staging.Plan) (Result, error) {
+	req.Snapshot = plan.CandidateSnapshot()
+	if len(req.Snapshot) == 0 {
+		return Result{}, errors.New("owned plan is empty")
+	}
+	req.ownershipDigest = plan.OwnershipDigest()
+	if req.ownershipDigest == "" {
+		return Result{}, errors.New("owned plan evidence is missing")
+	}
+	result, _, _, _, err := s.prepareAndVerify(ctx, req)
+	return result, err
+}
+
 // Run creates a local AutoGit ref only after consent, a security scan, and
 // trusted verification all bind to the exact immutable candidate. It never
 // publishes a remote or moves the user's current branch.
 func (s Service) Run(ctx context.Context, req Request) (Result, error) {
+	result, tx, prepared, verificationPolicy, err := s.prepareAndVerify(ctx, req)
+	if err != nil {
+		return result, err
+	}
+	committed, err := tx.CommitVerified(ctx, prepared, result.Verification, verificationPolicy, req.Verifiers)
+	if err != nil {
+		return result, err
+	}
+	result.Commit = committed
+	return result, nil
+}
+
+func (s Service) prepareAndVerify(ctx context.Context, req Request) (Result, *gittransaction.Transaction, *gittransaction.Prepared, verification.VerificationPolicy, error) {
 	// Detach from caller-owned slices before any injected scanner or verifier
 	// can run. The same captured bytes must be scanned, verified, and prepared.
 	req.Snapshot = cloneSnapshot(req.Snapshot)
 	if err := policy.Validate(req.Policy); err != nil {
-		return Result{}, fmt.Errorf("invalid effective policy: %w", err)
+		return Result{}, nil, nil, verification.VerificationPolicy{}, fmt.Errorf("invalid effective policy: %w", err)
 	}
 	if !req.Policy.TrackingEnabled() {
-		return Result{}, errors.New("tracking consent is required for a local commit")
+		return Result{}, nil, nil, verification.VerificationPolicy{}, errors.New("tracking consent is required for a local commit")
 	}
 	if s.Git == nil || s.Intents == nil {
-		return Result{}, errors.New("local commit dependencies are required")
+		return Result{}, nil, nil, verification.VerificationPolicy{}, errors.New("local commit dependencies are required")
 	}
 	info, err := repository.Discover(req.RepositoryDir)
 	if err != nil {
-		return Result{}, fmt.Errorf("resolve repository: %w", err)
+		return Result{}, nil, nil, verification.VerificationPolicy{}, fmt.Errorf("resolve repository: %w", err)
 	}
 
 	scan := s.Scanner
@@ -95,18 +137,18 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 	scanResult := scan.Scan(ctx, snapshot)
 	guardDigest, err := digest(guardEvidence{Scan: scanResult, OwnershipDigest: req.ownershipDigest})
 	if err != nil {
-		return Result{}, fmt.Errorf("encode guard evidence: %w", err)
+		return Result{}, nil, nil, verification.VerificationPolicy{}, fmt.Errorf("encode guard evidence: %w", err)
 	}
 	guardResult := Result{Scan: scanResult, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}
 	if !scanResult.Safe() {
-		return guardResult, errors.New("security scan blocked candidate")
+		return guardResult, nil, nil, verification.VerificationPolicy{}, errors.New("security scan blocked candidate")
 	}
 	if req.Verifiers == nil || s.VerifierRunner == nil {
-		return guardResult, errors.New("trusted verifier configuration is required")
+		return guardResult, nil, nil, verification.VerificationPolicy{}, errors.New("trusted verifier configuration is required")
 	}
 	policyDigest, err := digest(req.Policy)
 	if err != nil {
-		return Result{}, fmt.Errorf("encode policy evidence: %w", err)
+		return Result{}, nil, nil, verification.VerificationPolicy{}, fmt.Errorf("encode policy evidence: %w", err)
 	}
 
 	tx := gittransaction.New(s.Git, s.Intents)
@@ -120,7 +162,7 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 		GuardDigest:    guardDigest,
 	})
 	if err != nil {
-		return Result{Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}, err
+		return Result{Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}, tx, nil, verification.VerificationPolicy{}, err
 	}
 
 	verificationPolicy := verification.VerificationPolicy{
@@ -137,17 +179,12 @@ func (s Service) Run(ctx context.Context, req Request) (Result, error) {
 	verificationResult, err := req.Verifiers.Verify(ctx, verificationPolicy, verificationRequest, s.VerifierRunner)
 	result := Result{Verification: verificationResult, Scan: scanResult, PolicyDigest: policyDigest, GuardDigest: guardDigest, OwnershipDigest: req.ownershipDigest}
 	if err != nil {
-		return result, fmt.Errorf("verify candidate: %w", err)
+		return result, tx, prepared, verificationPolicy, fmt.Errorf("verify candidate: %w", err)
 	}
 	if !verificationResult.ValidFor(verificationRequest, verificationPolicy, req.Verifiers) {
-		return result, errors.New("verification did not pass for candidate")
+		return result, tx, prepared, verificationPolicy, errors.New("verification did not pass for candidate")
 	}
-	committed, err := tx.CommitVerified(ctx, prepared, verificationResult, verificationPolicy, req.Verifiers)
-	if err != nil {
-		return result, err
-	}
-	result.Commit = committed
-	return result, nil
+	return result, tx, prepared, verificationPolicy, nil
 }
 
 type guardEvidence struct {
