@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -141,6 +142,48 @@ func TestCaptureBaselineWithOptionsRejectsOversizedObservedFile(t *testing.T) {
 	}}
 	if _, err := CaptureBaselineWithOptions(context.Background(), runner, root, BaselineOptions{MaxFileSize: 5}); err == nil {
 		t.Fatal("oversized baseline file accepted")
+	}
+}
+
+func TestCaptureBaselineWithOptionsCapturesExplicitCleanPaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &observationRunner{outputs: map[string]string{
+		"rev-parse\x00--verify\x00--quiet\x00HEAD^{commit}":       "0123456789012345678901234567890123456789\n",
+		"rev-parse\x00--git-path\x00index":                        filepath.Join(root, ".git", "index") + "\n",
+		"status\x00--porcelain=v1\x00-z\x00--untracked-files=all": "",
+	}}
+	baseline, err := CaptureBaselineWithOptions(context.Background(), runner, root, BaselineOptions{Paths: []string{"tracked.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, ok := baseline.Files["tracked.txt"]
+	if !ok || !file.Present || string(file.Content) != "baseline\n" {
+		t.Fatalf("explicit baseline file=%+v present=%v", file, ok)
+	}
+}
+
+func TestSystemRunnerExecutesReadOnlyGitWithArguments(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	runner := SystemRunner{}
+	result, err := runner.Run(context.Background(), root, nil, "rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(result.Output) != canonical {
+		t.Fatalf("output=%q want=%q", result.Output, canonical)
 	}
 }
 

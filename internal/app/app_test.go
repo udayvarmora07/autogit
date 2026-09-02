@@ -12,9 +12,23 @@ import (
 	"autogit/internal/events"
 	"autogit/internal/policy"
 	"autogit/internal/repository"
+	"autogit/internal/session"
 )
 
 type countingProvider struct{ calls int }
+
+type appBaselineStore struct{ baseline repository.Baseline }
+
+func (s *appBaselineStore) RecordSessionBaseline(_ context.Context, _, _, _ string, baseline repository.Baseline) error {
+	s.baseline = baseline
+	return nil
+}
+
+type appBaselineRunner struct{}
+
+func (appBaselineRunner) Run(context.Context, string, map[string]string, ...string) (repository.CommandResult, error) {
+	return repository.CommandResult{}, nil
+}
 
 func (p *countingProvider) Touch() { p.calls++ }
 func (p *countingProvider) EnsureRemote(context.Context, string, string, string) (string, error) {
@@ -39,6 +53,23 @@ func TestHookRequiresConsentBeforeSchedulingAction(t *testing.T) {
 	}
 	if r.Action != "ask_consent" || r.ReasonCode != "CONSENT_REQUIRED" {
 		t.Fatalf("result=%+v", r)
+	}
+}
+
+func TestApplicationExposesSessionBaselineCaptureBoundary(t *testing.T) {
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "events.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	store := &appBaselineStore{}
+	want := repository.Baseline{Head: "0123456789012345678901234567890123456789"}
+	service := &session.Service{Runner: appBaselineRunner{}, Store: store, Capture: func(context.Context, repository.Runner, string) (repository.Baseline, error) { return want, nil }}
+	a := New(s, policy.Policy{}, nil)
+	a.Baselines = service
+	got, err := a.CaptureSessionBaseline(context.Background(), session.Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: t.TempDir()})
+	if err != nil || got.Head != want.Head || store.baseline.Head != want.Head {
+		t.Fatalf("got=%+v stored=%+v err=%v", got, store.baseline, err)
 	}
 }
 

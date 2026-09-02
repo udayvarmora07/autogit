@@ -74,6 +74,9 @@ func (f *Fake) Push(_ context.Context, remote, sha, ref string) error {
 	return nil
 }
 func (f *Fake) InspectRef(_ context.Context, remote, ref string) (string, error) {
+	if !validRemote(remote) || !validRef(ref) {
+		return "", errors.New("invalid ref inspection")
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	sha, ok := f.refs[remote+"#"+ref]

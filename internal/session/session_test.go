@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -67,5 +69,31 @@ func TestCaptureAndRecordDoesNotPersistWhenCaptureFails(t *testing.T) {
 	}
 	if store.sessionID != "" {
 		t.Fatal("baseline persisted after capture failure")
+	}
+}
+
+func TestNewServiceUsesProductionObservationRunner(t *testing.T) {
+	service := New(&fakeStore{})
+	if _, ok := service.Runner.(repository.SystemRunner); !ok {
+		t.Fatalf("runner=%T, want repository.SystemRunner", service.Runner)
+	}
+}
+
+func TestCaptureAndRecordCapturesExplicitOwnedPathsWithDefaultCapture(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "owned.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeStore{}
+	service := New(store)
+	got, err := service.CaptureAndRecord(context.Background(), Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: root, Paths: []string{"owned.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file, ok := got.Files["owned.txt"]; !ok || string(file.Content) != "baseline\n" {
+		t.Fatalf("baseline=%+v", got)
 	}
 }

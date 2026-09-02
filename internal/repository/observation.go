@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,74 @@ import (
 // observation. Keeping this port local prevents observation from acquiring
 // Git mutation authority.
 type CommandResult struct{ Output string }
+
+type SystemRunner struct {
+	Executable string
+	MaxOutput  int
+}
+
+func (r SystemRunner) Run(ctx context.Context, dir string, env map[string]string, args ...string) (CommandResult, error) {
+	executable := r.Executable
+	if executable == "" {
+		executable = "git"
+	}
+	max := r.MaxOutput
+	if max <= 0 {
+		max = 1 << 20
+	}
+	command := exec.CommandContext(ctx, executable, args...)
+	command.Dir = dir
+	command.Env = observationEnvironment(env)
+	output := &boundedObservationOutput{max: max}
+	command.Stdout, command.Stderr = output, output
+	err := command.Run()
+	if output.truncated && err == nil {
+		err = io.ErrShortBuffer
+	}
+	return CommandResult{Output: string(output.bytes)}, err
+}
+
+type boundedObservationOutput struct {
+	bytes     []byte
+	max       int
+	truncated bool
+}
+
+func (b *boundedObservationOutput) Write(value []byte) (int, error) {
+	if len(b.bytes)+len(value) > b.max {
+		remaining := b.max - len(b.bytes)
+		if remaining > 0 {
+			b.bytes = append(b.bytes, value[:remaining]...)
+		}
+		b.truncated = true
+		return len(value), io.ErrShortBuffer
+	}
+	b.bytes = append(b.bytes, value...)
+	return len(value), nil
+}
+
+func observationEnvironment(extra map[string]string) []string {
+	env := make([]string, 0, len(os.Environ())+len(extra)+3)
+	for _, item := range os.Environ() {
+		key := item
+		if at := strings.IndexByte(item, '='); at >= 0 {
+			key = item[:at]
+		}
+		if strings.HasPrefix(key, "GIT_") || strings.HasPrefix(key, "SSH_") || key == "CDPATH" {
+			continue
+		}
+		env = append(env, item)
+	}
+	keys := make([]string, 0, len(extra))
+	for key := range extra {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		env = append(env, key+"="+extra[key])
+	}
+	return env
+}
 
 type Runner interface {
 	Run(context.Context, string, map[string]string, ...string) (CommandResult, error)
@@ -43,6 +112,7 @@ type Baseline struct {
 
 type BaselineOptions struct {
 	MaxFileSize int64
+	Paths       []string
 }
 
 const defaultBaselineFileSize int64 = 16 << 20
@@ -134,6 +204,20 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 	if err != nil {
 		return Baseline{}, err
 	}
+	seenPaths := make(map[string]bool, len(paths)+len(options.Paths))
+	for _, name := range paths {
+		seenPaths[name] = true
+	}
+	for _, name := range options.Paths {
+		if err := validateRelativePath(name); err != nil {
+			return Baseline{}, fmt.Errorf("invalid baseline path: %w", err)
+		}
+		if !seenPaths[name] {
+			seenPaths[name] = true
+			paths = append(paths, name)
+		}
+	}
+	sort.Strings(paths)
 	files := make(map[string]FileObservation, len(paths))
 	for _, name := range paths {
 		file, captureErr := captureBaselineFile(abs, name, maxFileSize)
@@ -154,7 +238,12 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 
 func isUnbornHeadError(err error) bool {
 	var exitErr *exec.ExitError
-	return errors.As(err, &exitErr) && exitErr.ExitCode() == 128
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	// Git versions differ here: --verify --quiet reports an unborn HEAD as
+	// either 1 or 128. Both are safe only when the command produced no HEAD.
+	return exitErr.ExitCode() == 1 || exitErr.ExitCode() == 128
 }
 
 func statusPaths(raw string) ([]string, error) {

@@ -5,6 +5,7 @@ import (
 	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
 	"autogit/internal/repository"
+	"autogit/internal/session"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,12 +37,24 @@ func (r Result) MarshalJSON() ([]byte, error) {
 }
 
 type App struct {
-	Store    *events.Store
-	Policy   policy.Policy
-	Provider Provider
-	Resolver Resolver
-	Reducer  lifecycle.Reducer
+	Store     *events.Store
+	Policy    policy.Policy
+	Provider  Provider
+	Resolver  Resolver
+	Reducer   lifecycle.Reducer
+	Baselines *session.Service
 }
+
+// CaptureSessionBaseline is the application boundary for the session
+// coordinator. It intentionally does not accept raw client facts; the
+// session service captures from the trusted repository observation port.
+func (a *App) CaptureSessionBaseline(ctx context.Context, req session.Request) (repository.Baseline, error) {
+	if a == nil || a.Baselines == nil {
+		return repository.Baseline{}, errors.New("session baseline service is not configured")
+	}
+	return a.Baselines.CaptureAndRecord(ctx, req)
+}
+
 type Resolver func(string) (repository.Info, error)
 
 func New(s *events.Store, p policy.Policy, provider Provider) *App {

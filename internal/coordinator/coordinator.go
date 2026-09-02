@@ -305,6 +305,23 @@ func (c Coordinator) Push(ctx context.Context, r PushRequest) error {
 	return c.Store.MarkPushSucceeded(ctx, r.ID)
 }
 
+// RetryPush resumes only a durable transient-failure intent. The stored
+// request is passed back through Push so identity checks and exact-SHA
+// postconditions remain mandatory on every retry.
+func (c Coordinator) RetryPush(ctx context.Context, id string) error {
+	if c.Store == nil || id == "" {
+		return errors.New("push retry dependencies are missing")
+	}
+	status, request, err := c.Store.PushStatus(ctx, id)
+	if err != nil {
+		return err
+	}
+	if status != state.PushRetryWait {
+		return fmt.Errorf("push job %q is not retryable", id)
+	}
+	return c.Push(ctx, request)
+}
+
 func (c Coordinator) recordPushFailure(ctx context.Context, id string, cause error) error {
 	if provider.IsRetryable(cause) {
 		if err := c.Store.MarkPushRetry(ctx, id); err != nil {

@@ -15,6 +15,7 @@ type Request struct {
 	RepositoryID string
 	ClientID     string
 	Root         string
+	Paths        []string
 }
 
 type Store interface {
@@ -29,6 +30,10 @@ type Service struct {
 	Capture CaptureFunc
 }
 
+func New(store Store) Service {
+	return Service{Runner: repository.SystemRunner{}, Store: store}
+}
+
 func (s Service) CaptureAndRecord(ctx context.Context, req Request) (repository.Baseline, error) {
 	if req.SessionID == "" || req.RepositoryID == "" || req.ClientID == "" || req.Root == "" {
 		return repository.Baseline{}, errors.New("session baseline request is incomplete")
@@ -40,7 +45,13 @@ func (s Service) CaptureAndRecord(ctx context.Context, req Request) (repository.
 	if capture == nil {
 		capture = repository.CaptureBaseline
 	}
-	baseline, err := capture(ctx, s.Runner, req.Root)
+	var baseline repository.Baseline
+	var err error
+	if s.Capture == nil && len(req.Paths) > 0 {
+		baseline, err = repository.CaptureBaselineWithOptions(ctx, s.Runner, req.Root, repository.BaselineOptions{Paths: req.Paths})
+	} else {
+		baseline, err = capture(ctx, s.Runner, req.Root)
+	}
 	if err != nil {
 		return repository.Baseline{}, err
 	}

@@ -105,3 +105,17 @@ tests:
   ref/SHA postconditions and allowlisted cleanup.
 - [ ] Complete private-alpha and public-beta gates; do not claim a phase exit
   before all plan deliverables and review evidence are present.
+
+## Completed execution batch (continuation)
+
+These eight bounded slices were implemented with loop-level failing and
+passing verification:
+
+- [x] Added guarded `Coordinator.RetryPush` for durable `RETRY_WAIT` jobs.
+- [x] Validated provider remote/ref identities before ref inspection.
+- [x] Exposed the session baseline service through the application boundary.
+- [x] Allowed explicit clean paths in repository baseline capture.
+- [x] Added the production bounded read-only repository Git runner.
+- [x] Added a production-default session service constructor.
+- [x] Carried explicit owned paths through default session baseline capture.
+- [x] Accepted both Git exit-code forms for an unborn `HEAD`.

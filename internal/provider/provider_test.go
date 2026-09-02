@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -64,5 +65,19 @@ func TestFakeProviderDoesNotAttachCollision(t *testing.T) {
 	f.Add("owner/name", "private")
 	if _, err := f.EnsureRemote(context.Background(), "owner", "name", "private"); err == nil {
 		t.Fatal("collision accepted")
+	}
+}
+
+func TestFakeProviderValidatesRemoteRefBeforeInspection(t *testing.T) {
+	f := NewFake()
+	for name, remote := range map[string]string{"missing-owner": "repo", "extra-part": "owner/repo/extra", "bad-owner": "owner! /repo"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := f.InspectRef(context.Background(), remote, "refs/heads/main"); err == nil || !strings.Contains(err.Error(), "invalid ref inspection") {
+				t.Fatal("invalid remote accepted")
+			}
+		})
+	}
+	if _, err := f.InspectRef(context.Background(), "owner/repo", "bad ref"); err == nil || !strings.Contains(err.Error(), "invalid ref inspection") {
+		t.Fatal("invalid ref accepted")
 	}
 }

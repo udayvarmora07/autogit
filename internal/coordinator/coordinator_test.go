@@ -136,6 +136,26 @@ func TestPushDoesNotMutateWhenRemoteConfirmationFails(t *testing.T) {
 	}
 }
 
+func TestRetryPushResumesOnlyRetryableExactIntent(t *testing.T) {
+	s := newMemoryStore()
+	r := PushRequest{ID: "retry", Owner: "o", Name: "n", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	s.pushes[r.ID] = r
+	s.status[r.ID] = "RETRY_WAIT"
+	p := &fakeProvider{confirmed: true}
+	if err := (Coordinator{Store: s, Provider: p}).RetryPush(context.Background(), r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s.status[r.ID] != "SUCCEEDED" || p.calls != 0 || p.confirms != 1 {
+		t.Fatalf("status=%q pushes=%d confirms=%d", s.status[r.ID], p.calls, p.confirms)
+	}
+	if err := (Coordinator{Store: s, Provider: p}).RetryPush(context.Background(), r.ID); err == nil {
+		t.Fatal("succeeded push was retried")
+	}
+	if p.confirms != 1 {
+		t.Fatal("non-retryable state invoked provider")
+	}
+}
+
 func TestPushPersistsTypedProviderFailureStatesAtEveryBoundary(t *testing.T) {
 	cases := []struct {
 		name                     string
