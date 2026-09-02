@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"autogit/internal/policy"
@@ -99,6 +100,48 @@ func TestCaptureAndRecordCapturesExplicitOwnedPathsWithDefaultCapture(t *testing
 	}
 	if file, ok := got.Files["owned.txt"]; !ok || string(file.Content) != "baseline\n" {
 		t.Fatalf("baseline=%+v", got)
+	}
+}
+
+func TestResumeFromDurableCleanBaselineReconstructsCommittedBytes(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("committed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	baseline, err := repository.CaptureBaseline(context.Background(), repository.SystemRunner{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := (Service{Runner: repository.SystemRunner{}}).ResumeFromDurable(context.Background(), Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: root, Paths: []string{"tracked.txt", "new.txt"}}, DurableBaseline{
+		Head: baseline.Head, IndexDigest: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, PathsDigest: repository.DigestPaths([]string{"tracked.txt", "new.txt"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := started.Baseline.Files["tracked.txt"]
+	newFile := started.Baseline.Files["new.txt"]
+	if !tracked.Present || string(tracked.Content) != "committed\n" || newFile.Present {
+		t.Fatalf("baseline files=%+v", started.Baseline.Files)
+	}
+}
+
+func TestResumeFromDurableRejectsDirtyBaseline(t *testing.T) {
+	service := Service{Runner: fakeRunner{}}
+	_, err := service.ResumeFromDurable(context.Background(), Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: t.TempDir(), Paths: []string{"owned.txt"}}, DurableBaseline{
+		StatusDigest: "sha256:" + strings.Repeat("a", 64), PathsDigest: repository.DigestPaths([]string{"owned.txt"}),
+	})
+	if err == nil || !strings.Contains(err.Error(), "dirty") {
+		t.Fatalf("error=%v, want dirty baseline rejection", err)
 	}
 }
 

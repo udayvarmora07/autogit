@@ -18,6 +18,7 @@ import (
 	"autogit/internal/app"
 	"autogit/internal/coordinator"
 	"autogit/internal/events"
+	"autogit/internal/gittransaction"
 	"autogit/internal/install"
 	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
@@ -27,6 +28,7 @@ import (
 	"autogit/internal/session"
 	"autogit/internal/state"
 	"autogit/internal/verification"
+	localworkflow "autogit/internal/workflow"
 )
 
 type cliError struct{ Code, Message string }
@@ -84,6 +86,12 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		return runSync(args[1:], dir, out)
+	}
+	if cmd == "verify" {
+		if err := validateVerifyArgs(args[1:]); err != nil {
+			return err
+		}
+		return runVerify(args[1:], dir, out)
 	}
 	if cmd == "logs" {
 		root := flag(args[1:], "--repo")
@@ -252,8 +260,14 @@ type retryOptions struct {
 }
 
 type syncOptions struct {
-	Repo, Session, Client string
-	Paths                 []string
+	ID, Repo, Session, Client, Message, Verifiers string
+	Paths                                         []string
+	Complete                                      bool
+}
+
+type verifyOptions struct {
+	ID, Repo, Session, Client, Message, Verifiers string
+	Paths                                         []string
 }
 
 func validateSyncArgs(args []string) error {
@@ -266,8 +280,16 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		name := args[i]
-		if name != "--repo" && name != "--session" && name != "--client" && name != "--path" {
-			return syncOptions{}, cliError{"E_USAGE", "sync supports --repo, --session, --client, and repeated --path"}
+		if name == "--complete" {
+			if seen[name] {
+				return syncOptions{}, cliError{"E_USAGE", "--complete may be provided once"}
+			}
+			options.Complete = true
+			seen[name] = true
+			continue
+		}
+		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--verifiers" && name != "--path" {
+			return syncOptions{}, cliError{"E_USAGE", "sync supports baseline fields plus --complete, --id, --message, and --verifiers"}
 		}
 		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
 			return syncOptions{}, cliError{"E_USAGE", name + " requires a value"}
@@ -276,12 +298,18 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 			return syncOptions{}, cliError{"E_USAGE", name + " may be provided once"}
 		}
 		switch name {
+		case "--id":
+			options.ID = args[i+1]
 		case "--repo":
 			options.Repo = args[i+1]
 		case "--session":
 			options.Session = args[i+1]
 		case "--client":
 			options.Client = args[i+1]
+		case "--message":
+			options.Message = args[i+1]
+		case "--verifiers":
+			options.Verifiers = args[i+1]
 		case "--path":
 			options.Paths = append(options.Paths, args[i+1])
 		}
@@ -290,6 +318,12 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 	}
 	if options.Repo == "" || options.Session == "" || options.Client == "" || len(options.Paths) == 0 {
 		return syncOptions{}, cliError{"E_SCOPE", "--repo, --session, --client, and at least one --path are required for sync"}
+	}
+	if !options.Complete && (options.ID != "" || options.Message != "" || options.Verifiers != "") {
+		return syncOptions{}, cliError{"E_USAGE", "--id, --message, and --verifiers require --complete"}
+	}
+	if options.Complete && (options.ID == "" || options.Message == "" || options.Verifiers == "") {
+		return syncOptions{}, cliError{"E_SCOPE", "--id, --message, and --verifiers are required with --complete"}
 	}
 	return options, nil
 }
@@ -316,6 +350,9 @@ func runSync(args []string, dir string, out io.Writer) error {
 		return err
 	}
 	defer db.Close()
+	if options.Complete {
+		return runSyncComplete(context.Background(), options, dir, info, db, out)
+	}
 	baseline, err := session.New(db).CaptureAndRecord(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths})
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
@@ -328,6 +365,147 @@ func runSync(args []string, dir string, out io.Writer) error {
 	result["repo_id"] = info.RepoID
 	result["session_id"] = options.Session
 	return json.NewEncoder(out).Encode(result)
+}
+
+func runSyncComplete(ctx context.Context, options syncOptions, dir string, info repository.Info, db *state.Store, out io.Writer) error {
+	durable, err := db.Session(ctx, options.Session)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cliError{"E_NOT_FOUND", "sync session was not found"}
+	}
+	if err != nil {
+		return cliError{"E_STATE", "cannot read sync session"}
+	}
+	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
+		return cliError{"E_SCOPE", "sync session does not match repository or client"}
+	}
+	registry, err := verification.LoadRegistryFile(options.Verifiers, 0)
+	if err != nil {
+		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
+	}
+	service := session.New(db)
+	started, err := service.ResumeFromDurable(ctx, session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths}, session.DurableBaseline{
+		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest,
+	})
+	if err != nil {
+		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
+	}
+	plan, err := service.BuildOwnedPlanAtCurrent(ctx, started.Request, started.Baseline)
+	if err != nil {
+		return cliError{"E_SCOPE", safeMessage(err.Error())}
+	}
+	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, Lease: coordinator.StateLease{DB: db}}
+	result, err := workflowService.RunPlan(ctx, localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Policy: loadPolicy(dir, info.RepoID), Verifiers: registry}, plan)
+	if err != nil {
+		return cliError{"E_COMMIT", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{
+		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "commit", "reason_code": "SYNC_COMMITTED",
+		"session_id": options.Session, "commit_sha": result.Commit.SHA, "ref": result.Commit.Ref, "ownership_digest": result.OwnershipDigest,
+		"verification": map[string]any{"verifier_set_digest": result.Verification.VerifierSetDigest, "evidence_digest": result.Verification.EvidenceDigest},
+	})
+}
+
+func validateVerifyArgs(args []string) error {
+	_, err := parseVerifyArgs(args)
+	return err
+}
+
+func parseVerifyArgs(args []string) (verifyOptions, error) {
+	var options verifyOptions
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--verifiers" && name != "--path" {
+			return verifyOptions{}, cliError{"E_USAGE", "verify supports --id, --repo, --session, --client, --message, --verifiers, and repeated --path"}
+		}
+		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return verifyOptions{}, cliError{"E_USAGE", name + " requires a value"}
+		}
+		if name != "--path" && seen[name] {
+			return verifyOptions{}, cliError{"E_USAGE", name + " may be provided once"}
+		}
+		switch name {
+		case "--id":
+			options.ID = args[i+1]
+		case "--repo":
+			options.Repo = args[i+1]
+		case "--session":
+			options.Session = args[i+1]
+		case "--client":
+			options.Client = args[i+1]
+		case "--message":
+			options.Message = args[i+1]
+		case "--verifiers":
+			options.Verifiers = args[i+1]
+		case "--path":
+			options.Paths = append(options.Paths, args[i+1])
+		}
+		seen[name] = true
+		i++
+	}
+	if options.ID == "" || options.Repo == "" || options.Session == "" || options.Client == "" || options.Message == "" || options.Verifiers == "" || len(options.Paths) == 0 {
+		return verifyOptions{}, cliError{"E_SCOPE", "--id, --repo, --session, --client, --message, --verifiers, and at least one --path are required for verify"}
+	}
+	return options, nil
+}
+
+func runVerify(args []string, dir string, out io.Writer) error {
+	options, err := parseVerifyArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0700)
+	key, err := loadIdentityKey(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKey(options.Repo, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	db, err := state.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	durable, err := db.Session(context.Background(), options.Session)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cliError{"E_NOT_FOUND", "verify session was not found"}
+	}
+	if err != nil {
+		return cliError{"E_STATE", "cannot read verify session"}
+	}
+	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
+		return cliError{"E_SCOPE", "verify session does not match repository or client"}
+	}
+	registry, err := verification.LoadRegistryFile(options.Verifiers, 0)
+	if err != nil {
+		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
+	}
+	service := session.New(db)
+	started, err := service.ResumeFromDurable(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths}, session.DurableBaseline{
+		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest,
+	})
+	if err != nil {
+		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
+	}
+	plan, err := service.BuildOwnedPlanAtCurrent(context.Background(), started.Request, started.Baseline)
+	if err != nil {
+		return cliError{"E_SCOPE", safeMessage(err.Error())}
+	}
+	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}}
+	result, err := workflowService.VerifyPlan(context.Background(), localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Policy: loadPolicy(dir, info.RepoID), Verifiers: registry}, plan)
+	if err != nil {
+		return cliError{"E_VERIFY", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{
+		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "verify", "reason_code": "VERIFICATION_PASSED",
+		"session_id": options.Session, "ownership_digest": result.OwnershipDigest,
+		"verification": map[string]any{"decision": result.Verification.Decision, "reason": result.Verification.Reason, "verifier_set_digest": result.Verification.VerifierSetDigest, "evidence_digest": result.Verification.EvidenceDigest},
+	})
 }
 
 func validateRetryArgs(args []string) error {

@@ -42,6 +42,13 @@ type Started struct {
 	Baseline repository.Baseline
 }
 
+// DurableBaseline is the source-free session evidence retained across CLI
+// processes. ResumeFromDurable reconstructs only clean committed paths from
+// the recorded HEAD and keeps their bytes in the returned in-memory handoff.
+type DurableBaseline struct {
+	Head, IndexDigest, StatusDigest, PathsDigest string
+}
+
 // Workflow is the narrow local-commit boundary used after ownership has been
 // derived. Session code cannot bypass the workflow's scan and verification
 // gates by receiving a Git implementation directly.
@@ -62,6 +69,42 @@ func (s Service) Start(ctx context.Context, req Request) (Started, error) {
 		return Started{}, err
 	}
 	return Started{Request: req, Baseline: baseline.Clone()}, nil
+}
+
+// ResumeFromDurable recreates a session handoff after a process restart. It is
+// intentionally limited to clean baselines: when the session began dirty,
+// durable digests cannot identify which pre-existing paths belong to the
+// caller, so the operation fails closed instead of guessing ownership.
+func (s Service) ResumeFromDurable(ctx context.Context, req Request, durable DurableBaseline) (Started, error) {
+	if req.SessionID == "" || req.RepositoryID == "" || req.ClientID == "" || req.Root == "" {
+		return Started{}, errors.New("session baseline request is incomplete")
+	}
+	if len(req.Paths) == 0 {
+		return Started{}, errors.New("session baseline paths are required")
+	}
+	if durable.StatusDigest != repository.EmptyStatusDigest() {
+		return Started{}, errors.New("dirty session baseline cannot be resumed safely")
+	}
+	if durable.PathsDigest != repository.DigestPaths(req.Paths) {
+		return Started{}, errors.New("session baseline paths do not match durable evidence")
+	}
+	files, err := repository.CaptureCommittedFiles(ctx, s.Runner, req.Root, durable.Head, req.Paths, 0)
+	if err != nil {
+		return Started{}, err
+	}
+	paths := make([]string, 0, len(req.Paths))
+	seen := make(map[string]bool, len(req.Paths))
+	for _, name := range req.Paths {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		paths = append(paths, name)
+	}
+	return Started{Request: req, Baseline: repository.Baseline{
+		Head: durable.Head, IndexDigest: durable.IndexDigest, StatusDigest: durable.StatusDigest,
+		PathsDigest: durable.PathsDigest, Paths: paths, Files: files,
+	}}, nil
 }
 
 // Complete captures the current explicitly requested paths, derives ownership

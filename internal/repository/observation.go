@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -182,6 +183,103 @@ func (b Baseline) Clone() Baseline {
 // symlink components. An empty HEAD is valid for an unborn initial branch.
 func CaptureBaseline(ctx context.Context, runner Runner, root string) (Baseline, error) {
 	return CaptureBaselineWithOptions(ctx, runner, root, BaselineOptions{})
+}
+
+// CaptureCommittedFiles reads only explicitly requested regular files from an
+// immutable Git tree. It is the safe restart boundary for clean sessions:
+// durable state stores the tree identity, while source bytes are reconstructed
+// transiently from Git and never written to the state database.
+func CaptureCommittedFiles(ctx context.Context, runner Runner, root, head string, paths []string, maxFileSize int64) (map[string]FileObservation, error) {
+	if runner == nil || root == "" {
+		return nil, errors.New("committed-file runner and root are required")
+	}
+	if head != "" && !validObjectID(head) {
+		return nil, errors.New("invalid committed-file HEAD")
+	}
+	if maxFileSize <= 0 {
+		maxFileSize = defaultBaselineFileSize
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("committed-file root: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		return nil, errors.New("committed-file root is not a directory")
+	}
+	files := make(map[string]FileObservation, len(paths))
+	seen := make(map[string]bool, len(paths))
+	for _, name := range paths {
+		if err := validateRelativePath(name); err != nil {
+			return nil, fmt.Errorf("invalid committed-file path: %w", err)
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		if head == "" {
+			files[name] = FileObservation{}
+			continue
+		}
+		treeResult, runErr := runner.Run(ctx, abs, nil, "ls-tree", "-z", "--full-tree", head, "--", name)
+		if runErr != nil {
+			return nil, fmt.Errorf("read committed tree entry %q: %w", name, runErr)
+		}
+		mode, object, treePath, present, parseErr := parseCommittedTreeEntry(treeResult.Output)
+		if parseErr != nil {
+			return nil, fmt.Errorf("read committed tree entry %q: %w", name, parseErr)
+		}
+		if !present {
+			files[name] = FileObservation{}
+			continue
+		}
+		if treePath != name {
+			return nil, fmt.Errorf("committed tree path mismatch: got %q, want %q", treePath, name)
+		}
+		if mode != 0100644 && mode != 0100755 {
+			return nil, fmt.Errorf("committed tree entry %q is not a regular file", name)
+		}
+		blobResult, runErr := runner.Run(ctx, abs, nil, "cat-file", "blob", object)
+		if runErr != nil {
+			return nil, fmt.Errorf("read committed file %q: %w", name, runErr)
+		}
+		if int64(len(blobResult.Output)) > maxFileSize {
+			return nil, fmt.Errorf("committed file %q exceeds capture limit", name)
+		}
+		fileMode := os.FileMode(0644)
+		if mode == 0100755 {
+			fileMode = 0755
+		}
+		files[name] = FileObservation{Content: append([]byte(nil), []byte(blobResult.Output)...), Mode: fileMode, Present: true}
+	}
+	return files, nil
+}
+
+func parseCommittedTreeEntry(raw string) (mode int64, object, name string, present bool, err error) {
+	if raw == "" {
+		return 0, "", "", false, nil
+	}
+	parts := strings.Split(raw, "\x00")
+	if len(parts) != 2 || parts[0] == "" {
+		return 0, "", "", false, errors.New("malformed Git tree entry")
+	}
+	fields := strings.SplitN(parts[0], "\t", 2)
+	if len(fields) != 2 {
+		return 0, "", "", false, errors.New("malformed Git tree metadata")
+	}
+	metadata := strings.Fields(fields[0])
+	if len(metadata) != 3 || metadata[1] != "blob" || !validObjectID(metadata[2]) {
+		return 0, "", "", false, errors.New("invalid Git tree metadata")
+	}
+	mode, err = strconv.ParseInt(metadata[0], 8, 32)
+	if err != nil {
+		return 0, "", "", false, errors.New("invalid Git tree mode")
+	}
+	return mode, metadata[2], fields[1], true, nil
 }
 
 // CaptureBaselineWithOptions records the same read-only repository facts as
@@ -471,3 +569,22 @@ func digestStrings(values []string) string {
 	sort.Strings(copyValues)
 	return digestBytes([]byte(strings.Join(copyValues, "\x00")))
 }
+
+// DigestPaths returns the canonical identity for an explicit path set. It
+// removes duplicate requests because repository observations are set-shaped.
+func DigestPaths(values []string) string {
+	seen := make(map[string]bool, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return digestStrings(unique)
+}
+
+// EmptyStatusDigest identifies a repository with no tracked, staged, or
+// untracked status records at a session boundary.
+func EmptyStatusDigest() string { return digestBytes(nil) }

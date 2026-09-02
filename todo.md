@@ -156,3 +156,11 @@ These eight bounded slices were implemented with focused red-green tests:
   commit-lease release failures after preserving the durable commit result.
 - [x] Applied canonical repository/worktree writer leases to local workflow
   commit/ref effects while keeping read-only verification outside the lease.
+- [x] Added clean-session restart reconstruction from immutable Git tree blobs;
+  dirty durable baselines fail closed without persisting source bytes.
+- [x] Wired explicit read-only CLI `verify` for clean sessions, trusted
+  verifiers, owned paths, and redacted evidence without commit/ref effects.
+- [x] Wired explicit `sync --complete` for clean-session owned local commits
+  with trusted verification and AutoGit-ref-only mutation.
+- [x] Normalized ownership mode comparison to Git's executable-bit semantics,
+  avoiding false conflicts from restrictive local filesystem permissions.

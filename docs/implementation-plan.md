@@ -324,9 +324,11 @@ be exercised without a user repository or network credentials:
 The following planned gates remain open and are not represented as completed:
 full session-driven baseline orchestration (the observation, staging, durable
 evidence, session start/complete coordinator, and session-start hook wiring
-are implemented, but the CLI/session completion command still needs wiring),
-full trusted verification
-policy configuration wiring, complete adapter discovery/installation and
+are implemented; the CLI now supports clean-session read-only verification,
+and explicit clean-session `sync --complete` local commits, but full
+lifecycle-driven CLI/session completion still needs wiring), complete
+trusted verification policy configuration for all workflow modes, complete
+adapter discovery/installation and
 workflow orchestration in the CLI,
 the complete CLI publication/provider workflow, provider intent wiring from the
 CLI, the >=609 release-test target, and the opt-in disposable-provider canary.

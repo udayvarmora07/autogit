@@ -64,6 +64,43 @@ func TestCaptureBaselineRecordsHeadIndexStatusAndOwnedFileFingerprints(t *testin
 	}
 }
 
+func TestCaptureCommittedFilesReadsOnlyRequestedRegularTreeEntries(t *testing.T) {
+	root := t.TempDir()
+	head := strings.Repeat("a", 40)
+	object := strings.Repeat("b", 40)
+	runner := &observationRunner{outputs: map[string]string{
+		"ls-tree\x00-z\x00--full-tree\x00" + head + "\x00--\x00owned.txt": "100755 blob " + object + "\towned.txt\x00",
+		"cat-file\x00blob\x00" + object:                                   "committed content\n",
+	}}
+	files, err := CaptureCommittedFiles(context.Background(), runner, root, head, []string{"owned.txt"}, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, ok := files["owned.txt"]
+	if !ok || !file.Present || string(file.Content) != "committed content\n" || file.Mode.Perm() != 0755 {
+		t.Fatalf("files=%+v", files)
+	}
+}
+
+func TestCaptureCommittedFilesRejectsUnsafeTreeEntries(t *testing.T) {
+	root := t.TempDir()
+	head := strings.Repeat("a", 40)
+	object := strings.Repeat("b", 40)
+	for name, tree := range map[string]string{
+		"symlink":   "120000 blob " + object + "\towned.txt\x00",
+		"directory": "040000 tree " + object + "\towned.txt\x00",
+	} {
+		t.Run(name, func(t *testing.T) {
+			runner := &observationRunner{outputs: map[string]string{
+				"ls-tree\x00-z\x00--full-tree\x00" + head + "\x00--\x00owned.txt": tree,
+			}}
+			if _, err := CaptureCommittedFiles(context.Background(), runner, root, head, []string{"owned.txt"}, 1<<20); err == nil {
+				t.Fatal("unsafe tree entry accepted")
+			}
+		})
+	}
+}
+
 func TestCaptureBaselineCanonicalizesRootBeforeRunningGit(t *testing.T) {
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {

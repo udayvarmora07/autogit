@@ -156,10 +156,10 @@ func sameObservation(left, right ObservedFile) bool {
 }
 
 func normalizedMode(mode os.FileMode) os.FileMode {
-	if mode == 0 {
+	if mode == 0 || mode.Perm()&0111 == 0 {
 		return 0644
 	}
-	return mode
+	return 0755
 }
 
 func observedPresent(file ObservedFile) bool {

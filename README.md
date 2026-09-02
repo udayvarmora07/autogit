@@ -36,8 +36,11 @@ authentication and repository operations.
 `go run ./cmd/autogit` provides the versioned hook result contract and the
 safe local operations (`install`, `doctor`, `enable`, `disable`, `status`,
 `plan`, `hook`, `logs`, `uninstall`, `config explain`, baseline-capturing
-`sync`, and guarded `retry`). `verify` still returns an explicit unsupported
-result. The foundation currently
+`sync` (plus explicit clean-session `sync --complete`), clean-session read-only
+`verify`, and guarded `retry`). `verify` requires explicit
+repository/session/path/message/verifier inputs and never commits or updates
+refs. `sync --complete` creates only an AutoGit-owned local commit ref after
+trusted verification. The foundation currently
 includes strict bounded event decoding
 (including duplicate-key and replay/conflict handling), permission-restricted
 SQLite receipts and causal buffering, policy defaults, canonical repository
@@ -53,9 +56,9 @@ canonical-URL binding, and a production bounded process runner are present as
 tested libraries. The session package provides an in-memory start/complete
 handoff into the verified local workflow, while the CLI hook captures trusted
 session-start baselines without exposing their contents. The complete CLI
-`verify`/`sync` local-commit and publication/provider workflow remains
-unwired. No command in this foundation contacts GitHub or modifies a user
-repository implicitly; provider tests/canaries are not live.
+Lifecycle-driven session completion and the publication/provider workflow
+remain unwired. No command in this foundation contacts GitHub or modifies a
+user repository implicitly; provider tests/canaries are not live.
 
 ### Verification and remaining release gates
 

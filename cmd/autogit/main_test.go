@@ -100,14 +100,117 @@ func hookEvent(id, typ, key, scopeExtra, taskExtra, orderingExtra string) string
 	return `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"` + id + `","event_type":"` + typ + `","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"` + scopeExtra + taskExtra + `},"ordering":{"stream_id":"stream"` + orderingExtra + `},"idempotency":{"key":"` + key + `"},"payload":{}}`
 }
 
-func TestVerifyWithoutCandidateIsExplicitlyUnsupported(t *testing.T) {
+func TestVerifyRequiresExplicitSessionEvidence(t *testing.T) {
 	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
 	var out bytes.Buffer
-	if err := run([]string{"verify"}, strings.NewReader(""), &out); err != nil {
+	if err := run([]string{"verify"}, strings.NewReader(""), &out); err == nil || !strings.HasPrefix(err.Error(), "E_SCOPE:") {
+		t.Fatalf("missing verify arguments error=%v output=%s", err, out.String())
+	}
+}
+
+func TestVerifyReconstructsCleanSessionWithoutCreatingCommitIntent(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"disposition":"unsupported"`) || !strings.Contains(out.String(), `"reason_code":"E_UNIMPLEMENTED"`) {
-		t.Fatalf("result=%s", out.String())
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	for _, config := range [][]string{{"user.name", "AutoGit"}, {"user.email", "autogit@example.test"}} {
+		if output, err := exec.Command("git", "-C", root, "config", config[0], config[1]).CombinedOutput(); err != nil {
+			t.Fatalf("git config: %v: %s", err, output)
+		}
+	}
+	var setup bytes.Buffer
+	if err := run([]string{"enable", "--repo", root}, strings.NewReader(""), &setup); err != nil {
+		t.Fatal(err)
+	}
+	var syncOut bytes.Buffer
+	if err := run([]string{"sync", "--repo", root, "--session", "session-verify", "--client", "codex", "--path", "tracked.txt", "--path", "new.txt"}, strings.NewReader(""), &syncOut); err != nil {
+		t.Fatalf("sync: %v output=%s", err, syncOut.String())
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
+	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var verifyOut bytes.Buffer
+	if err := run([]string{"verify", "--id", "verify-1", "--repo", root, "--session", "session-verify", "--client", "codex", "--message", "feat: verify candidate", "--verifiers", verifierConfig, "--path", "tracked.txt", "--path", "new.txt"}, strings.NewReader(""), &verifyOut); err != nil {
+		t.Fatalf("verify: %v output=%s", err, verifyOut.String())
+	}
+	if !strings.Contains(verifyOut.String(), `"reason_code":"VERIFICATION_PASSED"`) || strings.Contains(verifyOut.String(), "candidate") {
+		t.Fatalf("verify output=%s", verifyOut.String())
+	}
+	db, err := state.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.GitCommitIntent(context.Background(), "verify-1"); err == nil {
+		t.Fatal("verify created durable commit intent")
+	}
+	if refs, err := exec.Command("git", "-C", root, "show-ref", "--verify", "refs/autogit/commits/verify-1").CombinedOutput(); err == nil {
+		t.Fatalf("verify created AutoGit ref: output=%s", refs)
+	}
+}
+
+func TestSyncCompleteCreatesVerifiedAutoGitCommitFromCleanSession(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	for _, config := range [][]string{{"user.name", "AutoGit"}, {"user.email", "autogit@example.test"}} {
+		if output, err := exec.Command("git", "-C", root, "config", config[0], config[1]).CombinedOutput(); err != nil {
+			t.Fatalf("git config: %v: %s", err, output)
+		}
+	}
+	var setup bytes.Buffer
+	if err := run([]string{"enable", "--repo", root}, strings.NewReader(""), &setup); err != nil {
+		t.Fatal(err)
+	}
+	var syncOut bytes.Buffer
+	if err := run([]string{"sync", "--repo", root, "--session", "session-complete", "--client", "codex", "--path", "new.txt"}, strings.NewReader(""), &syncOut); err != nil {
+		t.Fatalf("sync: %v output=%s", err, syncOut.String())
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
+	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var completeOut bytes.Buffer
+	if err := run([]string{"sync", "--complete", "--id", "commit-1", "--repo", root, "--session", "session-complete", "--client", "codex", "--message", "feat: capture candidate", "--verifiers", verifierConfig, "--path", "new.txt"}, strings.NewReader(""), &completeOut); err != nil {
+		t.Fatalf("sync complete: %v output=%s", err, completeOut.String())
+	}
+	if !strings.Contains(completeOut.String(), `"reason_code":"SYNC_COMMITTED"`) || strings.Contains(completeOut.String(), "candidate") {
+		t.Fatalf("sync complete output=%s", completeOut.String())
+	}
+	if refs, err := exec.Command("git", "-C", root, "show-ref", "--verify", "refs/autogit/commits/commit-1").CombinedOutput(); err != nil || len(refs) == 0 {
+		t.Fatalf("missing AutoGit commit ref: err=%v output=%s", err, refs)
 	}
 }
 
