@@ -48,6 +48,57 @@ func TestSchemaInvalidHookDoesNotCreateDurableState(t *testing.T) {
 	}
 }
 
+func TestHookSessionStartedRecordsRepositoryBaselineBeforeReturning(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("user work\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	key := strings.Repeat("k", 32)
+	if err := os.WriteFile(filepath.Join(stateDir, "identity.key"), []byte(key), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.DiscoverWithKey(root, []byte(key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCDF", "session.started", "started", `,"session_id":"session"`, "", "")
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(input), &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["project"] = map[string]any{"candidate_root": root}
+	inputBytes, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"hook"}, bytes.NewReader(inputBytes), &out); err != nil {
+		t.Fatal(err)
+	}
+	db, err := state.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	got, err := db.Session(context.Background(), "session")
+	if err != nil || got.RepositoryID != info.RepoID || got.ClientID != "codex" || got.BaselinePathsDigest == "" {
+		t.Fatalf("session=%+v err=%v output=%s", got, err, out.String())
+	}
+	if strings.Contains(out.String(), "existing.txt") || strings.Contains(out.String(), "user work") {
+		t.Fatalf("hook output leaked baseline content: %s", out.String())
+	}
+}
+
+func hookEvent(id, typ, key, scopeExtra, taskExtra, orderingExtra string) string {
+	return `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"` + id + `","event_type":"` + typ + `","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"` + scopeExtra + taskExtra + `},"ordering":{"stream_id":"stream"` + orderingExtra + `},"idempotency":{"key":"` + key + `"},"payload":{}}`
+}
+
 func TestVerifyWithoutCandidateIsExplicitlyUnsupported(t *testing.T) {
 	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
 	var out bytes.Buffer

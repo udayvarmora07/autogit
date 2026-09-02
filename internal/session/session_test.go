@@ -9,8 +9,11 @@ import (
 	"reflect"
 	"testing"
 
+	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/staging"
+	"autogit/internal/verification"
+	"autogit/internal/workflow"
 )
 
 type fakeRunner struct{ baseline repository.Baseline }
@@ -113,4 +116,151 @@ func TestBuildOwnedPlanBridgesDurableBaselineToCurrentOwnedFiles(t *testing.T) {
 		t.Fatalf("plan=%+v candidate=%+v", plan, plan.CandidateSnapshot())
 	}
 	var _ staging.Plan = plan
+}
+
+type fakeWorkflow struct {
+	called  bool
+	request workflow.Request
+	plan    staging.Plan
+}
+
+func (w *fakeWorkflow) RunPlan(_ context.Context, request workflow.Request, plan staging.Plan) (workflow.Result, error) {
+	w.called = true
+	w.request = request
+	w.plan = plan
+	return workflow.Result{OwnershipDigest: plan.OwnershipDigest()}, nil
+}
+
+func TestCoordinatorCompletesOnlyChangesMadeAfterSessionBaseline(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := New(&fakeStore{})
+	request := Request{SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"existing.txt", "new.txt"}}
+	started, err := service.Start(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("after\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := &fakeWorkflow{}
+	got, err := service.Complete(context.Background(), started, w, "commit-1", "feat: capture new file", policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, &verification.VerifierRegistry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := w.plan.CandidateSnapshot()
+	if !w.called || len(entries) != 1 || entries[0].Path != "new.txt" || string(entries[0].Content) != "after\n" || got.OwnershipDigest == "" {
+		t.Fatalf("called=%v entries=%+v result=%+v", w.called, entries, got)
+	}
+	if w.request.ID != "commit-1" || w.request.RepositoryDir != root || w.request.Message != "feat: capture new file" || w.request.Verifiers == nil {
+		t.Fatalf("workflow request=%+v", w.request)
+	}
+}
+
+func TestCoordinatorBlocksBaselineOwnershipChangesBeforeWorkflow(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := New(&fakeStore{})
+	started, err := service.Start(context.Background(), Request{SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"existing.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := &fakeWorkflow{}
+	if _, err := service.Complete(context.Background(), started, w, "commit-1", "feat: changed file", policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, &verification.VerifierRegistry{}); err == nil {
+		t.Fatal("baseline ownership change was accepted")
+	}
+	if w.called {
+		t.Fatal("workflow ran for ambiguous ownership")
+	}
+}
+
+func TestCoordinatorDoesNotInvokeWorkflowForAnEmptyOwnedPlan(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	service := New(&fakeStore{})
+	started, err := service.Start(context.Background(), Request{SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"new.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &fakeWorkflow{}
+	if _, err := service.Complete(context.Background(), started, w, "commit-1", "feat: no changes", policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, &verification.VerifierRegistry{}); err == nil {
+		t.Fatal("empty owned plan was accepted")
+	}
+	if w.called {
+		t.Fatal("workflow ran for an empty owned plan")
+	}
+}
+
+func TestCoordinatorRejectsSharedIndexChangesAfterBaseline(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	service := New(&fakeStore{})
+	request := Request{SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"new.txt"}}
+	started, err := service.Start(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("after\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "-C", root, "add", "--", "new.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	w := &fakeWorkflow{}
+	if _, err := service.Complete(context.Background(), started, w, "commit-1", "feat: add new file", policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, &verification.VerifierRegistry{}); err == nil {
+		t.Fatal("shared index change was accepted")
+	}
+	if w.called {
+		t.Fatal("workflow ran after shared index changed")
+	}
+}
+
+func TestCoordinatorRejectsHEADChangesAfterBaseline(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	service := New(&fakeStore{})
+	request := Request{SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"new.txt"}}
+	started, err := service.Start(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "baseline.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "baseline.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "chore: concurrent head")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("after\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := &fakeWorkflow{}
+	if _, err := service.Complete(context.Background(), started, w, "commit-1", "feat: add new file", policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, &verification.VerifierRegistry{}); err == nil {
+		t.Fatal("HEAD change was accepted")
+	}
+	if w.called {
+		t.Fatal("workflow ran after HEAD changed")
+	}
 }

@@ -97,6 +97,10 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 		}
 		seen[name] = true
 		old, had := baseline[name]
+		// An explicit baseline observation can record a missing path with an
+		// empty FileObservation. Absence is clean baseline state, not a
+		// pre-existing path whose later creation is ambiguous.
+		had = had && observedPresent(old)
 		now, observed := current[name]
 		exists := observed && observedPresent(now)
 		if had {
@@ -172,6 +176,21 @@ func BuildCapturedPlanFromBaseline(root string, baseline repository.Baseline, re
 		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
 	}
 	return BuildCapturedPlan(root, ownedBaseline, requested)
+}
+
+// BuildPlanFromBaselines applies ownership rules to two already captured
+// repository observations. It is used when the caller must compare HEAD and
+// index evidence before allowing a current-file capture to reach workflow.
+func BuildPlanFromBaselines(baseline, current repository.Baseline, requested []string) (Plan, error) {
+	ownedBaseline := make(ObservedSnapshot, len(baseline.Files))
+	for name, file := range baseline.Files {
+		ownedBaseline[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+	}
+	ownedCurrent := make(ObservedSnapshot, len(current.Files))
+	for name, file := range current.Files {
+		ownedCurrent[name] = ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present}
+	}
+	return BuildObservedPlan(ownedBaseline, ownedCurrent, requested)
 }
 
 // CaptureObservedFiles reads an explicit set of regular files beneath root

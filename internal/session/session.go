@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 
+	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/staging"
+	"autogit/internal/verification"
+	localworkflow "autogit/internal/workflow"
 )
 
 type Request struct {
@@ -31,8 +34,76 @@ type Service struct {
 	Capture CaptureFunc
 }
 
+// Started is the in-memory handoff between a session boundary and its
+// completion boundary. The durable store keeps only baseline identity and
+// digests; the captured bytes stay here until ownership is resolved.
+type Started struct {
+	Request  Request
+	Baseline repository.Baseline
+}
+
+// Workflow is the narrow local-commit boundary used after ownership has been
+// derived. Session code cannot bypass the workflow's scan and verification
+// gates by receiving a Git implementation directly.
+type Workflow interface {
+	RunPlan(context.Context, localworkflow.Request, staging.Plan) (localworkflow.Result, error)
+}
+
 func New(store Store) Service {
 	return Service{Runner: repository.SystemRunner{}, Store: store}
+}
+
+// Start captures and durably records the trusted baseline for a session.
+// Callers must retain the returned value until Complete; the database is not a
+// source-byte store and cannot be used to reconstruct this handoff.
+func (s Service) Start(ctx context.Context, req Request) (Started, error) {
+	baseline, err := s.CaptureAndRecord(ctx, req)
+	if err != nil {
+		return Started{}, err
+	}
+	return Started{Request: req, Baseline: baseline.Clone()}, nil
+}
+
+// Complete captures the current explicitly requested paths, derives ownership
+// against the session-start baseline, and delegates the resulting plan to the
+// verified local workflow. No workflow call occurs when ownership is
+// ambiguous or the candidate is empty.
+func (s Service) Complete(ctx context.Context, started Started, runner Workflow, id, message string, p policy.Policy, verifiers *verification.VerifierRegistry) (localworkflow.Result, error) {
+	if runner == nil {
+		return localworkflow.Result{}, errors.New("session workflow is required")
+	}
+	if started.Request.SessionID == "" || started.Request.RepositoryID == "" || started.Request.ClientID == "" || started.Request.Root == "" {
+		return localworkflow.Result{}, errors.New("started session is incomplete")
+	}
+	plan, err := s.BuildOwnedPlanAtCurrent(ctx, started.Request, started.Baseline.Clone())
+	if err != nil {
+		return localworkflow.Result{}, err
+	}
+	if len(plan.CandidateSnapshot()) == 0 {
+		return localworkflow.Result{}, errors.New("session has no owned changes")
+	}
+	return runner.RunPlan(ctx, localworkflow.Request{ID: id, RepositoryDir: started.Request.Root, Message: message, Policy: p, Verifiers: verifiers}, plan)
+}
+
+// BuildOwnedPlanAtCurrent captures the current repository observation before
+// deriving ownership. HEAD and the shared index must still match the session
+// baseline; status is allowed to change because it includes the candidate's
+// work and is checked path-by-path by staging.
+func (s Service) BuildOwnedPlanAtCurrent(ctx context.Context, req Request, baseline repository.Baseline) (staging.Plan, error) {
+	if s.Runner == nil {
+		return staging.Plan{}, errors.New("owned plan observation runner is required")
+	}
+	current, err := repository.CaptureBaselineWithOptions(ctx, s.Runner, req.Root, repository.BaselineOptions{Paths: req.Paths})
+	if err != nil {
+		return staging.Plan{}, err
+	}
+	if current.Head != baseline.Head {
+		return staging.Plan{}, errors.New("repository HEAD changed since session baseline")
+	}
+	if current.IndexDigest != baseline.IndexDigest {
+		return staging.Plan{}, errors.New("shared index changed since session baseline")
+	}
+	return staging.BuildPlanFromBaselines(baseline, current, req.Paths)
 }
 
 func (s Service) CaptureAndRecord(ctx context.Context, req Request) (repository.Baseline, error) {

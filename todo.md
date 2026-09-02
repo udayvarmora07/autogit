@@ -132,3 +132,17 @@ These eight bounded slices were implemented with focused red-green tests:
 - [x] Added bounded `sync` CLI validation for explicit session ownership paths.
 - [x] Wired `sync` to capture and persist a redacted repository baseline.
 - [x] Added verify-only owned-plan evidence without commit intent or ref effects.
+- [x] Session start/complete coordinator keeps source observations in-memory,
+  derives owned plans at the current boundary, and delegates only through the
+  verified workflow.
+- [x] Session completion rejects stale `HEAD` or shared-index evidence before
+  invoking workflow while allowing path-scoped status changes.
+- [x] `session.started` ingress captures a trusted repository baseline before
+  accepting the receipt; baseline failures leave no lifecycle receipt.
+- [x] Explicitly absent baseline paths are treated as clean ownership state,
+  so later creation can be attributed without weakening pre-existing-path
+  ambiguity checks.
+- [x] CLI hook baseline wiring uses the state port and tolerates omitted
+  optional worktree identity without leaking baseline content.
+- [x] Application exposes session completion only through the verified
+  workflow port.

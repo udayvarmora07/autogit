@@ -6,6 +6,8 @@ import (
 	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/session"
+	"autogit/internal/verification"
+	localworkflow "autogit/internal/workflow"
 	"context"
 	"encoding/json"
 	"errors"
@@ -37,12 +39,13 @@ func (r Result) MarshalJSON() ([]byte, error) {
 }
 
 type App struct {
-	Store     *events.Store
-	Policy    policy.Policy
-	Provider  Provider
-	Resolver  Resolver
-	Reducer   lifecycle.Reducer
-	Baselines *session.Service
+	Store           *events.Store
+	Policy          policy.Policy
+	Provider        Provider
+	Resolver        Resolver
+	Reducer         lifecycle.Reducer
+	Baselines       *session.Service
+	SessionWorkflow session.Workflow
 }
 
 // CaptureSessionBaseline is the application boundary for the session
@@ -53,6 +56,16 @@ func (a *App) CaptureSessionBaseline(ctx context.Context, req session.Request) (
 		return repository.Baseline{}, errors.New("session baseline service is not configured")
 	}
 	return a.Baselines.CaptureAndRecord(ctx, req)
+}
+
+// CompleteSession is the application boundary for session-owned local work.
+// It accepts only the in-memory baseline handoff and a workflow port; callers
+// cannot supply a raw Git transaction that skips scanning or verification.
+func (a *App) CompleteSession(ctx context.Context, started session.Started, id, message string, p policy.Policy, verifiers *verification.VerifierRegistry) (localworkflow.Result, error) {
+	if a == nil || a.Baselines == nil || a.SessionWorkflow == nil {
+		return localworkflow.Result{}, errors.New("session completion services are not configured")
+	}
+	return a.Baselines.Complete(ctx, started, a.SessionWorkflow, id, message, p, verifiers)
 }
 
 type Resolver func(string) (repository.Info, error)
@@ -84,8 +97,10 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 	}
 	// project is ephemeral ingress context. Resolve and compare it before the
 	// receipt transaction; it is never written to durable state.
+	var candidateRoot string
 	if e.Project != nil {
-		candidate, _ := e.Project["candidate_root"].(string)
+		candidateRoot, _ = e.Project["candidate_root"].(string)
+		candidate := candidateRoot
 		if candidate == "" {
 			return Result{}, &events.Error{Code: "E_SCOPE", Message: "event project root is required"}
 		}
@@ -96,6 +111,23 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 		info, resolveErr := resolve(candidate)
 		if resolveErr != nil || info.RepoID != stringValue(e.Scope["repo_id"]) {
 			return Result{}, &events.Error{Code: "E_SCOPE", Message: "event project does not match repository identity"}
+		}
+	}
+	// A session baseline is a read-only repository observation, but it must be
+	// captured before the ingress receipt is accepted. Otherwise a successful
+	// session.started fact could outlive the baseline needed to attribute later
+	// changes safely.
+	if e.EventType == "session.started" && a.Baselines != nil {
+		if candidateRoot == "" {
+			return Result{}, &events.Error{Code: "E_SCOPE", Message: "session baseline requires an event project root"}
+		}
+		if _, err := a.CaptureSessionBaseline(ctx, session.Request{
+			SessionID:    stringValue(e.Scope["session_id"]),
+			RepositoryID: stringValue(e.Scope["repo_id"]),
+			ClientID:     stringValue(e.Producer["adapter"]),
+			Root:         candidateRoot,
+		}); err != nil {
+			return Result{}, &events.Error{Code: "E_REPOSITORY", Message: "session baseline capture failed"}
 		}
 	}
 	r, err := a.Store.AcceptAndProject(ctx, e, a.project)

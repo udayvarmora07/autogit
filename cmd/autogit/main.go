@@ -499,7 +499,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 			if resolveErr != nil || e.Scope["repo_id"] != info.RepoID {
 				return cliError{"E_SCOPE", "event project does not match trusted repository"}
 			}
-			if e.Scope["worktree_id"] != "" && e.Scope["worktree_id"] != info.WorktreeID {
+			if worktreeID, ok := e.Scope["worktree_id"].(string); ok && worktreeID != "" && worktreeID != info.WorktreeID {
 				return cliError{"E_SCOPE", "event worktree does not match trusted repository"}
 			}
 		}
@@ -510,6 +510,15 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 	}
 	defer s.Close()
 	a := app.New(s, loadPolicy(dir, stringValue(e.Scope["repo_id"])), nil)
+	// Event receipts/projections and repository session evidence have separate
+	// package-owned ports, even though they share the same private SQLite file.
+	// The baseline service never writes raw source bytes to this database.
+	baselineStore, err := state.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		return err
+	}
+	defer baselineStore.Close()
+	a.Baselines = &session.Service{Runner: repository.SystemRunner{}, Store: baselineStore}
 	a.Resolver = func(root string) (repository.Info, error) { return repository.DiscoverWithKey(root, key) }
 	r, err := a.Hook(context.Background(), b)
 	if err != nil {

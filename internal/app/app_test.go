@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +15,9 @@ import (
 	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/session"
+	"autogit/internal/staging"
+	"autogit/internal/verification"
+	"autogit/internal/workflow"
 )
 
 type countingProvider struct{ calls int }
@@ -25,6 +30,19 @@ func (s *appBaselineStore) RecordSessionBaseline(_ context.Context, _, _, _ stri
 }
 
 type appBaselineRunner struct{}
+
+type appSessionWorkflow struct {
+	called  bool
+	request workflow.Request
+	plan    staging.Plan
+}
+
+func (w *appSessionWorkflow) RunPlan(_ context.Context, request workflow.Request, plan staging.Plan) (workflow.Result, error) {
+	w.called = true
+	w.request = request
+	w.plan = plan
+	return workflow.Result{OwnershipDigest: plan.OwnershipDigest()}, nil
+}
 
 func (appBaselineRunner) Run(context.Context, string, map[string]string, ...string) (repository.CommandResult, error) {
 	return repository.CommandResult{}, nil
@@ -70,6 +88,111 @@ func TestApplicationExposesSessionBaselineCaptureBoundary(t *testing.T) {
 	got, err := a.CaptureSessionBaseline(context.Background(), session.Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: t.TempDir()})
 	if err != nil || got.Head != want.Head || store.baseline.Head != want.Head {
 		t.Fatalf("got=%+v stored=%+v err=%v", got, store.baseline, err)
+	}
+}
+
+func TestSessionStartedIngressCapturesBaselineBeforeReceipt(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	baselineStore := &appBaselineStore{}
+	baseline := repository.Baseline{Head: "0123456789012345678901234567890123456789", IndexDigest: "sha256:" + strings.Repeat("1", 64), StatusDigest: "sha256:" + strings.Repeat("2", 64), PathsDigest: "sha256:" + strings.Repeat("3", 64)}
+	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Baselines = &session.Service{Runner: appBaselineRunner{}, Store: baselineStore, Capture: func(context.Context, repository.Runner, string) (repository.Baseline, error) { return baseline, nil }}
+	input := hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCDF", "session.started", "started", `,"session_id":"session"`, "", "")
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(input), &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["project"] = map[string]any{"candidate_root": root}
+	inputBytes, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Hook(context.Background(), inputBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Disposition != "accepted" || baselineStore.baseline.StatusDigest != baseline.StatusDigest {
+		t.Fatalf("result=%+v baseline-store=%+v", got, baselineStore)
+	}
+	if _, _, err := s.LifecycleProjection(info.RepoID); err != nil {
+		t.Fatalf("session.started receipt was not accepted: %v", err)
+	}
+}
+
+func TestSessionStartedIngressDoesNotAcceptWhenBaselineCaptureFails(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Baselines = &session.Service{Runner: appBaselineRunner{}, Store: &appBaselineStore{}, Capture: func(context.Context, repository.Runner, string) (repository.Baseline, error) {
+		return repository.Baseline{}, errors.New("baseline unavailable")
+	}}
+	input := hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCDF", "session.started", "started", `,"session_id":"session"`, "", "")
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(input), &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["project"] = map[string]any{"candidate_root": root}
+	inputBytes, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Hook(context.Background(), inputBytes); err == nil {
+		t.Fatal("baseline failure was accepted")
+	}
+	if _, _, err := s.LifecycleProjection(info.RepoID); err == nil {
+		t.Fatal("baseline failure created a lifecycle receipt")
+	}
+}
+
+func TestApplicationExposesSessionCompletionThroughVerifiedWorkflowBoundary(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	baselineStore := &appBaselineStore{}
+	service := &session.Service{Runner: repository.SystemRunner{}, Store: baselineStore}
+	a := New(nil, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Baselines = service
+	w := &appSessionWorkflow{}
+	a.SessionWorkflow = w
+	started, err := service.Start(context.Background(), session.Request{SessionID: "s", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"new.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.CompleteSession(context.Background(), started, "commit-1", "feat: complete session", policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, &verification.VerifierRegistry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.called || got.OwnershipDigest == "" || len(w.plan.CandidateSnapshot()) != 1 || w.request.ID != "commit-1" {
+		t.Fatalf("called=%v result=%+v plan=%+v request=%+v", w.called, got, w.plan.CandidateSnapshot(), w.request)
 	}
 }
 
