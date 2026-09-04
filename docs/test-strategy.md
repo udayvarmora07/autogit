@@ -1,7 +1,7 @@
 # AutoGit v1 test strategy
 
 Status: Draft for Phase 0 acceptance  
-Last updated: 2026-09-01
+Last updated: 2026-09-05
 
 ## 1. Purpose and test contract
 
@@ -106,6 +106,13 @@ Known limitations are deliberately recorded: the prototype uses shared
 whole-worktree staging, has no durable session database or crash protocol, and
 uses mocked/local remotes rather than proving provider identity. v1 tests must
 prevent these limitations from becoming implementation shortcuts.
+
+On 2026-09-05, the reference scripts were recovered from the installed
+compatibility checkout at `~/.agents/hooks/tests` and rerun in their disposable
+local-repository environments: 16 + 53 + 105 + 3 = 177 scenarios passed. This
+is evidence that the legacy regression floor is runnable, but it does not
+replace Go v1 coverage because those scripts exercise the Bash compatibility
+hook rather than the new core.
 
 ## 5. Test design by risk
 

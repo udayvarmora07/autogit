@@ -159,6 +159,94 @@ func TestSyncAllOwnedRequiresCompletionAndNoExplicitPaths(t *testing.T) {
 	}
 }
 
+func TestPlanReportsReadOnlyRepositorySummary(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", "--initial-branch", "main", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "candidate.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"enable", "--repo", root, "--local"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	headBefore := strings.TrimSpace(gitOutput(t, root, "rev-parse", "HEAD"))
+	indexBefore := strings.TrimSpace(gitOutput(t, root, "rev-parse", "--git-path", "index"))
+	indexBytesBefore, err := os.ReadFile(filepath.Join(root, indexBefore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"plan", "--repo", root}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("plan: %v output=%s", err, out.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("plan JSON: %v output=%s", err, out.String())
+	}
+	if got["reason_code"] != "READ_ONLY_PLAN" {
+		t.Fatalf("plan=%v", got)
+	}
+	repositorySummary, ok := got["repository"].(map[string]any)
+	if !ok || repositorySummary["head"] != headBefore || repositorySummary["changed_path_count"] != float64(1) || repositorySummary["paths_digest"] == "" {
+		t.Fatalf("repository summary=%v", got["repository"])
+	}
+	if got["checks"].(map[string]any)["tracking_consent"] != true {
+		t.Fatalf("checks=%v", got["checks"])
+	}
+	if strings.TrimSpace(gitOutput(t, root, "rev-parse", "HEAD")) != headBefore {
+		t.Fatal("plan changed HEAD")
+	}
+	indexBytesAfter, err := os.ReadFile(filepath.Join(root, indexBefore))
+	if err != nil || !bytes.Equal(indexBytesBefore, indexBytesAfter) {
+		t.Fatal("plan changed the shared index")
+	}
+}
+
+func TestPlanDoesNotCreateStateBeforeInitialization(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "candidate.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"plan", "--repo", root}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("plan: %v output=%s", err, out.String())
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("read-only plan created state: %v", entries)
+	}
+}
+
+func gitOutput(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return string(output)
+}
+
 func TestParseInitRequiresExplicitTrackingChoice(t *testing.T) {
 	if _, err := parseInitArgs([]string{"--repo", "/tmp/project"}); err == nil || !strings.HasPrefix(err.Error(), "E_CONSENT:") {
 		t.Fatalf("missing tracking choice error=%v", err)
@@ -857,8 +945,8 @@ func TestStatusWithoutEventsReturnsStableEmptyLifecycleSummary(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)
 	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
-		t.Fatal(err)
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
 	}
 	var out bytes.Buffer
 	if err := run([]string{"status", "--repo", root}, strings.NewReader(""), &out); err != nil {
@@ -871,6 +959,10 @@ func TestStatusWithoutEventsReturnsStableEmptyLifecycleSummary(t *testing.T) {
 	lifecycle := result["lifecycle"].(map[string]any)
 	if lifecycle["exists"] != false || lifecycle["revision"] != float64(0) {
 		t.Fatalf("empty lifecycle=%v", lifecycle)
+	}
+	repositorySummary, ok := result["repository"].(map[string]any)
+	if !ok || repositorySummary["status_digest"] == "" || repositorySummary["paths_digest"] == "" || repositorySummary["changed_path_count"] != float64(0) {
+		t.Fatalf("repository summary=%v", result["repository"])
 	}
 }
 
@@ -905,8 +997,8 @@ func TestLogsUnknownArgumentDoesNotCreateState(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)
 	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
-		t.Fatal(err)
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
 	}
 	var out bytes.Buffer
 	if err := run([]string{"logs", "--repo", root, "--unexpected"}, strings.NewReader(""), &out); err == nil {
@@ -925,8 +1017,8 @@ func TestLogsReturnsNewestRedactedFactsForRepository(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)
 	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
-		t.Fatal(err)
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
 	}
 	var statusOut bytes.Buffer
 	if err := run([]string{"status", "--repo", root}, strings.NewReader(""), &statusOut); err != nil {
@@ -979,8 +1071,8 @@ func TestLogsScopesRepositoriesOrdersNewestAndHonorsLimitAcrossRestart(t *testin
 	t.Setenv("AUTOGIT_STATE_DIR", state)
 	rootA, rootB := t.TempDir(), t.TempDir()
 	for _, root := range []string{rootA, rootB} {
-		if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
-			t.Fatal(err)
+		if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v: %s", err, output)
 		}
 	}
 	var out bytes.Buffer
@@ -1065,7 +1157,8 @@ func TestInstallRoutesThroughClientRegistryAndRejectsUnsupported(t *testing.T) {
 }
 
 func TestConfigExplainLoadsTrustedVerifierConfiguration(t *testing.T) {
-	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -1086,6 +1179,13 @@ func TestConfigExplainLoadsTrustedVerifierConfiguration(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"verifier_set_digest":"sha256:`) || !strings.Contains(out.String(), `"verifier_config_digest":"sha256:`) {
 		t.Fatalf("config explanation=%s", out.String())
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("read-only config explain created state: %v", entries)
 	}
 }
 

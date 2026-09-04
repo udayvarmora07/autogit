@@ -101,6 +101,12 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		}
 		return runInit(options, dir, out)
 	}
+	if cmd == "plan" {
+		return runPlan(args[1:], dir, out)
+	}
+	if cmd == "config" {
+		return runConfig(args[1:], dir, out)
+	}
 	if cmd == "sync" {
 		if err := validateSyncArgs(args[1:]); err != nil {
 			return err
@@ -176,18 +182,17 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "POLICY_UPDATED", "repo_id": info.RepoID})
-	case "status", "plan", "config":
-		if cmd == "config" && len(args) > 1 && args[1] != "explain" {
-			return cliError{"E_USAGE", "config supports explain"}
-		}
+	case "status":
 		verifierPath := flag(args[1:], "--verifiers")
-		if verifierPath != "" && cmd != "config" {
+		if verifierPath != "" {
 			return cliError{"E_USAGE", "--verifiers is supported by config explain"}
 		}
 		root := flag(args[1:], "--repo")
 		var repoID string
+		var info repository.Info
 		if root != "" {
-			info, discoverErr := repository.DiscoverWithKey(root, identityKey)
+			var discoverErr error
+			info, discoverErr = repository.DiscoverWithKey(root, identityKey)
 			if discoverErr != nil {
 				return cliError{"E_SCOPE", discoverErr.Error()}
 			}
@@ -201,27 +206,17 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if repoID != "" {
 			result["repo_id"] = repoID
 		}
-		if cmd == "plan" {
-			result["reason_code"] = "READ_ONLY_PLAN"
-		}
-		if cmd == "config" {
-			result["reason_code"] = "CONFIG_EXPLAIN"
-			if verifierPath != "" {
-				registry, loadErr := verification.LoadRegistryFile(verifierPath, 1<<20)
-				if loadErr != nil {
-					return cliError{"E_VERIFIER_CONFIG", safeMessage(loadErr.Error())}
-				}
-				result["verifier_count"] = len(registry.Specs)
-				result["verifier_set_digest"] = registry.VerifierSetDigest
-				result["verifier_config_digest"] = registry.ConfigDigest
-			}
-		}
 		if cmd == "status" {
 			projection, projectionErr := lifecycleStatus(s, repoID)
 			if projectionErr != nil {
 				return projectionErr
 			}
 			result["lifecycle"] = projection
+			summary, summaryErr := captureRepositorySummary(context.Background(), info.Root)
+			if summaryErr != nil {
+				return cliError{"E_REPOSITORY", safeMessage(summaryErr.Error())}
+			}
+			result["repository"] = summary
 		}
 		return json.NewEncoder(out).Encode(result)
 	case "install", "uninstall":
@@ -277,6 +272,81 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}
+}
+
+func runPlan(args []string, dir string, out io.Writer) error {
+	root := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] != "--repo" {
+			return cliError{"E_USAGE", "plan supports only --repo"}
+		}
+		if root != "" || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return cliError{"E_USAGE", "--repo requires one value"}
+		}
+		root = args[i+1]
+		i++
+	}
+	if root == "" {
+		return cliError{"E_SCOPE", "--repo is required for read-only inspection"}
+	}
+	key, _, err := identityKeyForRead(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	p := loadPolicy(dir, info.RepoID)
+	summary, err := captureRepositorySummary(context.Background(), info.Root)
+	if err != nil {
+		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{
+		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "READ_ONLY_PLAN", "repo_id": info.RepoID,
+		"repository": summary,
+		"policy":     p,
+		"checks": map[string]any{
+			"tracking_consent": p.TrackingEnabled(), "local_only": p.LocalOnly,
+			"provider_allowed": p.ProviderAllowed(), "public_consent": p.PublicConsent,
+		},
+	})
+}
+
+func captureRepositorySummary(ctx context.Context, root string) (map[string]any, error) {
+	baseline, err := repository.CaptureBaseline(ctx, repository.SystemRunner{}, root)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"head": baseline.Head, "index_digest": baseline.IndexDigest, "status_digest": baseline.StatusDigest,
+		"paths_digest": baseline.PathsDigest, "changed_path_count": len(baseline.Paths),
+	}, nil
+}
+
+func runConfig(args []string, _ string, out io.Writer) error {
+	if len(args) == 0 || args[0] != "explain" {
+		return cliError{"E_USAGE", "config supports explain"}
+	}
+	verifierPath := ""
+	for i := 1; i < len(args); i++ {
+		if args[i] != "--verifiers" || verifierPath != "" || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return cliError{"E_USAGE", "config explain supports one --verifiers path"}
+		}
+		verifierPath = args[i+1]
+		i++
+	}
+	result := map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "CONFIG_EXPLAIN", "policy": policy.Policy{}}
+	if verifierPath != "" {
+		registry, err := verification.LoadRegistryFile(verifierPath, 1<<20)
+		if err != nil {
+			return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
+		}
+		result["verifier_count"] = len(registry.Specs)
+		result["verifier_set_digest"] = registry.VerifierSetDigest
+		result["verifier_config_digest"] = registry.ConfigDigest
+	}
+	return json.NewEncoder(out).Encode(result)
 }
 
 func runDoctor(dir string, out io.Writer) error {

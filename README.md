@@ -78,6 +78,12 @@ when the caller wants to limit the candidate.
 After initialization, `autogit remote create` is the separate resumable step
 that creates and binds the hosted destination.
 
+`autogit plan --repo DIR` is read-only and reports the observed `HEAD`, shared
+index/status/path digests, changed-path count, and consent/provider checks. It
+does not stage, commit, move refs, or alter the shared index.
+`autogit config explain` is also state-free and can inspect a verifier file
+without initializing AutoGit storage.
+
 ### Verification and remaining release gates
 
 Fresh repository-wide `go test ./...`, `go vet ./...`, `go build ./...`, and

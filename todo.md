@@ -109,6 +109,8 @@ tests:
 
 - [ ] Restore or replace the missing 177 prototype cases and reach the >=609
   deterministic release-suite target.
+- [x] Recover and rerun the installed legacy reference suites: 177 disposable
+  scenarios pass; Go v1 replacement coverage and the >=609 target remain open.
 - [ ] Add fault-injection coverage for every durable intent boundary and the
   required crash/concurrency schedules.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
@@ -228,6 +230,11 @@ These eight bounded slices were implemented with focused red-green tests:
   rename/delete operations from the immutable baseline tree.
 - [x] Make `doctor` read-only before initialization and report state/lease
   readiness without creating local state.
+- [x] Make `plan --repo` report bounded repository evidence and consent/provider
+  checks while preserving `HEAD`, refs, and the shared index.
+- [x] Include the same bounded repository evidence in `status` output.
+- [x] Keep read-only `config explain` state-free while reporting verifier
+  configuration digests.
 - [x] Require an ingress completion claim for core completion candidates and
   retry duplicate completion ingress deterministically.
 

@@ -463,3 +463,21 @@ state/lease stores without creating the state directory, database, or identity
 key. Duplicate completion ingress retries the deterministic core candidate
 promotion, while the core still requires an ingress completion claim and
 settled tool/prompt/queue state.
+
+### 10.5 Read-only plan evidence (2026-09-05)
+
+`autogit plan --repo DIR` now performs a bounded repository observation and
+returns an actionable JSON summary containing `HEAD`, shared-index/status/path
+digests, changed-path count, and tracking/local/provider/public-consent checks.
+`autogit status --repo DIR` exposes the same repository summary alongside
+lifecycle state. Both commands use the read-only repository runner; real
+repository tests snapshot `HEAD` and the shared index before and after the
+operations. Neither command stages files, creates commit intents, moves refs,
+or contacts a provider, and `plan` does not initialize AutoGit state.
+`config explain` likewise validates optional verifier configuration without
+creating AutoGit state.
+
+The four legacy compatibility suites were rerun from the installed reference
+checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,
+and 3). They remain regression-floor evidence only; they exercise the Bash
+hook and do not satisfy the Go v1 `>=609` release-test target.
