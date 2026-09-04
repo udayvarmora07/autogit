@@ -67,6 +67,8 @@ Initialization is explicit. For a local project use
 `autogit init --repo DIR --local --branch main`; remote tracking requires
 `--provider github --owner OWNER --name NAME` and defaults to private. Use
 `--public-consent --visibility public` only when public tracking is intended.
+Add `--dry-run` to inspect the canonical root, branch, policy, and hygiene
+changes without creating state or Git metadata.
 After initialization, `autogit remote create` is the separate resumable step
 that creates and binds the hosted destination.
 

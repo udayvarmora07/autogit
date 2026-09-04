@@ -39,6 +39,39 @@ func TestInvalidHookDoesNotCreateDurableState(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsOperationalDependencySurface(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	var out bytes.Buffer
+	if err := run([]string{"doctor"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["state_database"] != "not_initialized" || result["lock_store"] != "not_initialized" {
+		t.Fatalf("doctor state diagnostics=%v", result)
+	}
+	if count, ok := result["adapter_count"].(float64); !ok || count != 6 {
+		t.Fatalf("doctor adapter count=%v", result["adapter_count"])
+	}
+	if _, ok := result["gh_available"].(bool); !ok {
+		t.Fatalf("doctor gh diagnostic=%v", result["gh_available"])
+	}
+	if _, ok := result["provider_auth"].(string); !ok {
+		t.Fatalf("doctor provider auth diagnostic=%v", result["provider_auth"])
+	}
+	if entries, err := os.ReadDir(stateRoot); err != nil {
+		t.Fatal(err)
+	} else if len(entries) != 0 {
+		t.Fatalf("read-only doctor created state: %v", entries)
+	}
+}
+
 func TestSchemaInvalidHookDoesNotCreateDurableState(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", dir)
@@ -127,6 +160,10 @@ func TestParseInitRequiresExplicitTrackingChoice(t *testing.T) {
 	if _, err := parseInitArgs([]string{"--repo", "/tmp/project", "--provider", "github", "--owner", "owner", "--name", "repo", "--visibility", "public"}); err == nil || !strings.HasPrefix(err.Error(), "E_CONSENT:") {
 		t.Fatalf("public init without consent error=%v", err)
 	}
+	got, err = parseInitArgs([]string{"--repo", "/tmp/project", "--local", "--dry-run"})
+	if err != nil || !got.DryRun {
+		t.Fatalf("dry-run init=%+v err=%v", got, err)
+	}
 }
 
 func TestInitCreatesGitAndRecordsConsentBeforeMutation(t *testing.T) {
@@ -163,6 +200,32 @@ func TestInitCreatesGitAndRecordsConsentBeforeMutation(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "REPOSITORY_INITIALIZED") || !strings.Contains(out.String(), "trunk") {
 		t.Fatalf("output=%s", out.String())
+	}
+}
+
+func TestInitDryRunDoesNotCreateStateOrGitMetadata(t *testing.T) {
+	stateRoot := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"init", "--repo", root, "--local", "--dry-run"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created git metadata: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created hygiene: %v", err)
+	}
+	entries, err := os.ReadDir(stateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 || !strings.Contains(out.String(), "REPOSITORY_INIT_PLAN") {
+		t.Fatalf("dry-run state=%v output=%s", entries, out.String())
 	}
 }
 

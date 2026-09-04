@@ -41,6 +41,21 @@ func TestResolveUninitializedRootRejectsNestedAndExistingRepositories(t *testing
 	if _, err := ResolveUninitializedRoot(filepath.Dir(existing)); err == nil {
 		t.Fatal("existing repository target accepted")
 	}
+
+	bare := t.TempDir()
+	for _, name := range []string{"HEAD", "config", "description"} {
+		if err := os.WriteFile(filepath.Join(bare, name), []byte("placeholder\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"objects", "refs"} {
+		if err := os.Mkdir(filepath.Join(bare, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := ResolveUninitializedRoot(bare); err == nil {
+		t.Fatal("bare repository target accepted")
+	}
 }
 
 func TestInitializeUsesExplicitBranchAndMergesDetectedHygiene(t *testing.T) {
@@ -68,6 +83,47 @@ func TestInitializeUsesExplicitBranchAndMergesDetectedHygiene(t *testing.T) {
 	}
 }
 
+func TestInitializeCreatesMinimalReadmeOnlyWhenAbsent(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "sample-project")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &initRunner{}
+	result, err := Initialize(context.Background(), runner, root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(readme), "# sample-project\n") || !containsString(result.Hygiene, "README.md") {
+		t.Fatalf("readme=%q hygiene=%v", readme, result.Hygiene)
+	}
+
+	rootWithReadme := t.TempDir()
+	original := "# User project\n\nUsage is documented here.\n"
+	if err := os.WriteFile(filepath.Join(rootWithReadme, "README.md"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Initialize(context.Background(), &initRunner{}, rootWithReadme, "main"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(rootWithReadme, "README.md"))
+	if err != nil || string(got) != original {
+		t.Fatalf("existing readme changed=%q err=%v", got, err)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestInitializeDoesNotWriteHygieneWhenGitInitFails(t *testing.T) {
 	root := t.TempDir()
 	runner := &initRunner{err: errors.New("git failed")}
@@ -76,6 +132,48 @@ func TestInitializeDoesNotWriteHygieneWhenGitInitFails(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".gitignore")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("hygiene written after failed init: %v", err)
+	}
+}
+
+func TestInitializeRejectsInvalidHygieneBeforeGitMutation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".gitignore"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &initRunner{}
+	if _, err := Initialize(context.Background(), runner, root, "main"); err == nil {
+		t.Fatal("invalid hygiene accepted")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("git mutation occurred before hygiene validation: %#v", runner.calls)
+	}
+}
+
+func TestApplyHygieneRejectsConcurrentUserChange(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".gitignore")
+	if err := os.WriteFile(path, []byte("# original\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := prepareHygiene(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# user changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyHygiene(plan); err == nil {
+		t.Fatal("concurrent hygiene change accepted")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "# user changed\n" {
+		t.Fatalf("concurrent user content was overwritten: %q", got)
 	}
 }
 

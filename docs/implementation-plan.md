@@ -234,6 +234,9 @@ Delivered where section 10 provides direct evidence:
       restrictive local-state permissions.
 - [x] Canonical event/result validation, receipts/deduplication, digesting,
       and stable lifecycle/audit evidence.
+- [x] Core-owned completion-candidate promotion requires an observed ingress
+      completion claim, known queue state, and settled tool/prompt state; replay
+      retries the deterministic promotion without creating duplicate facts.
 - [x] Argument-safe Git/filesystem/process/provider ports and deterministic
       fakes.
 - [x] Local public-preflight validation and canonical report digest.
@@ -400,11 +403,25 @@ projected lifecycle scope remain authoritative in durable job state.
 
 `autogit init` now provides the user-facing repository-initialization
 boundary. It resolves an explicit canonical directory, rejects protected and
-nested Git targets, persists the selected local/private or remote/private/public
+nested/bare Git targets, persists the selected local/private or remote/private/public
 tracking policy before invoking Git, initializes an explicit branch, and merges
 bounded ecosystem-derived ignore entries without staging or committing user
-files. Remote creation remains a separate explicit command so hosted side
+files, and creates a minimal README only when none exists. Its `--dry-run` path performs the same canonical preflight without
+creating state or Git metadata. Remote creation remains a separate explicit command so hosted side
 effects are independently reviewable and resumable.
+
+`autogit doctor` reports the trusted executable availability for Git and
+`gh`, the adapter/installable counts, and the availability of the SQLite and
+durable lease stores. Provider authentication is explicitly reported as
+`not_checked` because doctor does not contact GitHub or expose credentials.
+
+For supported known queue states, the application now promotes an accepted
+ingress `task.completed` claim to a deterministic core
+`task.completion_candidate` fact only after the reducer confirms that no tool
+or blocking prompt remains. An ingress claim cannot directly complete a task,
+and a forged domain completion still requires the recorded candidate fact;
+verified candidate derivation and explicit local sync remain the mutation
+boundary.
 
 `autogit remote create` and `internal/provider.RepositoryTransaction` provide
 a durable, collision-safe

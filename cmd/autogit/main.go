@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -118,6 +119,12 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	if cmd == "remote" {
 		return runRemote(args[1:], dir, out)
 	}
+	if cmd == "doctor" {
+		if len(args) != 1 {
+			return cliError{"E_USAGE", "doctor does not accept arguments"}
+		}
+		return runDoctor(dir, out)
+	}
 	if cmd == "logs" {
 		root := flag(args[1:], "--repo")
 		if err := validateLogsArgs(args[1:]); err != nil {
@@ -217,13 +224,6 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			result["lifecycle"] = projection
 		}
 		return json.NewEncoder(out).Encode(result)
-	case "doctor":
-		_, gitErr := exec.LookPath("git")
-		result := map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "DOCTOR_OK", "git_available": gitErr == nil, "state_dir": "configured"}
-		if gitErr != nil {
-			result["reason_code"] = "GIT_UNAVAILABLE"
-		}
-		return json.NewEncoder(out).Encode(result)
 	case "install", "uninstall":
 		adapterName, configPath, root := flag(args[1:], "--adapter"), flag(args[1:], "--path"), flag(args[1:], "--root")
 		if adapterName == "" || configPath == "" || root == "" {
@@ -279,6 +279,47 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	}
 }
 
+func runDoctor(dir string, out io.Writer) error {
+	_, gitErr := trustedExecutable("git")
+	_, ghErr := trustedExecutable("gh")
+	installations := install.ClientInstallations()
+	installable := 0
+	for _, entry := range installations {
+		if entry.Supported {
+			installable++
+		}
+	}
+	stateDatabase, lockStore := inspectDoctorState(dir)
+	result := map[string]any{
+		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "DOCTOR_OK",
+		"git_available": gitErr == nil, "gh_available": ghErr == nil, "provider_auth": "not_checked",
+		"state_dir": "configured", "state_database": stateDatabase, "lock_store": lockStore,
+		"adapter_count": len(installations), "installable_adapter_count": installable,
+	}
+	if gitErr != nil {
+		result["reason_code"] = "GIT_UNAVAILABLE"
+	}
+	return json.NewEncoder(out).Encode(result)
+}
+
+func inspectDoctorState(dir string) (string, string) {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return "not_initialized", "not_initialized"
+	}
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0) {
+		return "unavailable", "unavailable"
+	}
+	dbInfo, err := os.Lstat(filepath.Join(dir, "state.db"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "not_initialized", "not_initialized"
+	}
+	if err != nil || dbInfo.Mode()&os.ModeSymlink != 0 || !dbInfo.Mode().IsRegular() || (runtime.GOOS != "windows" && dbInfo.Mode().Perm()&0077 != 0) {
+		return "unavailable", "unavailable"
+	}
+	return "available", "available"
+}
+
 func runInstallList(out io.Writer) error {
 	type discovered struct {
 		Adapter      string                      `json:"adapter"`
@@ -327,7 +368,7 @@ type remoteOptions struct {
 
 type initOptions struct {
 	Repo, Branch, Provider, Owner, Name, Visibility string
-	Local, PublicConsent                            bool
+	Local, PublicConsent, DryRun                    bool
 }
 
 func validateEnableArgs(args []string, enabling bool) error {
@@ -567,13 +608,15 @@ func parseInitArgs(args []string) (initOptions, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		name := args[i]
-		if name == "--local" || name == "--public-consent" {
+		if name == "--local" || name == "--public-consent" || name == "--dry-run" {
 			if seen[name] {
 				return initOptions{}, cliError{"E_USAGE", name + " may be provided once"}
 			}
 			seen[name] = true
 			if name == "--local" {
 				options.Local = true
+			} else if name == "--dry-run" {
+				options.DryRun = true
 			} else {
 				options.PublicConsent = true
 			}
@@ -582,7 +625,7 @@ func parseInitArgs(args []string) (initOptions, error) {
 		switch name {
 		case "--repo", "--branch", "--provider", "--owner", "--name", "--visibility":
 		default:
-			return initOptions{}, cliError{"E_USAGE", "init supports --repo, --branch, --local, --provider, --owner, --name, --visibility, and --public-consent"}
+			return initOptions{}, cliError{"E_USAGE", "init supports --repo, --branch, --local, --provider, --owner, --name, --visibility, --public-consent, and --dry-run"}
 		}
 		if seen[name] || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
 			return initOptions{}, cliError{"E_USAGE", name + " requires one value and may be provided once"}
@@ -635,10 +678,14 @@ func parseInitArgs(args []string) (initOptions, error) {
 }
 
 func runInit(options initOptions, dir string, out io.Writer) error {
-	root, err := repository.ResolveUninitializedRoot(options.Repo)
+	preview, err := repository.PlanInitialization(options.Repo, options.Branch)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
+	if options.DryRun {
+		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "REPOSITORY_INIT_PLAN", "root": preview.Root, "branch": preview.Branch, "tracking": initTrackingMode(options), "visibility": options.Visibility, "hygiene": preview.Hygiene})
+	}
+	root := preview.Root
 	gitPath, err := trustedExecutable("git")
 	if err != nil {
 		return cliError{"E_PROVIDER", "git is unavailable"}
@@ -655,10 +702,7 @@ func runInit(options initOptions, dir string, out io.Writer) error {
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	p := policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}
-	if !options.Local {
-		p = policy.Policy{Tracking: "yes", Visibility: options.Visibility, Provider: options.Provider, Owner: options.Owner, Destination: options.Owner + "/" + options.Name, Workflow: "safe", PublicConsent: options.PublicConsent, Version: 1}
-	}
+	p := initPolicy(options)
 	// Persist consent before Git initialization so a crash cannot leave a new
 	// repository without the decision that authorized the mutation.
 	if err := savePolicy(dir, repoID, p); err != nil {
@@ -672,6 +716,20 @@ func runInit(options initOptions, dir string, out io.Writer) error {
 		return cliError{"E_STATE", "initialized repository identity could not be confirmed"}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "REPOSITORY_INITIALIZED", "repo_id": info.RepoID, "branch": options.Branch, "tracking": p.Tracking, "visibility": p.Visibility})
+}
+
+func initTrackingMode(options initOptions) string {
+	if options.Local {
+		return "local"
+	}
+	return "yes"
+}
+
+func initPolicy(options initOptions) policy.Policy {
+	if options.Local {
+		return policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}
+	}
+	return policy.Policy{Tracking: "yes", Visibility: options.Visibility, Provider: options.Provider, Owner: options.Owner, Destination: options.Owner + "/" + options.Name, Workflow: "safe", PublicConsent: options.PublicConsent, Version: 1}
 }
 
 func runRemote(args []string, dir string, out io.Writer) error {

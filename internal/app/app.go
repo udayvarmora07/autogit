@@ -135,6 +135,7 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 		return Result{}, err
 	}
 	out := Result{SchemaVersion: "autogit.result/1", EventID: e.EventID, Disposition: string(r.Disposition), StateRevision: r.StateRevision, Action: "none"}
+	completionCandidatePromoted := false
 	if r.Disposition == events.Pending {
 		out.Action = "none"
 		out.ReasonCode = "CAUSAL_GAP"
@@ -142,18 +143,29 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 	}
 	if r.Disposition == events.Duplicate {
 		out.ReasonCode = "DUPLICATE"
-		return out, nil
-	}
-	if r.Disposition == events.Rejected {
+	} else if r.Disposition == events.Rejected {
 		out.Action = "blocked"
 		out.ReasonCode = r.Reason
 		return out, nil
+	} else {
+		out.ReasonCode = r.Reason
+		if out.ReasonCode == "" {
+			out.ReasonCode = string(lifecycle.ReasonAccepted)
+		}
+		out.Action = string(lifecycle.ActionFor(lifecycle.EventType(e.EventType), lifecycle.ReasonCode(out.ReasonCode)))
 	}
-	out.ReasonCode = r.Reason
-	if out.ReasonCode == "" {
-		out.ReasonCode = string(lifecycle.ReasonAccepted)
+	if (r.Disposition == events.Accepted || r.Disposition == events.Duplicate) && e.EventClass == "ingress" && e.EventType == string(lifecycle.TaskCompleted) {
+		promoted, candidateResult, promoteErr := a.promoteCompletionCandidate(ctx, e)
+		if promoteErr != nil {
+			return Result{}, promoteErr
+		}
+		if promoted {
+			completionCandidatePromoted = true
+			out.StateRevision = candidateResult.StateRevision
+			out.Action = string(lifecycle.ActionCheckpoint)
+			out.ReasonCode = "COMPLETION_CANDIDATE"
+		}
 	}
-	out.Action = string(lifecycle.ActionFor(lifecycle.EventType(e.EventType), lifecycle.ReasonCode(out.ReasonCode)))
 	if a.Policy.Tracking == "" {
 		out.Action = "ask_consent"
 		out.ReasonCode = "CONSENT_REQUIRED"
@@ -163,11 +175,45 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 		out.ReasonCode = "TRACKING_DISABLED"
 		return out, nil
 	}
-	if a.Policy.LocalOnly {
+	if a.Policy.LocalOnly && !completionCandidatePromoted {
 		out.ReasonCode = "LOCAL_ONLY"
 		return out, nil
 	}
 	return out, nil
+}
+
+func (a *App) promoteCompletionCandidate(ctx context.Context, ingress events.Event) (bool, Result, error) {
+	repoID := stringValue(ingress.Scope["repo_id"])
+	taskID := stringValue(ingress.Scope["task_id"])
+	if a.Store == nil || taskID == "" || repoID == "" {
+		return false, Result{}, nil
+	}
+	data, _, err := a.Store.LifecycleProjection(repoID)
+	if err != nil {
+		return false, Result{}, err
+	}
+	var projected lifecycle.State
+	if err := json.Unmarshal(data, &projected); err != nil || projected.RepositoryID != repoID || !projected.CompletionEligible(taskID) {
+		return false, Result{}, nil
+	}
+	correlation := stringValue(ingress.Ordering["correlation_id"])
+	if correlation == "" {
+		correlation = "completion/" + ingress.EventID
+	}
+	b, err := events.NewDomainEvent(events.DomainEventRequest{
+		EventType: "task.completion_candidate", OccurredAt: ingress.OccurredAt,
+		RepoID: repoID, WorktreeID: stringValue(ingress.Scope["worktree_id"]), SessionID: stringValue(ingress.Scope["session_id"]), TaskID: taskID,
+		CorrelationID: correlation, CausationID: ingress.EventID, IdempotencyKey: "completion-candidate/" + ingress.EventID,
+		Payload: map[string]any{"completion_eligible": true, "queue_state": projected.Session.Capabilities.QueueState},
+	})
+	if err != nil {
+		return false, Result{}, err
+	}
+	result, err := a.ApplyDomain(ctx, b)
+	if err != nil {
+		return false, Result{}, err
+	}
+	return result.Disposition == string(events.Accepted) || result.Disposition == string(events.Duplicate), result, nil
 }
 
 // project is the application adapter for the pure lifecycle reducer. The

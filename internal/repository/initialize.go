@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -28,6 +29,20 @@ type InitResult struct {
 	Initialized bool
 }
 
+type hygienePlan struct {
+	Gitignore hygieneFilePlan
+	Readme    hygieneFilePlan
+	Missing   []string
+}
+
+type hygieneFilePlan struct {
+	FilePath string
+	Original []byte
+	Desired  []byte
+	Mode     os.FileMode
+	Exists   bool
+}
+
 var initialBranchRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 // ResolveUninitializedRoot canonicalizes an explicit directory and proves it
@@ -36,6 +51,9 @@ func ResolveUninitializedRoot(candidate string) (string, error) {
 	root, err := canonicalProjectRoot(candidate)
 	if err != nil {
 		return "", err
+	}
+	if looksLikeBareRepository(root) {
+		return "", errors.New("target is a bare git repository")
 	}
 	for current := root; ; current = filepath.Dir(current) {
 		gitPath := filepath.Join(current, ".git")
@@ -53,6 +71,25 @@ func ResolveUninitializedRoot(candidate string) (string, error) {
 		}
 	}
 	return root, nil
+}
+
+// A bare repository has no .git directory, so the normal ancestor check is
+// insufficient. This conservative fingerprint rejects the Git object-store
+// layout before any initialization command can reconfigure it.
+func looksLikeBareRepository(root string) bool {
+	for _, name := range []string{"HEAD", "config", "description"} {
+		info, err := os.Lstat(filepath.Join(root, name))
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return false
+		}
+	}
+	for _, name := range []string{"objects", "refs"} {
+		info, err := os.Lstat(filepath.Join(root, name))
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 // FutureRepositoryID returns the identity that DiscoverWithKey will derive
@@ -83,14 +120,34 @@ func Initialize(ctx context.Context, runner InitRunner, root, branch string) (In
 	if err := ValidateInitialBranch(branch); err != nil {
 		return InitResult{}, err
 	}
-	if _, err := runner.Run(ctx, canonical, "init", "--initial-branch="+branch); err != nil {
-		return InitResult{}, fmt.Errorf("git init: %w", err)
-	}
-	hygiene, err := mergeHygiene(canonical)
+	hygiene, err := prepareHygiene(canonical)
 	if err != nil {
 		return InitResult{}, err
 	}
-	return InitResult{Root: canonical, Branch: branch, Hygiene: hygiene, Initialized: true}, nil
+	if _, err := runner.Run(ctx, canonical, "init", "--initial-branch="+branch); err != nil {
+		return InitResult{}, fmt.Errorf("git init: %w", err)
+	}
+	if err := applyHygiene(hygiene); err != nil {
+		return InitResult{}, err
+	}
+	return InitResult{Root: canonical, Branch: branch, Hygiene: hygiene.Missing, Initialized: true}, nil
+}
+
+// PlanInitialization performs the complete read-only initialization preflight
+// and reports the hygiene entries that would be added.
+func PlanInitialization(root, branch string) (InitResult, error) {
+	canonical, err := ResolveUninitializedRoot(root)
+	if err != nil {
+		return InitResult{}, err
+	}
+	if err := ValidateInitialBranch(branch); err != nil {
+		return InitResult{}, err
+	}
+	plan, err := prepareHygiene(canonical)
+	if err != nil {
+		return InitResult{}, err
+	}
+	return InitResult{Root: canonical, Branch: branch, Hygiene: plan.Missing}, nil
 }
 
 // ValidateInitialBranch checks the branch name before any initialization
@@ -140,23 +197,34 @@ func canonicalProjectRoot(candidate string) (string, error) {
 }
 
 func mergeHygiene(root string) ([]string, error) {
-	path := filepath.Join(root, ".gitignore")
-	var original []byte
-	mode := os.FileMode(0600)
-	if info, err := os.Lstat(path); err == nil {
+	plan, err := prepareHygiene(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyHygiene(plan); err != nil {
+		return nil, err
+	}
+	return plan.Missing, nil
+}
+
+func prepareHygiene(root string) (hygienePlan, error) {
+	ignorePath := filepath.Join(root, ".gitignore")
+	ignore := hygieneFilePlan{FilePath: ignorePath, Mode: 0600}
+	if info, err := os.Lstat(ignorePath); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return nil, errors.New(".gitignore must be a regular file")
+			return hygienePlan{}, errors.New(".gitignore must be a regular file")
 		}
 		if info.Size() > maxGeneratedHygieneBytes {
-			return nil, errors.New(".gitignore exceeds size limit")
+			return hygienePlan{}, errors.New(".gitignore exceeds size limit")
 		}
-		original, err = os.ReadFile(path)
+		ignore.Original, err = os.ReadFile(ignorePath)
 		if err != nil {
-			return nil, err
+			return hygienePlan{}, err
 		}
-		mode = info.Mode().Perm()
+		ignore.Mode = info.Mode().Perm()
+		ignore.Exists = true
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		return hygienePlan{}, err
 	}
 
 	entries := []string{".env", ".env.*", ".DS_Store"}
@@ -170,49 +238,112 @@ func mergeHygiene(root string) ([]string, error) {
 		entries = append(entries, "/bin/")
 	}
 
-	text := string(original)
+	text := string(ignore.Original)
 	missing := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if !gitignoreContains(text, entry) {
 			missing = append(missing, entry)
 		}
 	}
-	if len(missing) == 0 {
-		return nil, nil
+	ignore.Desired = append([]byte(nil), ignore.Original...)
+	if len(missing) > 0 {
+		var block strings.Builder
+		if len(ignore.Original) > 0 && !strings.HasSuffix(text, "\n") {
+			block.WriteByte('\n')
+		}
+		block.WriteString("\n# BEGIN AUTOGIT MANAGED\n")
+		for _, entry := range missing {
+			block.WriteString(entry)
+			block.WriteByte('\n')
+		}
+		block.WriteString("# END AUTOGIT MANAGED\n")
+		ignore.Desired = append(ignore.Desired, []byte(block.String())...)
 	}
-	var block strings.Builder
-	if len(original) > 0 && !strings.HasSuffix(text, "\n") {
-		block.WriteByte('\n')
+	if len(ignore.Desired) > maxGeneratedHygieneBytes {
+		return hygienePlan{}, errors.New("generated .gitignore exceeds size limit")
 	}
-	block.WriteString("\n# BEGIN AUTOGIT MANAGED\n")
-	for _, entry := range missing {
-		block.WriteString(entry)
-		block.WriteByte('\n')
+
+	readmePath := filepath.Join(root, "README.md")
+	readme := hygieneFilePlan{FilePath: readmePath, Mode: 0600}
+	if info, err := os.Lstat(readmePath); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return hygienePlan{}, errors.New("README.md must be a regular file")
+		}
+		if info.Size() > maxGeneratedHygieneBytes {
+			return hygienePlan{}, errors.New("README.md exceeds size limit")
+		}
+		readme.Original, err = os.ReadFile(readmePath)
+		if err != nil {
+			return hygienePlan{}, err
+		}
+		readme.Desired = append([]byte(nil), readme.Original...)
+		readme.Mode = info.Mode().Perm()
+		readme.Exists = true
+	} else if errors.Is(err, os.ErrNotExist) {
+		name := strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return '-'
+			}
+			return r
+		}, filepath.Base(root))
+		readme.Desired = []byte("# " + name + "\n\nDescribe this project.\n")
+		missing = append(missing, "README.md")
+	} else {
+		return hygienePlan{}, err
 	}
-	block.WriteString("# END AUTOGIT MANAGED\n")
-	desired := append(append([]byte(nil), original...), []byte(block.String())...)
-	if len(desired) > maxGeneratedHygieneBytes {
-		return nil, errors.New("generated .gitignore exceeds size limit")
+	return hygienePlan{Gitignore: ignore, Readme: readme, Missing: missing}, nil
+}
+
+func applyHygiene(plan hygienePlan) error {
+	if err := applyHygieneFile(plan.Gitignore); err != nil {
+		return err
 	}
-	tmp, err := os.CreateTemp(root, ".autogit-gitignore-*")
+	return applyHygieneFile(plan.Readme)
+}
+
+func applyHygieneFile(plan hygieneFilePlan) error {
+	if bytes.Equal(plan.Original, plan.Desired) {
+		return nil
+	}
+	info, statErr := os.Lstat(plan.FilePath)
+	if plan.Exists {
+		if statErr != nil {
+			return fmt.Errorf("hygiene file changed during initialization: %w", statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return errors.New("hygiene file changed to a non-regular file")
+		}
+		current, readErr := os.ReadFile(plan.FilePath)
+		if readErr != nil {
+			return readErr
+		}
+		if !bytes.Equal(current, plan.Original) {
+			return errors.New("hygiene file changed during initialization")
+		}
+	} else if statErr == nil {
+		return errors.New("hygiene file appeared during initialization")
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(plan.FilePath), ".autogit-hygiene-*")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if err = tmp.Chmod(mode); err == nil {
-		_, err = tmp.Write(desired)
+	if err = tmp.Chmod(plan.Mode); err == nil {
+		_, err = tmp.Write(plan.Desired)
 	}
 	if closeErr := tmp.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return nil, err
+	if err := os.Rename(tmpName, plan.FilePath); err != nil {
+		return err
 	}
-	return missing, nil
+	return nil
 }
 
 func existsRegular(path string) bool {

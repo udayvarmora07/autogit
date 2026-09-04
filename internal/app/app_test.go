@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"autogit/internal/events"
+	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/session"
@@ -170,6 +171,61 @@ func TestSessionStartedIngressDoesNotAcceptWhenBaselineCaptureFails(t *testing.T
 	}
 	if _, _, err := s.LifecycleProjection(info.RepoID); err == nil {
 		t.Fatal("baseline failure created a lifecycle receipt")
+	}
+}
+
+func TestTaskCompletionClaimPromotesOnlyToCoreCompletionCandidate(t *testing.T) {
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	for _, input := range []string{
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDF", "session.started", "start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDG", "task.started", "task-start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDH", "task.completed", "task-complete", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+	} {
+		if _, err := a.Hook(context.Background(), []byte(input)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, _, err := s.LifecycleProjection("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projected lifecycle.State
+	if err := json.Unmarshal(data, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if !projected.Tasks["task"].CompletionCandidate || projected.Tasks["task"].State != lifecycle.TaskCompletionCandidateStatus {
+		t.Fatalf("task=%+v", projected.Tasks["task"])
+	}
+}
+
+func TestDuplicateTaskCompletionRetriesCoreCompletionCandidatePromotion(t *testing.T) {
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	inputs := []string{
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDF", "session.started", "start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDG", "task.started", "task-start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDH", "task.completed", "task-complete", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+	}
+	for _, input := range inputs {
+		if _, err := a.Hook(context.Background(), []byte(input)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := a.Hook(context.Background(), []byte(inputs[2]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != string(events.Duplicate) || result.Action != string(lifecycle.ActionCheckpoint) || result.ReasonCode != "COMPLETION_CANDIDATE" {
+		t.Fatalf("duplicate result=%+v", result)
 	}
 }
 
@@ -495,4 +551,21 @@ func TestHookConcurrentCallsSerializeLifecycleRevision(t *testing.T) {
 
 func hookEvent(id, typ, key, scopeExtra, taskExtra, orderingExtra string) string {
 	return `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"` + id + `","event_type":"` + typ + `","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"` + scopeExtra + taskExtra + `},"ordering":{"stream_id":"stream"` + orderingExtra + `},"idempotency":{"key":"` + key + `"},"payload":{}}`
+}
+
+func hookEventWithCapabilities(id, typ, key, scopeExtra, capabilities string) string {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(hookEvent(id, typ, key, scopeExtra, "", "")), &raw); err != nil {
+		panic(err)
+	}
+	var caps map[string]any
+	if err := json.Unmarshal([]byte(capabilities), &caps); err != nil {
+		panic(err)
+	}
+	raw["capabilities"] = caps
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
 }

@@ -768,7 +768,7 @@ func (r Reducer) apply(s *State, e Event) (ReasonCode, bool) {
 		if !ok {
 			return ReasonInvalidTransition, false
 		}
-		if t.ActiveTools > 0 || hasBlockingPrompt(*s, t.ID) {
+		if !t.CompletionClaim || t.ActiveTools > 0 || hasBlockingPrompt(*s, t.ID) {
 			return ReasonInvalidTransition, false
 		}
 		t.CompletionCandidate = true
@@ -826,7 +826,11 @@ func (r Reducer) task(s *State, e Event) Task {
 	return Task{ID: id, SessionID: s.Session.ID, State: TaskCreated}
 }
 func completionEligible(s State, t Task) bool {
-	if !t.CompletionCandidate || t.ActiveTools > 0 {
+	return t.CompletionCandidate && completionConditions(s, t)
+}
+
+func completionConditions(s State, t Task) bool {
+	if t.ActiveTools > 0 {
 		return false
 	}
 	for _, p := range s.Prompts {
@@ -834,7 +838,15 @@ func completionEligible(s State, t Task) bool {
 			return false
 		}
 	}
-	return s.Session.Capabilities.QueueState != QueueUnknown
+	return s.Session.Capabilities.QueueState == QueueNative || s.Session.Capabilities.QueueState == QueueNone
+}
+
+// CompletionEligible reports whether a previously claimed task has crossed
+// the core-owned completion-candidate boundary. The claim itself is only an
+// observation; queue and prompt/tool state must independently be safe.
+func (s State) CompletionEligible(taskID string) bool {
+	t, ok := s.Tasks[taskID]
+	return ok && t.CompletionClaim && completionConditions(s, t)
 }
 
 func hasBlockingPrompt(s State, taskID string) bool {

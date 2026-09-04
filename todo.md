@@ -78,8 +78,12 @@ claiming a phase exit:
 - [x] Complete supported-client capability discovery and the bounded adapter
   installation surface without granting adapters Git mutation authority.
 - [x] Add the consent-gated `init` command: canonical uninitialized-root checks,
-  explicit initial branch, pre-mutation policy persistence, and bounded
-  ecosystem-derived hygiene merging without staging or committing user files.
+  bare/nested repository rejection, explicit initial branch, pre-mutation
+  policy persistence, and bounded
+  ecosystem-derived hygiene merging (including a minimal absent-README
+  placeholder) without staging or committing user files.
+- [x] Add read-only `init --dry-run` planning with no state, Git, or hygiene
+  mutation.
 
 ## Completed execution batch (2026-09-02)
 
@@ -199,5 +203,12 @@ These eight bounded slices were implemented with focused red-green tests:
       exact owner/name/visibility postconditions; never attach a collision.
 - [x] Add the user-facing consent-gated repository-initialization CLI flow;
       remote creation remains an explicit resumable follow-up command.
+- [x] Expand `doctor` into a read-only operational report for trusted Git/`gh`,
+      adapter capabilities, SQLite state, and durable lease readiness.
+- [x] Promote eligible ingress task-completion claims to a core-owned
+      `task.completion_candidate` fact only when queue state is known and no
+      active tool or blocking prompt remains; direct domain completion still
+      requires that candidate fact, and duplicate ingress retries promotion
+      idempotently.
 - [ ] Add durable fault injection at every CLI/provider intent boundary and
   expand concurrency/restart schedules.

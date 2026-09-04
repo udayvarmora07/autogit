@@ -88,6 +88,9 @@ CREATED -> ACTIVE -> WAITING_PROMPT -> ACTIVE
 automatic task completion. A `model.stopped` ingress event is weak evidence.
 An ingress `task.completed` is a claim; a domain `task.completed` is emitted
 only after the core has satisfied configured completion and delivery policy.
+The core-owned `task.completion_candidate` fact requires that ingress claim,
+known queue state, and no active tool or blocking prompt. Duplicate ingress
+delivery retries that promotion idempotently.
 
 For adapters without task boundaries, create a synthetic task at
 `prompt.submitted`. Completion candidacy requires a settle period, no active

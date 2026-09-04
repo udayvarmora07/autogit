@@ -57,6 +57,40 @@ func TestReducerQueuesUnknownAndSynthesizesTaskWithoutBoundaries(t *testing.T) {
 	}
 }
 
+func TestCompletionEligibilityRequiresKnownQueueState(t *testing.T) {
+	r := NewReducer(Config{})
+	s := NewState("repo-1")
+	s, _ = r.Reduce(s, Event{ID: "start", Type: SessionStarted, SessionID: "s1", TaskID: "t1", Capabilities: Capabilities{QueueState: QueueUnknown}})
+	s, _ = r.Reduce(s, Event{ID: "claim", Type: TaskCompleted, Class: Ingress, SessionID: "s1", TaskID: "t1"})
+	if s.CompletionEligible("t1") {
+		t.Fatal("unknown queue state became completion eligible")
+	}
+	s.Session.Capabilities.QueueState = QueueNone
+	if !s.CompletionEligible("t1") {
+		t.Fatal("known empty queue state was not completion eligible")
+	}
+}
+
+func TestDomainTaskCompletionStillRequiresCandidateFact(t *testing.T) {
+	r := NewReducer(Config{})
+	s := NewState("repo-1")
+	s, _ = r.Reduce(s, Event{ID: "start", Type: SessionStarted, SessionID: "s1", TaskID: "t1", Capabilities: Capabilities{QueueState: QueueNone}})
+	next, result := r.Reduce(s, Event{ID: "complete", Type: TaskCompleted, Class: Domain, SessionID: "s1", TaskID: "t1"})
+	if result.Disposition != Rejected || next.Tasks["t1"].State == TaskCompletedStatus {
+		t.Fatalf("domain completion bypassed candidate fact: result=%+v task=%+v", result, next.Tasks["t1"])
+	}
+}
+
+func TestCompletionCandidateRequiresAnIngressCompletionClaim(t *testing.T) {
+	r := NewReducer(Config{})
+	s := NewState("repo-1")
+	s, _ = r.Reduce(s, Event{ID: "start", Type: SessionStarted, SessionID: "s1", TaskID: "t1", Capabilities: Capabilities{QueueState: QueueNone}})
+	next, result := r.Reduce(s, Event{ID: "candidate", Type: TaskCompletionCandidate, Class: Domain, SessionID: "s1", TaskID: "t1"})
+	if result.Disposition != Rejected || next.Tasks["t1"].CompletionCandidate {
+		t.Fatalf("candidate without completion claim accepted: result=%+v task=%+v", result, next.Tasks["t1"])
+	}
+}
+
 func TestReducerDuplicateConflictAndCausalReplay(t *testing.T) {
 	r := NewReducer(Config{})
 	s := NewState("repo-1")
