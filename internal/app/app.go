@@ -9,8 +9,10 @@ import (
 	"autogit/internal/verification"
 	localworkflow "autogit/internal/workflow"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // Provider is deliberately narrow: implementations must verify exact remote
@@ -47,6 +49,20 @@ type App struct {
 	Baselines       *session.Service
 	SessionWorkflow session.Workflow
 	IdentityKey     []byte
+	Completion      *CompletionProfile
+}
+
+// CompletionProfile is the explicit, trusted selection for lifecycle-driven
+// local completion. Message and verifier selection are configuration, never
+// inferred from an adapter claim. Load reconstructs the source-free session
+// handoff after a hook process restart; Workflow remains the verified local
+// mutation boundary.
+type CompletionProfile struct {
+	Message   string
+	Verifiers *verification.VerifierRegistry
+	Workflow  session.Workflow
+	Baselines *session.Service
+	Load      func(context.Context, session.Request) (session.Started, error)
 }
 
 // CaptureSessionBaseline is the application boundary for the session
@@ -181,7 +197,91 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 		out.ReasonCode = "LOCAL_ONLY"
 		return out, nil
 	}
+	if completionCandidatePromoted {
+		completion, completionErr := a.completeLifecycle(ctx, e)
+		if completionErr != nil {
+			out.Action = string(lifecycle.ActionBlocked)
+			out.ReasonCode = "SESSION_COMPLETION_BLOCKED"
+			return out, nil
+		}
+		if completion {
+			out.Action = string(lifecycle.ActionCommit)
+			out.ReasonCode = "SESSION_COMMITTED"
+		}
+	}
 	return out, nil
+}
+
+func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool, error) {
+	profile := a.Completion
+	if profile == nil {
+		return false, nil
+	}
+	if profile.Workflow == nil || profile.Load == nil || profile.Message == "" || profile.Verifiers == nil {
+		return false, errors.New("lifecycle completion profile is incomplete")
+	}
+	repoID := stringValue(ingress.Scope["repo_id"])
+	taskID := stringValue(ingress.Scope["task_id"])
+	sessionID := stringValue(ingress.Scope["session_id"])
+	data, _, err := a.Store.LifecycleProjection(repoID)
+	if err != nil {
+		return false, err
+	}
+	var projected lifecycle.State
+	if err := json.Unmarshal(data, &projected); err != nil || projected.RepositoryID != repoID {
+		return false, errors.New("invalid lifecycle projection")
+	}
+	if projected.TaskCompleted(taskID) {
+		return false, nil
+	}
+	root := ""
+	if ingress.Project != nil {
+		root = stringValue(ingress.Project["candidate_root"])
+	}
+	started, err := profile.Load(ctx, session.Request{
+		SessionID: sessionID, RepositoryID: repoID, ClientID: stringValue(ingress.Producer["adapter"]), Root: root,
+		IdentityKey: append([]byte(nil), a.IdentityKey...),
+	})
+	if err != nil {
+		return false, err
+	}
+	baselines := profile.Baselines
+	if baselines == nil {
+		baselines = a.Baselines
+	}
+	if baselines == nil {
+		return false, errors.New("lifecycle session baseline service is missing")
+	}
+	jobID := lifecycleCompletionID(repoID, stringValue(ingress.Scope["worktree_id"]), sessionID, taskID)
+	if _, err := baselines.Complete(ctx, started, profile.Workflow, jobID, profile.Message, a.Policy, profile.Verifiers); err != nil {
+		return false, err
+	}
+	completed, err := events.NewDomainEvent(events.DomainEventRequest{
+		EventType: string(lifecycle.TaskCompleted), OccurredAt: ingress.OccurredAt,
+		RepoID: repoID, WorktreeID: stringValue(ingress.Scope["worktree_id"]), SessionID: sessionID, TaskID: taskID,
+		CorrelationID: "completion/" + jobID, CausationID: ingress.EventID, IdempotencyKey: "session-completed/" + jobID,
+		Payload: map[string]any{"outcome": "success"},
+	})
+	if err != nil {
+		return false, err
+	}
+	result, err := a.ApplyDomain(ctx, completed)
+	if err != nil {
+		return false, err
+	}
+	if result.Disposition != string(events.Accepted) && result.Disposition != string(events.Duplicate) {
+		return false, fmt.Errorf("session completion fact was %s", result.Disposition)
+	}
+	return true, nil
+}
+
+func lifecycleCompletionID(parts ...string) string {
+	h := sha256.New()
+	for _, part := range parts {
+		_, _ = h.Write([]byte(part))
+		_, _ = h.Write([]byte{0})
+	}
+	return "completion-" + fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func (a *App) promoteCompletionCandidate(ctx context.Context, ingress events.Event) (bool, Result, error) {

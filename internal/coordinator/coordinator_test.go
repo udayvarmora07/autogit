@@ -121,6 +121,40 @@ func TestConcurrentCommitRetriesSameDurableIntentWithoutDuplicateGit(t *testing.
 	}
 }
 
+func TestCommitRecoveryWaitsForWriterLeaseBeforeInspectingInFlightIntent(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	git := &inFlightGit{sha: strings.Repeat("a", 40), committed: make(chan struct{}), release: make(chan struct{}), inspected: make(chan struct{})}
+	coordinator := Coordinator{
+		Store: NewStateStore(db), Git: git,
+		Lease: StateLease{DB: db, TTL: time.Minute}, Owner: "worker",
+	}
+	req := validCommitRequest("in-flight-recovery")
+	firstErr := make(chan error, 1)
+	go func() { firstErr <- coordinator.Commit(context.Background(), req) }()
+	<-git.committed
+	secondErr := make(chan error, 1)
+	go func() { secondErr <- coordinator.Commit(context.Background(), req) }()
+	select {
+	case <-git.inspected:
+		t.Fatal("contending commit inspected an in-flight intent before acquiring the writer lease")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(git.release)
+	if err := <-firstErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondErr; err != nil && !strings.Contains(err.Error(), "lease held") {
+		t.Fatal(err)
+	}
+	if git.inspectCalls.Load() != 0 || git.commitCalls.Load() != 1 {
+		t.Fatalf("inspect calls=%d commit calls=%d", git.inspectCalls.Load(), git.commitCalls.Load())
+	}
+}
+
 func TestPushResultPersistenceFailureReconcilesWithoutRepeatingProviderPush(t *testing.T) {
 	s := newMemoryStore()
 	s.markSucceededErr = errors.New("push result unavailable")
@@ -632,6 +666,28 @@ type fakeGit struct {
 type atomicGit struct {
 	sha   string
 	calls atomic.Int32
+}
+
+type inFlightGit struct {
+	sha, inspectSHA string
+	committed       chan struct{}
+	release         chan struct{}
+	inspected       chan struct{}
+	commitCalls     atomic.Int32
+	inspectCalls    atomic.Int32
+}
+
+func (g *inFlightGit) Commit(context.Context, CommitRequest) (string, error) {
+	g.commitCalls.Add(1)
+	close(g.committed)
+	<-g.release
+	return g.sha, nil
+}
+
+func (g *inFlightGit) Inspect(context.Context, CommitRequest) (string, error) {
+	g.inspectCalls.Add(1)
+	close(g.inspected)
+	return g.inspectSHA, nil
 }
 
 func (g *atomicGit) Commit(context.Context, CommitRequest) (string, error) {

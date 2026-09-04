@@ -849,6 +849,14 @@ func (s State) CompletionEligible(taskID string) bool {
 	return ok && t.CompletionClaim && completionConditions(s, t)
 }
 
+// TaskCompleted reports whether the core has already recorded the durable
+// completion fact for a task. It is used by replaying application boundaries
+// to avoid re-running a local workflow for a duplicate ingress claim.
+func (s State) TaskCompleted(taskID string) bool {
+	t, ok := s.Tasks[taskID]
+	return ok && t.State == TaskCompletedStatus
+}
+
 func hasBlockingPrompt(s State, taskID string) bool {
 	for _, p := range s.Prompts {
 		if (taskID == "" || p.TaskID == taskID) && p.Blocking && (p.State == PromptRequestedStatus || p.State == PromptQueuedStatus || p.State == PromptPresentedStatus) {

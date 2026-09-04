@@ -34,12 +34,14 @@ type appBaselineRunner struct{}
 
 type appSessionWorkflow struct {
 	called  bool
+	calls   int
 	request workflow.Request
 	plan    staging.Plan
 }
 
 func (w *appSessionWorkflow) RunPlan(_ context.Context, request workflow.Request, plan staging.Plan) (workflow.Result, error) {
 	w.called = true
+	w.calls++
 	w.request = request
 	w.plan = plan
 	return workflow.Result{OwnershipDigest: plan.OwnershipDigest()}, nil
@@ -226,6 +228,62 @@ func TestDuplicateTaskCompletionRetriesCoreCompletionCandidatePromotion(t *testi
 	}
 	if result.Disposition != string(events.Duplicate) || result.Action != string(lifecycle.ActionCheckpoint) || result.ReasonCode != "COMPLETION_CANDIDATE" {
 		t.Fatalf("duplicate result=%+v", result)
+	}
+}
+
+func TestTaskCompletionHookRunsConfiguredLifecycleWorkflowOnce(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	baselineStore := &appBaselineStore{}
+	service := &session.Service{Runner: repository.SystemRunner{}, Store: baselineStore}
+	started, err := service.Start(context.Background(), session.Request{
+		SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	workflow := &appSessionWorkflow{}
+	store, err := events.OpenStore(filepath.Join(t.TempDir(), "events.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := New(store, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Completion = &CompletionProfile{
+		Message:   "feat: complete lifecycle session",
+		Verifiers: &verification.VerifierRegistry{},
+		Workflow:  workflow,
+		Baselines: service,
+		Load: func(context.Context, session.Request) (session.Started, error) {
+			return started, nil
+		},
+	}
+	completionInput := hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDM", "task.completed", "lifecycle-task-complete", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`)
+	for _, input := range []string{
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDJ", "session.started", "lifecycle-start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDK", "task.started", "lifecycle-task-start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
+		completionInput,
+	} {
+		result, hookErr := a.Hook(context.Background(), []byte(input))
+		if hookErr != nil {
+			t.Fatalf("input=%s error=%v", input, hookErr)
+		}
+		if input == completionInput && (result.Action != "commit" || result.ReasonCode != "SESSION_COMMITTED") {
+			t.Fatalf("completion result=%+v", result)
+		}
+	}
+	if !workflow.called || workflow.request.Message != "feat: complete lifecycle session" || len(workflow.plan.CandidateSnapshot()) != 1 {
+		t.Fatalf("workflow=%+v plan=%+v", workflow.request, workflow.plan.CandidateSnapshot())
+	}
+	firstPlan := workflow.plan
+	duplicate, err := a.Hook(context.Background(), []byte(completionInput))
+	if err != nil || duplicate.Disposition != string(events.Duplicate) || workflow.calls != 1 || workflow.plan.OwnershipDigest() != firstPlan.OwnershipDigest() {
+		t.Fatalf("duplicate result=%+v err=%v workflow=%+v", duplicate, err, workflow)
 	}
 }
 

@@ -206,8 +206,8 @@ func (c Coordinator) Commit(ctx context.Context, r CommitRequest) (err error) {
 		_ = c.Store.RecordReconcile(ctx, r.ID)
 		return errors.New("created commit record has invalid SHA")
 	}
-	if status == "COMMIT_REQUESTED" || status == "RUNNING" {
-		return c.RecoverCommit(ctx, r)
+	if (status == "COMMIT_REQUESTED" || status == "RUNNING") && c.Lease == nil {
+		return c.recoverCommit(ctx, r)
 	}
 	if c.Lease != nil {
 		if err := c.Lease.Acquire(ctx, r.ID, c.Owner); err != nil {
@@ -233,7 +233,7 @@ func (c Coordinator) Commit(ctx context.Context, r CommitRequest) (err error) {
 			return nil
 		}
 		if status == "COMMIT_REQUESTED" || status == "RUNNING" {
-			return c.RecoverCommit(ctx, r)
+			return c.recoverCommit(ctx, r)
 		}
 	}
 	if err := c.Store.PutCommitIntent(ctx, r); err != nil {
@@ -248,13 +248,32 @@ func (c Coordinator) Commit(ctx context.Context, r CommitRequest) (err error) {
 	}
 	return c.Store.RecordCommit(ctx, r.ID, sha)
 }
-func (c Coordinator) RecoverCommit(ctx context.Context, r CommitRequest) error {
+
+// RecoverCommit reconciles a durable commit intent under the same writer
+// lease used by Commit. A caller cannot inspect or rewrite an in-flight intent
+// while another owner is between the durable intent and Git effect.
+func (c Coordinator) RecoverCommit(ctx context.Context, r CommitRequest) (err error) {
 	if c.Store == nil || c.Git == nil {
 		return errors.New("commit coordinator dependencies missing")
 	}
 	if err := validateCommitRequest(r); err != nil {
 		return err
 	}
+	if c.Lease == nil {
+		return c.recoverCommit(ctx, r)
+	}
+	if err := c.Lease.Acquire(ctx, r.ID, c.Owner); err != nil {
+		return err
+	}
+	defer func() {
+		if releaseErr := c.Lease.Release(ctx, r.ID, c.Owner); releaseErr != nil && err == nil {
+			err = releaseErr
+		}
+	}()
+	return c.recoverCommit(ctx, r)
+}
+
+func (c Coordinator) recoverCommit(ctx context.Context, r CommitRequest) error {
 	status, _, persisted, err := c.Store.CommitStatus(ctx, r.ID)
 	if err != nil {
 		return err

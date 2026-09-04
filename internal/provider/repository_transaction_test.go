@@ -2,9 +2,13 @@ package provider
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"autogit/internal/state"
 )
@@ -41,6 +45,7 @@ type transactionProvider struct {
 	confirmed int
 	createErr error
 	identity  string
+	exists    bool
 	seenState func() state.RemoteJob
 }
 
@@ -53,13 +58,18 @@ func (p *transactionProvider) Create(_ context.Context, r RemoteRequest) (string
 		return "", p.createErr
 	}
 	if p.identity != "" {
+		p.exists = true
 		return p.identity, nil
 	}
+	p.exists = true
 	return r.Owner + "/" + r.Name, nil
 }
 
 func (p *transactionProvider) ConfirmRepository(context.Context, RemoteRequest) error {
 	p.confirmed++
+	if !p.exists {
+		return &ProviderError{Kind: KindAbsent, Err: ErrRefAbsent}
+	}
 	return nil
 }
 
@@ -125,7 +135,7 @@ func TestRepositoryTransactionExistingExactAliasConfirmsAndIsIdempotent(t *testi
 	}
 	defer db.Close()
 	binder := &transactionBinder{url: "https://github.com/owner/repo.git"}
-	hosted := &transactionProvider{}
+	hosted := &transactionProvider{exists: true}
 	got, err := (RepositoryTransaction{State: db, Hosted: hosted, Git: binder}).Create(context.Background(), RemoteCreateRequest{ID: "remote-4", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"})
 	if err != nil || got != "owner/repo" || hosted.created != 0 || hosted.confirmed != 1 || binder.add != 0 {
 		t.Fatalf("got=%q err=%v provider=%+v binder=%+v", got, err, hosted, binder)
@@ -172,4 +182,184 @@ func TestRepositoryTransactionResumesCreatedIntentWithoutRecreatingHostedRepo(t 
 	if err != nil || got != "owner/repo" || hosted.created != 1 || binder.add != 2 {
 		t.Fatalf("got=%q err=%v provider=%+v binder=%+v", got, err, hosted, binder)
 	}
+}
+
+func TestRepositoryTransactionSerializesHostedCreationWithDurableLease(t *testing.T) {
+	db, err := state.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	hosted := &blockingTransactionProvider{entered: make(chan struct{}), release: make(chan struct{})}
+	lease := &transactionLease{}
+	req := RemoteCreateRequest{ID: "remote-concurrent", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	makeTransaction := func(owner string) RepositoryTransaction {
+		return RepositoryTransaction{State: db, Hosted: hosted, Git: &transactionBinder{}, Lease: lease, Owner: owner}
+	}
+	first := makeTransaction("worker-a")
+	second := makeTransaction("worker-b")
+	firstErr := make(chan error, 1)
+	go func() { _, createErr := first.Create(context.Background(), req); firstErr <- createErr }()
+	<-hosted.entered
+	secondErr := make(chan error, 1)
+	go func() { _, createErr := second.Create(context.Background(), req); secondErr <- createErr }()
+	select {
+	case <-hosted.second:
+		t.Fatal("second repository transaction reached hosted creation")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(hosted.release)
+	if err := <-firstErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondErr; err == nil || !strings.Contains(err.Error(), "lease held") {
+		t.Fatalf("second error=%v, want lease contention", err)
+	}
+	if got := hosted.created.Load(); got != 1 {
+		t.Fatalf("hosted create calls=%d, want one", got)
+	}
+}
+
+func TestRepositoryTransactionIntentPersistenceFailurePreventsHostedCreate(t *testing.T) {
+	db, err := state.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	failure := errors.New("remote intent unavailable")
+	store := &failingRemoteJobStore{putErr: failure}
+	hosted := &transactionProvider{}
+	tx := RepositoryTransaction{State: db, Jobs: store, Hosted: hosted, Git: &transactionBinder{}}
+	req := RemoteCreateRequest{ID: "remote-intent-failure", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	if _, err := tx.Create(context.Background(), req); !errors.Is(err, failure) {
+		t.Fatalf("error=%v, want intent persistence failure", err)
+	}
+	if hosted.created != 0 {
+		t.Fatalf("hosted create calls=%d after intent failure", hosted.created)
+	}
+}
+
+func TestRepositoryTransactionRecoversHostedCreateAfterResultPersistenceFailure(t *testing.T) {
+	db, err := state.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &recoverableRemoteJobStore{failOn: 2, failErr: errors.New("remote result unavailable")}
+	hosted := &recoverableHostedProvider{}
+	tx := RepositoryTransaction{State: db, Jobs: store, Hosted: hosted, Git: &transactionBinder{}}
+	req := RemoteCreateRequest{ID: "remote-result-failure", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	if _, err := tx.Create(context.Background(), req); !errors.Is(err, store.failErr) {
+		t.Fatalf("error=%v, want result persistence failure", err)
+	}
+	if hosted.created != 1 {
+		t.Fatalf("hosted create calls=%d after first attempt", hosted.created)
+	}
+	got, err := tx.Create(context.Background(), req)
+	if err != nil || got != "owner/repo" || hosted.created != 1 {
+		t.Fatalf("retry got=%q err=%v hosted creates=%d, want recovery without recreation", got, err, hosted.created)
+	}
+}
+
+type transactionLease struct {
+	mu   sync.Mutex
+	held bool
+}
+
+func (l *transactionLease) Acquire(context.Context, string, string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.held {
+		return errors.New("lease held")
+	}
+	l.held = true
+	return nil
+}
+
+func (l *transactionLease) Release(context.Context, string, string) error {
+	l.mu.Lock()
+	l.held = false
+	l.mu.Unlock()
+	return nil
+}
+
+type blockingTransactionProvider struct {
+	created atomic.Int32
+	entered chan struct{}
+	second  chan struct{}
+	release chan struct{}
+	exists  atomic.Bool
+}
+
+type failingRemoteJobStore struct {
+	putErr error
+}
+
+func (s *failingRemoteJobStore) RemoteJob(string) (state.RemoteJob, error) {
+	return state.RemoteJob{}, sql.ErrNoRows
+}
+
+func (s *failingRemoteJobStore) PutRemoteJob(context.Context, state.RemoteJob) error {
+	return s.putErr
+}
+
+type recoverableRemoteJobStore struct {
+	job     state.RemoteJob
+	hasJob  bool
+	puts    int
+	failOn  int
+	failErr error
+}
+
+func (s *recoverableRemoteJobStore) RemoteJob(string) (state.RemoteJob, error) {
+	if !s.hasJob {
+		return state.RemoteJob{}, sql.ErrNoRows
+	}
+	return s.job, nil
+}
+
+func (s *recoverableRemoteJobStore) PutRemoteJob(_ context.Context, job state.RemoteJob) error {
+	s.puts++
+	if s.puts == s.failOn {
+		return s.failErr
+	}
+	s.job, s.hasJob = job, true
+	return nil
+}
+
+type recoverableHostedProvider struct {
+	created int
+	exists  bool
+}
+
+func (p *recoverableHostedProvider) Create(_ context.Context, r RemoteRequest) (string, error) {
+	p.created++
+	p.exists = true
+	return r.Owner + "/" + r.Name, nil
+}
+
+func (p *recoverableHostedProvider) ConfirmRepository(context.Context, RemoteRequest) error {
+	if !p.exists {
+		return &ProviderError{Kind: KindAbsent, Err: ErrRefAbsent}
+	}
+	return nil
+}
+
+func (p *blockingTransactionProvider) Create(_ context.Context, r RemoteRequest) (string, error) {
+	count := p.created.Add(1)
+	p.exists.Store(true)
+	if count == 1 {
+		close(p.entered)
+		<-p.release
+	} else if count == 2 {
+		close(p.second)
+	}
+	return r.Owner + "/" + r.Name, nil
+}
+
+func (p *blockingTransactionProvider) ConfirmRepository(context.Context, RemoteRequest) error {
+	if !p.exists.Load() {
+		return &ProviderError{Kind: KindAbsent, Err: ErrRefAbsent}
+	}
+	return nil
 }

@@ -141,6 +141,23 @@ func hookEvent(id, typ, key, scopeExtra, taskExtra, orderingExtra string) string
 	return `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"` + id + `","event_type":"` + typ + `","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"` + scopeExtra + taskExtra + `},"ordering":{"stream_id":"stream"` + orderingExtra + `},"idempotency":{"key":"` + key + `"},"payload":{}}`
 }
 
+func hookEventWithCapabilities(id, typ, key, scopeExtra, capabilities string) string {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(hookEvent(id, typ, key, scopeExtra, "", "")), &raw); err != nil {
+		panic(err)
+	}
+	var caps map[string]any
+	if err := json.Unmarshal([]byte(capabilities), &caps); err != nil {
+		panic(err)
+	}
+	raw["capabilities"] = caps
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
 func TestVerifyRequiresExplicitSessionEvidence(t *testing.T) {
 	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
 	var out bytes.Buffer
@@ -1340,6 +1357,71 @@ func TestCodexSessionEndHookContractAcceptsOfficialPayload(t *testing.T) {
 	}
 	if !strings.Contains(hookOut.String(), `"disposition":"accepted"`) {
 		t.Fatalf("hook result=%s", hookOut.String())
+	}
+}
+
+func TestHookCompletionProfileCommitsDurableSessionCandidate(t *testing.T) {
+	stateRoot := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if err := run([]string{"enable", "--repo", root, "--local"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := os.ReadFile(filepath.Join(stateRoot, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifierConfig := filepath.Join(stateRoot, "verifiers.json")
+	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	withScope := func(input string, task bool) []byte {
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(input), &raw); err != nil {
+			t.Fatal(err)
+		}
+		scope := raw["scope"].(map[string]any)
+		scope["repo_id"] = info.RepoID
+		scope["worktree_id"] = info.WorktreeID
+		if task {
+			scope["task_id"] = "task"
+		}
+		raw["project"] = map[string]any{"candidate_root": root}
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	started := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDJ", "session.started", "profile-start", `,"session_id":"profile-session"`, `{"queue_state":"none","task_boundaries":"native"}`), false)
+	if err := runHook(nil, bytes.NewReader(started), &bytes.Buffer{}); err != nil {
+		t.Fatalf("session.started: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "candidate.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	taskStarted := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDK", "task.started", "profile-task-start", `,"session_id":"profile-session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`), true)
+	if err := runHook(nil, bytes.NewReader(taskStarted), &bytes.Buffer{}); err != nil {
+		t.Fatalf("task.started: %v", err)
+	}
+	completed := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDM", "task.completed", "profile-task-complete", `,"session_id":"profile-session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`), true)
+	var out bytes.Buffer
+	if err := runHook([]string{"--message", "feat: commit lifecycle candidate", "--verifiers", verifierConfig}, bytes.NewReader(completed), &out); err != nil {
+		t.Fatalf("task.completed: %v output=%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"action":"commit"`) || !strings.Contains(out.String(), `"reason_code":"SESSION_COMMITTED"`) {
+		t.Fatalf("completion output=%s", out.String())
+	}
+	refs := strings.TrimSpace(gitOutput(t, root, "for-each-ref", "--format=%(refname)", "refs/autogit/commits"))
+	if refs == "" || strings.Count(refs, "refs/autogit/commits/") != 1 {
+		t.Fatalf("autogit refs=%q", refs)
 	}
 }
 

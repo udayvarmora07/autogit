@@ -463,6 +463,9 @@ func (g GH) ConfirmRepository(ctx context.Context, r RemoteRequest) error {
 	}
 	full, err := g.run(ctx, "api", "repos/"+r.Owner+"/"+r.Name, "--jq", ".full_name")
 	if err != nil {
+		if isNotFound(err, full.Output) {
+			return &ProviderError{Kind: KindAbsent, Err: ErrRefAbsent}
+		}
 		return err
 	}
 	if parseGHString(full.Output) != r.Owner+"/"+r.Name {
@@ -470,6 +473,9 @@ func (g GH) ConfirmRepository(ctx context.Context, r RemoteRequest) error {
 	}
 	visibility, err := g.run(ctx, "api", "repos/"+r.Owner+"/"+r.Name, "--jq", ".visibility")
 	if err != nil {
+		if isNotFound(err, visibility.Output) {
+			return &ProviderError{Kind: KindAbsent, Err: ErrRefAbsent}
+		}
 		return err
 	}
 	if parseGHString(visibility.Output) != r.Visibility {
@@ -601,10 +607,10 @@ func (g GH) Inspect(ctx context.Context, r RemoteRequest, ref string) (string, e
 func (g GH) run(ctx context.Context, args ...string) (Result, error) {
 	res, err := g.Runner.Run(ctx, "", args...)
 	if len(res.Output) > maxOutput {
-		return Result{}, ErrOutputLimit
+		return res, ErrOutputLimit
 	}
 	if err != nil || res.Err != nil {
-		return Result{}, classifyFailure(runErrOrResult(err, res.Err), res.Output)
+		return res, classifyFailure(runErrOrResult(err, res.Err), res.Output)
 	}
 	return res, nil
 }

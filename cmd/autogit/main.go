@@ -855,6 +855,8 @@ func runRemote(args []string, dir string, out io.Writer) error {
 		State:  db,
 		Hosted: provider.GH{Runner: ghRunner, VerifyOwner: true},
 		Git:    provider.GitPusher{Runner: gitRunner, Dir: info.Root},
+		Lease:  coordinator.StateLease{DB: db},
+		Owner:  options.ID,
 	}
 	identity, err := tx.Create(context.Background(), provider.RemoteCreateRequest{ID: options.ID, RepositoryID: info.RepoID, Alias: options.Alias, Owner: options.Owner, Name: options.Name, Visibility: options.Visibility})
 	if err != nil {
@@ -1760,6 +1762,44 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 	defer baselineStore.Close()
 	a.Baselines = &session.Service{Runner: repository.SystemRunner{}, Store: baselineStore}
 	a.Resolver = func(root string) (repository.Info, error) { return repository.DiscoverWithKey(root, key) }
+	completionMessage := flag(args, "--message")
+	completionVerifierPath := flag(args, "--verifiers")
+	if completionMessage != "" || completionVerifierPath != "" {
+		if completionMessage == "" || completionVerifierPath == "" {
+			return cliError{"E_SCOPE", "--message and --verifiers must be provided together for lifecycle completion"}
+		}
+		registry, loadErr := verification.LoadTrustedRegistryFile(completionVerifierPath, dir, 0)
+		if loadErr != nil {
+			return cliError{"E_VERIFIER_CONFIG", safeMessage(loadErr.Error())}
+		}
+		workflowService := &localworkflow.Service{
+			Git:                gittransaction.SystemRunner{},
+			Intents:            gittransaction.NewStateIntentPort(baselineStore),
+			VerifierRunner:     verification.ExecRunner{},
+			Lease:              coordinator.StateLease{DB: baselineStore},
+			TrustedVerifierDir: dir,
+			IdentityKey:        key,
+		}
+		a.Completion = &app.CompletionProfile{
+			Message:   completionMessage,
+			Verifiers: registry,
+			Workflow:  workflowService,
+			Baselines: a.Baselines,
+			Load: func(loadCtx context.Context, req session.Request) (session.Started, error) {
+				durable, readErr := baselineStore.Session(loadCtx, req.SessionID)
+				if readErr != nil {
+					return session.Started{}, readErr
+				}
+				if durable.RepositoryID != req.RepositoryID || durable.ClientID != req.ClientID {
+					return session.Started{}, errors.New("durable session scope does not match completion event")
+				}
+				return a.Baselines.ResumeFromDurable(loadCtx, req, session.DurableBaseline{
+					Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest,
+					PathsDigest: durable.BaselinePathsDigest, Evidence: durable.BaselineEvidence,
+				})
+			},
+		}
+	}
 	r, err := a.Hook(context.Background(), b)
 	if err != nil {
 		return err

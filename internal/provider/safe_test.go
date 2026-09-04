@@ -50,6 +50,14 @@ func TestGHProviderRejectsFalseSuccessPostcondition(t *testing.T) {
 	}
 }
 
+func TestGHConfirmRepositoryMapsNotFoundToAbsent(t *testing.T) {
+	r := &argRunner{results: []Result{{Output: "HTTP 404: repository not found", Err: errors.New("gh exited with status 1")}}}
+	err := (GH{Runner: r}).ConfirmRepository(context.Background(), RemoteRequest{Owner: "owner", Name: "repo", Visibility: "private"})
+	if !errors.Is(err, ErrRefAbsent) {
+		t.Fatalf("error=%v, want absent repository error", err)
+	}
+}
+
 func TestSystemRunnerRequiresCanonicalExecutableAndWorkingDirectory(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {

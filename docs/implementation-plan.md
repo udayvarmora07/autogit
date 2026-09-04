@@ -248,8 +248,9 @@ Open gates and next priorities:
       document status/link consistency and record the approved compatibility
       window.
 - [x] Bridge durable session/repository observations into owned candidate
-      derivation and the verified local-commit workflow for the explicit clean
-      session path; lifecycle-driven completion remains open.
+      derivation and the verified local-commit workflow for both explicit clean
+      session completion and the trusted hook completion profile; automatic
+      message/verifier inference remains a separate policy gate.
 - [x] Complete local public preflight/provider CLI publication, including
       readiness evidence and exact remote visibility postconditions; live
       canary evidence remains a separate release gate.
@@ -330,11 +331,10 @@ be exercised without a user repository or network credentials:
   process boundary for trusted verifier argv.
 
 The following planned gates remain open and are not represented as completed:
-fully automatic lifecycle-driven CLI/session completion (the observation,
+automatic message/verifier selection for installed hooks (the observation,
 staging, source-free durable evidence, session start/complete coordinator,
-session-start hook wiring, and explicit `sync --complete --all-owned` resume
-path are implemented; automatic message/verifier selection and commit
-orchestration from lifecycle events still need wiring), complete
+session-start hook wiring, explicit `sync --complete --all-owned` resume path,
+and explicit trusted hook completion profile are implemented), complete
 trusted verification policy configuration for all workflow modes, complete
 adapter discovery/installation and
 workflow orchestration in the CLI, the >=609 release-test target, and the
@@ -505,15 +505,18 @@ Coordinator tests now inject failures at the initial commit and push intent
 write boundaries and assert that no Git or provider effect is invoked. They
 also inject commit-result persistence failure after the Git effect and verify
 that restart-style evidence reconciliation records the result without
-repeating the commit. This is deterministic boundary coverage; the required
-1,000 randomized crash/concurrency schedules and every external release gate
-remain open. A real SQLite lease test also runs two concurrent identical
-commit requests and verifies that only one Git effect occurs. Lease
-reacquisition now fails for every active owner, and release is serialized with
-acquisition, preventing same-process overlap and stale-owner release races.
-Commit processing rechecks the durable intent after waiting for the lease, so a
-contended retry observes a completed job instead of issuing a second Git
-effect.
+repeating the commit. Provider transaction tests inject initial remote-intent
+persistence failure and a post-hosted-create result persistence failure; retry
+confirms the exact hosted identity before local attachment and does not
+recreate the repository. This is deterministic boundary coverage; the
+required 1,000 randomized crash/concurrency schedules and every external
+release gate remain open. Real SQLite lease tests run concurrent identical
+commit and hosted-create requests and verify that only one external effect
+occurs. Lease reacquisition now fails for every active owner, and release is
+serialized with acquisition, preventing same-process overlap and stale-owner
+release races. Commit processing rechecks the durable intent after waiting for
+the lease, so a contended retry observes a completed job instead of issuing a
+second Git effect.
 
 The four legacy compatibility suites were rerun from the installed reference
 checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,

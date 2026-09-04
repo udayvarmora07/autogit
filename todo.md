@@ -62,7 +62,8 @@ claiming a phase exit:
   invariants, test-traceability matrix, and compatibility window.
 - [x] Capture durable session/task baselines from real repository observations
   (HEAD, index, status, modes, and owned paths), then feed them into staging;
-  lifecycle-driven completion remains a separate open slice.
+  explicit lifecycle-driven completion is now available through the trusted
+  hook completion profile; automatic message/verifier inference remains open.
 - [x] Extend real filesystem snapshot capture to detect race substitutions and
   preserve rename/delete, ignore, linked-worktree, Unicode/control-path, and
   concurrent-writer rules; explicit regular-file content/mode capture and
@@ -203,7 +204,12 @@ These eight bounded slices were implemented with focused red-green tests:
   after the local preflight boundary.
 - [x] Emit lifecycle/domain facts from CLI `sync`/`publish` operations with
   deterministic replay identities.
-- [ ] Reconstruct the complete session-driven completion path from hook events.
+- [x] Reconstruct the session-driven completion path from hook events through
+  an explicit trusted message/verifier profile: eligible task claims promote
+  a core candidate, restart-safe baseline evidence is loaded, the verified
+  local workflow runs, and one deterministic domain completion fact closes the
+  task; duplicate ingress is idempotent. Installed hooks intentionally do not
+  infer message or verifier policy.
 - [x] Add provider repository creation/local-remote transaction wiring with
       exact owner/name/visibility postconditions; never attach a collision.
 - [x] Add the user-facing consent-gated repository-initialization CLI flow;
@@ -238,13 +244,18 @@ These eight bounded slices were implemented with focused red-green tests:
 - [x] Add read-only `verify --all-owned` recovery for hook-captured sessions
   using source-free durable evidence without creating commit intents or refs.
 - [x] Add deterministic coordinator fault coverage proving commit/push intent
-  persistence failures cannot invoke external effects, and commit-result
-  persistence failure remains recoverable without repeating Git.
+      persistence failures cannot invoke external effects, and commit-result
+      persistence failure remains recoverable without repeating Git.
+- [x] Add provider repository-creation intent/result fault coverage: initial
+      intent persistence blocks hosted creation, and a retry after hosted
+      creation/result persistence failure confirms the exact destination before
+      attaching without repeating creation.
 - [x] Serialize durable lease release and reject active same-owner
   reacquisition so concurrent commit requests cannot overlap or lose a lease.
 - [x] Require an ingress completion claim for core completion candidates and
   retry duplicate completion ingress deterministically.
 
-The remaining unchecked items are release or policy gates, or require a
-deliberate completion profile for message/verifier selection; they are not
-silently treated as complete by these local implementation slices.
+The remaining unchecked items are release or policy gates, or require automatic
+message/verifier profile selection; installed hooks do not infer those values,
+and they are not silently treated as complete by these local implementation
+slices.
