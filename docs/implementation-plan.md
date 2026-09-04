@@ -332,10 +332,10 @@ and explicit clean-session `sync --complete` local commits, but full
 lifecycle-driven CLI/session completion still needs wiring), complete
 trusted verification policy configuration for all workflow modes, complete
 adapter discovery/installation and
-workflow orchestration in the CLI,
-the user-facing repository-initialization command, the >=609 release-test
-target, and the opt-in disposable-provider canary. Explicit private and
-evidence-gated public `publish` paths, deterministic lifecycle fact emission,
+workflow orchestration in the CLI, the >=609 release-test target, and the
+opt-in disposable-provider canary. The user-facing consent-gated repository-
+initialization command is implemented. Explicit private and evidence-gated
+public `publish` paths, deterministic lifecycle fact emission,
 and the tested repository-creation/local-remote transaction package are
 implemented, but do not satisfy those broader release gates.
 The prototype shell test scripts described by the test strategy are not present
@@ -397,6 +397,14 @@ candidate, base, policy, verifier, guard, message, commit, remote, ref, and
 operation error category digests needed by the lifecycle projection. Replaying
 the same idempotency key is safe; legacy/manual commit intents without a
 projected lifecycle scope remain authoritative in durable job state.
+
+`autogit init` now provides the user-facing repository-initialization
+boundary. It resolves an explicit canonical directory, rejects protected and
+nested Git targets, persists the selected local/private or remote/private/public
+tracking policy before invoking Git, initializes an explicit branch, and merges
+bounded ecosystem-derived ignore entries without staging or committing user
+files. Remote creation remains a separate explicit command so hosted side
+effects are independently reviewable and resumable.
 
 `autogit remote create` and `internal/provider.RepositoryTransaction` provide
 a durable, collision-safe

@@ -34,7 +34,7 @@ authentication and repository operations.
 ## Implementation status (local v1 foundation)
 
 `go run ./cmd/autogit` provides the versioned hook result contract and the
-safe local operations (`install`, `doctor`, `enable`, `disable`, `status`,
+safe local operations (`install`, `doctor`, `enable`, `disable`, `init`, `status`,
 `plan`, `hook`, `logs`, `uninstall`, `config explain`, baseline-capturing
 `sync` (plus explicit clean-session `sync --complete`), clean-session read-only
 `verify`, explicit private `publish`, guarded `retry`, and explicit
@@ -53,15 +53,22 @@ Candidate ownership/index primitives, bounded verification, read-only history
 scanning, lifecycle projection, durable git commit intent/reconciliation,
 diagnostics, six adapter translators, an adapter contract matrix, owned config
 installation, a pure local public preflight package, provider remote-alias to
-canonical-URL binding, and a production bounded process runner are present as
-tested libraries. The session package provides an in-memory start/complete
+canonical-URL binding, a consent-gated repository initializer, and a
+production bounded process runner are present as tested libraries. The session
+package provides an in-memory start/complete
 handoff into the verified local workflow, while the CLI hook captures trusted
 session-start baselines without exposing their contents. The CLI private
 publication path is explicit and exact-SHA based; public publication returns a
 bounded preflight report until all evidence is available. Lifecycle-driven
-session completion and full repository initialization remain open. No command contacts
-GitHub or modifies a user repository implicitly; provider tests/canaries are
-not live.
+session completion remains open. No command contacts GitHub or modifies a user
+repository implicitly; provider tests/canaries are not live.
+
+Initialization is explicit. For a local project use
+`autogit init --repo DIR --local --branch main`; remote tracking requires
+`--provider github --owner OWNER --name NAME` and defaults to private. Use
+`--public-consent --visibility public` only when public tracking is intended.
+After initialization, `autogit remote create` is the separate resumable step
+that creates and binds the hosted destination.
 
 ### Verification and remaining release gates
 

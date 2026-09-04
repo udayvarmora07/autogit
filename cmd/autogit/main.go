@@ -21,6 +21,7 @@ import (
 	"autogit/internal/app"
 	"autogit/internal/coordinator"
 	"autogit/internal/events"
+	"autogit/internal/gitport"
 	"autogit/internal/gittransaction"
 	"autogit/internal/historyscan"
 	"autogit/internal/install"
@@ -69,7 +70,7 @@ func safeMessage(s string) string {
 }
 func run(args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable status plan hook verify sync publish remote retry logs uninstall config explain\n")
+		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable init status plan hook verify sync publish remote retry logs uninstall config explain\n")
 		return nil
 	}
 	if args[0] == "hook" {
@@ -91,6 +92,13 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		return runRetry(args[1:], dir, out)
+	}
+	if cmd == "init" {
+		options, parseErr := parseInitArgs(args[1:])
+		if parseErr != nil {
+			return parseErr
+		}
+		return runInit(options, dir, out)
 	}
 	if cmd == "sync" {
 		if err := validateSyncArgs(args[1:]); err != nil {
@@ -315,6 +323,11 @@ type publishOptions struct {
 type remoteOptions struct {
 	ID, Repo, Alias, Owner, Name, Visibility string
 	PublicConsent                            bool
+}
+
+type initOptions struct {
+	Repo, Branch, Provider, Owner, Name, Visibility string
+	Local, PublicConsent                            bool
 }
 
 func validateEnableArgs(args []string, enabling bool) error {
@@ -547,6 +560,118 @@ func parseRemoteArgs(args []string) (remoteOptions, error) {
 		return remoteOptions{}, cliError{"E_CONSENT", "--public-consent is required for public remote creation"}
 	}
 	return options, nil
+}
+
+func parseInitArgs(args []string) (initOptions, error) {
+	options := initOptions{Branch: "main", Visibility: "private"}
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name == "--local" || name == "--public-consent" {
+			if seen[name] {
+				return initOptions{}, cliError{"E_USAGE", name + " may be provided once"}
+			}
+			seen[name] = true
+			if name == "--local" {
+				options.Local = true
+			} else {
+				options.PublicConsent = true
+			}
+			continue
+		}
+		switch name {
+		case "--repo", "--branch", "--provider", "--owner", "--name", "--visibility":
+		default:
+			return initOptions{}, cliError{"E_USAGE", "init supports --repo, --branch, --local, --provider, --owner, --name, --visibility, and --public-consent"}
+		}
+		if seen[name] || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return initOptions{}, cliError{"E_USAGE", name + " requires one value and may be provided once"}
+		}
+		seen[name] = true
+		switch name {
+		case "--repo":
+			options.Repo = args[i+1]
+		case "--branch":
+			options.Branch = args[i+1]
+		case "--provider":
+			options.Provider = args[i+1]
+		case "--owner":
+			options.Owner = args[i+1]
+		case "--name":
+			options.Name = args[i+1]
+		case "--visibility":
+			options.Visibility = args[i+1]
+		}
+		i++
+	}
+	if options.Repo == "" {
+		return initOptions{}, cliError{"E_SCOPE", "--repo is required"}
+	}
+	remote := options.Provider != "" || options.Owner != "" || options.Name != ""
+	if options.Local && remote {
+		return initOptions{}, cliError{"E_USAGE", "--local cannot be combined with remote tracking fields"}
+	}
+	if !options.Local && (!remote || options.Provider == "" || options.Owner == "" || options.Name == "") {
+		return initOptions{}, cliError{"E_CONSENT", "init requires --local or complete remote tracking consent"}
+	}
+	if options.Provider != "" && options.Provider != "github" {
+		return initOptions{}, cliError{"E_PROVIDER", "only github is supported"}
+	}
+	if options.Visibility != "private" && options.Visibility != "public" {
+		return initOptions{}, cliError{"E_USAGE", "--visibility must be private or public"}
+	}
+	if options.Visibility == "public" && !options.PublicConsent {
+		return initOptions{}, cliError{"E_CONSENT", "--public-consent is required for public initialization"}
+	}
+	if err := repository.ValidateInitialBranch(options.Branch); err != nil {
+		return initOptions{}, cliError{"E_USAGE", err.Error()}
+	}
+	if !options.Local {
+		if err := provider.ValidateRemoteRequest(provider.RemoteRequest{Owner: options.Owner, Name: options.Name, Visibility: options.Visibility}); err != nil {
+			return initOptions{}, cliError{"E_USAGE", err.Error()}
+		}
+	}
+	return options, nil
+}
+
+func runInit(options initOptions, dir string, out io.Writer) error {
+	root, err := repository.ResolveUninitializedRoot(options.Repo)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	gitPath, err := trustedExecutable("git")
+	if err != nil {
+		return cliError{"E_PROVIDER", "git is unavailable"}
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0700)
+	key, err := loadIdentityKey(dir)
+	if err != nil {
+		return err
+	}
+	repoID, err := repository.FutureRepositoryID(root, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	p := policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}
+	if !options.Local {
+		p = policy.Policy{Tracking: "yes", Visibility: options.Visibility, Provider: options.Provider, Owner: options.Owner, Destination: options.Owner + "/" + options.Name, Workflow: "safe", PublicConsent: options.PublicConsent, Version: 1}
+	}
+	// Persist consent before Git initialization so a crash cannot leave a new
+	// repository without the decision that authorized the mutation.
+	if err := savePolicy(dir, repoID, p); err != nil {
+		return err
+	}
+	if _, err := repository.Initialize(context.Background(), gitport.Runner{Executable: gitPath}, root, options.Branch); err != nil {
+		return cliError{"E_GIT", safeMessage(err.Error())}
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil || info.RepoID != repoID {
+		return cliError{"E_STATE", "initialized repository identity could not be confirmed"}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "REPOSITORY_INITIALIZED", "repo_id": info.RepoID, "branch": options.Branch, "tracking": p.Tracking, "visibility": p.Visibility})
 }
 
 func runRemote(args []string, dir string, out io.Writer) error {

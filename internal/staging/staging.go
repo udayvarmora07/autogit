@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"autogit/internal/gittransaction"
 	"autogit/internal/repository"
@@ -372,7 +373,7 @@ func BuildCandidate(ctx context.Context, r Runner, dir, index string, p Plan) (C
 	return Candidate{Digest: "sha256:" + hex.EncodeToString(h[:]), TreeOID: digest, BaseDigest: base, IndexPath: index, Paths: append([]string(nil), p.Paths...)}, nil
 }
 func safePath(s string) error {
-	if s == "" || strings.IndexByte(s, 0) >= 0 || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "\\") || path.IsAbs(s) {
+	if s == "" || !utf8.ValidString(s) || strings.IndexByte(s, 0) >= 0 || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "\\") || path.IsAbs(s) {
 		return errors.New("unsafe path")
 	}
 	if len(s) >= 2 && s[1] == ':' {

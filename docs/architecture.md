@@ -212,6 +212,7 @@ The Phase 0 product has no network API. Planned CLI commands are:
 | `autogit install` | Discover clients and install owned adapter entries |
 | `autogit doctor` | Validate Git, `gh`, auth, adapters, DB, and locks |
 | `autogit enable` / `disable` | Record or revoke project policy |
+| `autogit init` | Consent-gated Git initialization with explicit branch and merged hygiene |
 | `autogit status` | Show repository/session/change/commit/push state |
 | `autogit plan` | Read-only preview of candidate, policy, checks, destination |
 | `autogit hook` | Accept one adapter ingress event and return a result |

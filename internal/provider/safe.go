@@ -128,6 +128,10 @@ type HostedRepository interface {
 	ConfirmRepository(context.Context, RemoteRequest) error
 }
 
+// ValidateRemoteRequest exposes the provider's exact identity validation to
+// pre-mutation CLI planning without exposing provider command execution.
+func ValidateRemoteRequest(r RemoteRequest) error { return validIdentity(r) }
+
 type PushOutcome string
 
 const (

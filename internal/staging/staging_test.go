@@ -124,6 +124,12 @@ func TestBuildObservedPlanRejectsFileKindChanges(t *testing.T) {
 	}
 }
 
+func TestBuildObservedPlanRejectsInvalidUTF8Path(t *testing.T) {
+	if _, err := BuildObservedPlan(nil, ObservedSnapshot{string([]byte{'b', '\xff'}): {Content: []byte("candidate"), Present: true}}, []string{string([]byte{'b', '\xff'})}); err == nil {
+		t.Fatal("invalid UTF-8 path accepted")
+	}
+}
+
 func TestSafePathRejectsControlCharacters(t *testing.T) {
 	if err := safePath("bad\nname"); err == nil {
 		t.Fatal("control-character path accepted")

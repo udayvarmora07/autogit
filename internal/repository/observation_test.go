@@ -206,6 +206,18 @@ func TestCaptureBaselineRejectsStatusPathThatEscapesRoot(t *testing.T) {
 	}
 }
 
+func TestCaptureBaselineRejectsInvalidUTF8StatusPath(t *testing.T) {
+	root := t.TempDir()
+	runner := &observationRunner{outputs: map[string]string{
+		"rev-parse\x00--verify\x00--quiet\x00HEAD^{commit}":       strings.Repeat("a", 40) + "\n",
+		"rev-parse\x00--git-path\x00index":                        filepath.Join(root, "index") + "\n",
+		"status\x00--porcelain=v1\x00-z\x00--untracked-files=all": "?? bad\xffname\x00",
+	}}
+	if _, err := CaptureBaseline(context.Background(), runner, root); err == nil {
+		t.Fatal("invalid UTF-8 status path accepted")
+	}
+}
+
 func TestCaptureBaselineWithOptionsRejectsOversizedObservedFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {

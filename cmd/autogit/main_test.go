@@ -116,6 +116,56 @@ func TestVerifyRequiresExplicitSessionEvidence(t *testing.T) {
 	}
 }
 
+func TestParseInitRequiresExplicitTrackingChoice(t *testing.T) {
+	if _, err := parseInitArgs([]string{"--repo", "/tmp/project"}); err == nil || !strings.HasPrefix(err.Error(), "E_CONSENT:") {
+		t.Fatalf("missing tracking choice error=%v", err)
+	}
+	got, err := parseInitArgs([]string{"--repo", "/tmp/project", "--local", "--branch", "trunk"})
+	if err != nil || !got.Local || got.Branch != "trunk" {
+		t.Fatalf("local init=%+v err=%v", got, err)
+	}
+	if _, err := parseInitArgs([]string{"--repo", "/tmp/project", "--provider", "github", "--owner", "owner", "--name", "repo", "--visibility", "public"}); err == nil || !strings.HasPrefix(err.Error(), "E_CONSENT:") {
+		t.Fatalf("public init without consent error=%v", err)
+	}
+}
+
+func TestInitCreatesGitAndRecordsConsentBeforeMutation(t *testing.T) {
+	stateRoot := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"init", "--repo", root, "--local", "--branch", "trunk"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+		t.Fatalf("git metadata missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".gitignore")); err != nil {
+		t.Fatalf("generated hygiene missing: %v", err)
+	}
+	branchOutput, err := exec.Command("git", "-C", root, "symbolic-ref", "--short", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(branchOutput)) != "trunk" {
+		t.Fatalf("initial branch=%q err=%v", branchOutput, err)
+	}
+	key, err := os.ReadFile(filepath.Join(stateRoot, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPolicy(stateRoot, info.RepoID); !got.TrackingEnabled() || !got.LocalOnly {
+		t.Fatalf("policy=%+v output=%s", got, out.String())
+	}
+	if !strings.Contains(out.String(), "REPOSITORY_INITIALIZED") || !strings.Contains(out.String(), "trunk") {
+		t.Fatalf("output=%s", out.String())
+	}
+}
+
 func TestVerifyReconstructsCleanSessionWithoutCreatingCommitIntent(t *testing.T) {
 	stateDir := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", stateDir)

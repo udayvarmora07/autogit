@@ -262,7 +262,7 @@ considered complete.
 | Requirement IDs | Planned acceptance coverage |
 | --- | --- |
 | FR-CNS-001..007 | `consent_matrix`, `policy_state_machine`, `public_canary`, `config_cli`, `local_only_network_boundary` |
-| FR-REP-001..007 | `root_and_identity_matrix`, `disposable_git`, `provider_contract`, `collision_and_remote_reconcile` |
+| FR-REP-001..007 | `root_and_identity_matrix`, `repository_init`, `disposable_git`, `provider_contract`, `collision_and_remote_reconcile` |
 | FR-SES-001..008 | `event_contract`, `session_lifecycle`, `ordering_replay`, `concurrency_crash` |
 | FR-GIT-001..007 | `ownership_candidate`, `dirty_index_worktree`, `argv_ref_safety`, `git_transaction_recovery`, `offline_push` |
 | FR-IGN-001..004 | `ignore_policy_matrix`, `artifact_lockfile`, `transient_state_isolation` |

@@ -77,6 +77,9 @@ claiming a phase exit:
   destination and public-consent/preflight summaries; live canary remains open.
 - [x] Complete supported-client capability discovery and the bounded adapter
   installation surface without granting adapters Git mutation authority.
+- [x] Add the consent-gated `init` command: canonical uninitialized-root checks,
+  explicit initial branch, pre-mutation policy persistence, and bounded
+  ecosystem-derived hygiene merging without staging or committing user files.
 
 ## Completed execution batch (2026-09-02)
 
@@ -193,7 +196,8 @@ These eight bounded slices were implemented with focused red-green tests:
   deterministic replay identities.
 - [ ] Reconstruct the complete session-driven completion path from hook events.
 - [x] Add provider repository creation/local-remote transaction wiring with
-  exact owner/name/visibility postconditions; never attach a collision. A
-  user-facing repository-initialization CLI flow remains open.
+      exact owner/name/visibility postconditions; never attach a collision.
+- [x] Add the user-facing consent-gated repository-initialization CLI flow;
+      remote creation remains an explicit resumable follow-up command.
 - [ ] Add durable fault injection at every CLI/provider intent boundary and
   expand concurrency/restart schedules.

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // CommandResult is the small read-only command result needed by repository
@@ -584,7 +585,7 @@ func safeJoin(root, name string) (string, error) {
 }
 
 func validateRelativePath(name string) error {
-	if name == "" || strings.IndexByte(name, 0) >= 0 || filepath.IsAbs(filepath.FromSlash(name)) || strings.Contains(name, "\\") {
+	if name == "" || !utf8.ValidString(name) || strings.IndexByte(name, 0) >= 0 || filepath.IsAbs(filepath.FromSlash(name)) || strings.Contains(name, "\\") {
 		return errors.New("path is not a safe repository-relative path")
 	}
 	for _, r := range name {
