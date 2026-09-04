@@ -244,8 +244,9 @@ Open gates and next priorities:
       and the [test traceability matrix](test-strategy.md); resolve remaining
       document status/link consistency and record the approved compatibility
       window.
-- [ ] Bridge durable session/repository observations into owned candidate
-      derivation and the verified local-commit workflow.
+- [x] Bridge durable session/repository observations into owned candidate
+      derivation and the verified local-commit workflow for the explicit clean
+      session path; lifecycle-driven completion remains open.
 - [x] Complete local public preflight/provider CLI publication, including
       readiness evidence and exact remote visibility postconditions; live
       canary evidence remains a separate release gate.
@@ -332,10 +333,11 @@ lifecycle-driven CLI/session completion still needs wiring), complete
 trusted verification policy configuration for all workflow modes, complete
 adapter discovery/installation and
 workflow orchestration in the CLI,
-repository-creation transactions, the >=609 release-test target, and the
-opt-in disposable-provider canary. Explicit private and evidence-gated public
-`publish` paths plus durable provider intent wiring are implemented, but do not
-satisfy those broader release gates.
+the user-facing repository-initialization command, the >=609 release-test
+target, and the opt-in disposable-provider canary. Explicit private and
+evidence-gated public `publish` paths, deterministic lifecycle fact emission,
+and the tested repository-creation/local-remote transaction package are
+implemented, but do not satisfy those broader release gates.
 The prototype shell test scripts described by the test strategy are not present
 in this checkout, so their 177-case baseline has not been rerun. Native macOS
 and Windows CI has not yet been observed; the workflow definition is evidence
@@ -386,3 +388,25 @@ Fresh local evidence for this slice is `go test ./...`, `go test -race ./...`,
 local `git`/`gh` executables and no network credentials. This evidence does
 not satisfy the live GitHub canary, native macOS/Windows, prototype-regression,
 or release-count gates.
+
+### 10.3 Lifecycle facts and repository transaction evidence (2026-09-04)
+
+The CLI emits deterministic core-owned domain facts after explicit local sync
+completion and after each durable publication attempt. The facts bind the
+candidate, base, policy, verifier, guard, message, commit, remote, ref, and
+operation error category digests needed by the lifecycle projection. Replaying
+the same idempotency key is safe; legacy/manual commit intents without a
+projected lifecycle scope remain authoritative in durable job state.
+
+`autogit remote create` and `internal/provider.RepositoryTransaction` provide
+a durable, collision-safe
+hosted-repository creation boundary. It persists intent before provider
+creation, refuses mismatched existing aliases, requires exact hosted
+owner/name/visibility confirmation, records a hosted-created intermediate
+state before local mutation, verifies the attached URL, and never deletes or
+implicitly rebinds a hosted repository after failure. A created but unattached
+job can be resumed by the same immutable identity; collision and identity
+failures remain visible and do not attach a same-name remote.
+Remote job identity is bound to the keyed repository identity (state schema
+v6), so a job cannot be replayed against another repository in the shared
+application state directory.

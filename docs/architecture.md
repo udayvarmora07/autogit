@@ -106,6 +106,7 @@ erDiagram
   CHANGE_SET ||--o{ VERIFICATION_RUN : verifies
   CHANGE_SET ||--o{ COMMIT_JOB : commits
   COMMIT_JOB ||--o{ PUSH_JOB : publishes
+  REPOSITORY ||--o{ REMOTE_JOB : creates
   REPOSITORY ||--o{ EVENT_RECEIPT : receives
   REPOSITORY ||--o{ AUDIT_EVENT : records
 
@@ -167,6 +168,17 @@ erDiagram
     string remote_identity
     string state
   }
+  REMOTE_JOB {
+    string id PK
+    string repository_id FK
+    string owner
+    string name
+    string alias
+    string visibility
+    string canonical_url
+    string hosted_identity
+    string state
+  }
   EVENT_RECEIPT {
     string id PK
     string event_id
@@ -205,6 +217,7 @@ The Phase 0 product has no network API. Planned CLI commands are:
 | `autogit hook` | Accept one adapter ingress event and return a result |
 | `autogit verify` | Run configured verification against a candidate |
 | `autogit sync` | Explicitly reconcile and progress a safe workflow |
+| `autogit remote create` | Create and exactly bind an approved GitHub destination |
 | `autogit retry` | Retry an eligible existing push/provider job |
 | `autogit logs` | Show redacted audit records |
 | `autogit uninstall` | Remove only AutoGit-owned integrations/state by option |

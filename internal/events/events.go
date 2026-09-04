@@ -415,7 +415,7 @@ func validate(e Event, raw map[string]any) error {
 			return schema("E_SCHEMA", "invalid prompt answer")
 		}
 	}
-	for _, key := range []string{"baseline_index", "status_digest", "baseline_paths_digest", "base_head_digest", "tree_digest", "index_digest", "candidate_digest", "message_digest", "remote_digest"} {
+	for _, key := range []string{"baseline_index", "status_digest", "baseline_paths_digest", "base_head_digest", "base_digest", "tree_digest", "index_digest", "candidate_digest", "policy_digest", "verifier_digest", "guard_digest", "evidence_digest", "message_digest", "remote_digest"} {
 		if v, ok := e.Payload[key]; ok && !digestRE.MatchString(stringValue(v)) {
 			return schema("E_SCHEMA", "invalid evidence digest")
 		}
@@ -463,7 +463,7 @@ func validateObjectKeys(name string, m map[string]any) error {
 		"ordering":    {"stream_id": true, "producer_seq": true, "causation_id": true, "correlation_id": true},
 		"idempotency": {"key": true, "attempt": true}, "capabilities": {"queue_state": true, "task_boundaries": true, "changed_paths": true, "monotonic_sequence": true},
 		"project": {"candidate_root": true, "client_cwd": true}, "extensions": {},
-		"payload": {"status": true, "state": true, "outcome": true, "reason": true, "error_code": true, "prompt_id": true, "prompt_kind": true, "blocking": true, "answer": true, "baseline_head": true, "baseline_index": true, "status_digest": true, "baseline_paths_digest": true, "changes": true, "candidate_revision": true, "base_head_digest": true, "tree_digest": true, "index_digest": true, "candidate_digest": true, "verification_id": true, "verifier_set": true, "verifier_version": true, "exit_code": true, "duration_ms": true, "commit_job_id": true, "commit_sha": true, "message_digest": true, "push_job_id": true, "remote_digest": true, "ref": true, "extensions": true},
+		"payload": {"status": true, "state": true, "outcome": true, "reason": true, "error_code": true, "prompt_id": true, "prompt_kind": true, "blocking": true, "answer": true, "baseline_head": true, "baseline_index": true, "status_digest": true, "baseline_paths_digest": true, "changes": true, "candidate_revision": true, "base_head_digest": true, "base_digest": true, "tree_digest": true, "index_digest": true, "candidate_digest": true, "policy_digest": true, "verifier_digest": true, "guard_digest": true, "evidence_digest": true, "verification_id": true, "verifier_set": true, "verifier_version": true, "exit_code": true, "duration_ms": true, "commit_job_id": true, "commit_sha": true, "message_digest": true, "push_job_id": true, "remote_digest": true, "ref": true, "explicit_complete": true, "completion_eligible": true, "active_tool": true, "ambiguous": true, "local_only": true, "public_consent": true, "visibility": true, "queue_state": true, "extensions": true},
 	}
 	allowed, exists := sets[name]
 	if !exists {

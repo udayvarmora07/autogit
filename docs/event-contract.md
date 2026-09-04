@@ -157,6 +157,13 @@ Payload minimums:
 | Push | `push_job_id`, commit SHA, remote/ref identity digest, result/error code |
 | Session/task | state or outcome, with explicit reason for failure/cancellation |
 
+Core-generated sync and publication facts use the same minimums and add only
+bounded evidence digests. Their event IDs are deterministic from repository,
+event type, and idempotency key, so a retried CLI operation replays the same
+fact instead of creating a second lifecycle transition. A publication fact may
+be omitted for legacy/manual commits that have no projected lifecycle scope;
+the durable push job remains authoritative for those operations.
+
 For `session.started`, the core may include the bounded baseline facts
 `baseline_head` (a Git object ID), `baseline_index`, `status_digest`, and
 `baseline_paths_digest` (SHA-256 digests). Raw status output, paths, and file

@@ -160,8 +160,8 @@ func TestStoreUpgradesLegacyEvidenceColumnsAndSchemaVersion(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "4" {
-		t.Fatalf("schema version=%q, want 4", version)
+	if version != "6" {
+		t.Fatalf("schema version=%q, want 6", version)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(commits)`)
 	if err != nil {
@@ -424,8 +424,8 @@ func TestStoreMigratesV2ToV3IntentTable(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "4" {
-		t.Fatalf("schema version=%q, want 4", version)
+	if version != "6" {
+		t.Fatalf("schema version=%q, want 6", version)
 	}
 }
 

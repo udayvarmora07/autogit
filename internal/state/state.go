@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	currentSchemaVersion  = 4
+	currentSchemaVersion  = 6
 	CommitRequested       = "COMMIT_REQUESTED"
 	CommitQueued          = "QUEUED"
 	CommitRunning         = "RUNNING"
@@ -37,6 +37,10 @@ const (
 	PushSucceeded         = "SUCCEEDED"
 	PushBlocked           = "BLOCKED"
 	PushSkippedLocal      = "SKIPPED_LOCAL"
+	RemoteRequested       = "REMOTE_REQUESTED"
+	RemoteCreated         = "REMOTE_CREATED"
+	RemoteAttached        = "REMOTE_ATTACHED"
+	RemoteFailed          = "REMOTE_FAILED"
 	CommitIntentRequested = "COMMIT_REQUESTED"
 	CommitIntentReconcile = "RECONCILE_REQUIRED"
 )
@@ -70,6 +74,10 @@ type PushJob struct {
 	ID, CommitJobID, RemoteDigest, Owner, Name, Ref, CommitSHA, State string
 	LocalOnly                                                         bool
 	CreatedAt, UpdatedAt                                              int64
+}
+type RemoteJob struct {
+	ID, RepositoryID, Owner, Name, Alias, Visibility, URL, HostedIdentity, State string
+	CreatedAt, UpdatedAt                                                         int64
 }
 type Policy struct {
 	ID, RepositoryID, Decision, Visibility, Workflow string
@@ -182,6 +190,7 @@ func (s *Store) migrate() error {
 CREATE TABLE IF NOT EXISTS commits (id TEXT PRIMARY KEY,candidate_digest TEXT NOT NULL,base_sha TEXT,message_digest TEXT NOT NULL,policy_digest TEXT NOT NULL DEFAULT '',verifier_digest TEXT NOT NULL DEFAULT '',guard_digest TEXT NOT NULL DEFAULT '',commit_sha TEXT,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS git_commit_intents (id TEXT PRIMARY KEY,repo_dir TEXT NOT NULL,ref TEXT NOT NULL,parent_sha TEXT NOT NULL,tree_oid TEXT NOT NULL,message TEXT NOT NULL,candidate_digest TEXT NOT NULL,message_digest TEXT NOT NULL,snapshot_digest TEXT NOT NULL,policy_digest TEXT NOT NULL,verifier_digest TEXT NOT NULL,guard_digest TEXT NOT NULL,sha TEXT NOT NULL DEFAULT '',state TEXT NOT NULL,reason_code TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pushes (id TEXT PRIMARY KEY,commit_job_id TEXT NOT NULL,remote_digest TEXT,owner TEXT,name TEXT,ref TEXT,commit_sha TEXT NOT NULL,state TEXT NOT NULL,local_only INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS remote_jobs (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,owner TEXT NOT NULL,name TEXT NOT NULL,alias TEXT NOT NULL,visibility TEXT NOT NULL,url TEXT NOT NULL,hosted_identity TEXT NOT NULL DEFAULT '',state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS policies (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,decision TEXT,visibility TEXT,workflow TEXT,local_only INTEGER NOT NULL,public_consent INTEGER NOT NULL,revision INTEGER NOT NULL);
 	CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,status_digest TEXT,baseline_paths_digest TEXT,client_id TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT,revision INTEGER NOT NULL);
@@ -208,8 +217,12 @@ CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
 		_ = tx.Rollback()
 		return err
 	}
+	if err := ensureRemoteJobColumns(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 	if version < currentSchemaVersion {
-		if version != 0 && version != 1 && version != 2 && version != 3 {
+		if version != 0 && version != 1 && version != 2 && version != 3 && version != 4 && version != 5 {
 			_ = tx.Rollback()
 			return fmt.Errorf("unsupported state schema version %d", version)
 		}
@@ -219,6 +232,33 @@ CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
 		}
 	}
 	return tx.Commit()
+}
+
+func ensureRemoteJobColumns(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_info(remote_jobs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	present := map[string]bool{}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		present[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !present["repository_id"] {
+		if _, err := tx.Exec(`ALTER TABLE remote_jobs ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add remote_jobs.repository_id: %w", err)
+		}
+	}
+	return nil
 }
 
 func ensureSessionBaselineColumns(tx *sql.Tx) error {
@@ -355,10 +395,11 @@ func (s *Store) RecordCommitJob(ctx context.Context, id, sha string) error {
 }
 
 var (
-	gitCommitSHARE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
-	gitIntentIDRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-	gitRefRE       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
-	gitDigestRE    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	gitCommitSHARE     = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+	gitIntentIDRE      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	gitRefRE           = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+	gitDigestRE        = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	repositoryDigestRE = regexp.MustCompile(`^(?:sha256|hmac-sha256):[0-9a-f]{64}$`)
 )
 
 func (t *Tx) PutGitCommitIntent(i GitCommitIntent) error {
@@ -556,6 +597,54 @@ func (s *Store) PushJob(id string) (PushJob, error) {
 	var local int
 	err := s.db.QueryRow(`SELECT id,commit_job_id,remote_digest,owner,name,ref,commit_sha,state,local_only,created_at,updated_at FROM pushes WHERE id=?`, id).Scan(&j.ID, &j.CommitJobID, &j.RemoteDigest, &j.Owner, &j.Name, &j.Ref, &j.CommitSHA, &j.State, &local, &j.CreatedAt, &j.UpdatedAt)
 	j.LocalOnly = local != 0
+	return j, err
+}
+
+func (t *Tx) PutRemoteJob(j RemoteJob) error {
+	if !validRemoteJob(j) {
+		return errors.New("invalid remote job")
+	}
+	now := j.UpdatedAt
+	if now == 0 {
+		now = time.Now().UnixNano()
+	}
+	if j.CreatedAt == 0 {
+		j.CreatedAt = now
+	}
+	var old RemoteJob
+	err := t.tx.QueryRow(`SELECT id,repository_id,owner,name,alias,visibility,url,hosted_identity,state,created_at,updated_at FROM remote_jobs WHERE id=?`, j.ID).Scan(&old.ID, &old.RepositoryID, &old.Owner, &old.Name, &old.Alias, &old.Visibility, &old.URL, &old.HostedIdentity, &old.State, &old.CreatedAt, &old.UpdatedAt)
+	if err == nil {
+		if old.RepositoryID != j.RepositoryID || old.Owner != j.Owner || old.Name != j.Name || old.Alias != j.Alias || old.Visibility != j.Visibility || old.URL != j.URL {
+			return errors.New("remote job identity conflict")
+		}
+		if j.HostedIdentity != "" && old.HostedIdentity != "" && j.HostedIdentity != old.HostedIdentity {
+			return errors.New("remote hosted identity conflict")
+		}
+		_, err = t.tx.Exec(`UPDATE remote_jobs SET hosted_identity=CASE WHEN ?='' THEN hosted_identity ELSE ? END,state=?,updated_at=? WHERE id=?`, j.HostedIdentity, j.HostedIdentity, j.State, now, j.ID)
+		return err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = t.tx.Exec(`INSERT INTO remote_jobs(id,repository_id,owner,name,alias,visibility,url,hosted_identity,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.RepositoryID, j.Owner, j.Name, j.Alias, j.Visibility, j.URL, j.HostedIdentity, j.State, j.CreatedAt, now)
+	return err
+}
+
+func validRemoteJob(j RemoteJob) bool {
+	if !gitIntentIDRE.MatchString(j.ID) || !repositoryDigestRE.MatchString(j.RepositoryID) || !gitIntentIDRE.MatchString(j.Owner) || !gitIntentIDRE.MatchString(j.Name) || !gitIntentIDRE.MatchString(j.Alias) || (j.Visibility != "private" && j.Visibility != "public") || j.URL != "https://github.com/"+j.Owner+"/"+j.Name+".git" || j.HostedIdentity != "" && j.HostedIdentity != j.Owner+"/"+j.Name {
+		return false
+	}
+	switch j.State {
+	case RemoteRequested, RemoteCreated, RemoteAttached, RemoteFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Store) RemoteJob(id string) (RemoteJob, error) {
+	var j RemoteJob
+	err := s.db.QueryRow(`SELECT id,repository_id,owner,name,alias,visibility,url,hosted_identity,state,created_at,updated_at FROM remote_jobs WHERE id=?`, id).Scan(&j.ID, &j.RepositoryID, &j.Owner, &j.Name, &j.Alias, &j.Visibility, &j.URL, &j.HostedIdentity, &j.State, &j.CreatedAt, &j.UpdatedAt)
 	return j, err
 }
 func (t *Tx) EnqueueOutbox(o Outbox) error {

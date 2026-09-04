@@ -37,7 +37,8 @@ authentication and repository operations.
 safe local operations (`install`, `doctor`, `enable`, `disable`, `status`,
 `plan`, `hook`, `logs`, `uninstall`, `config explain`, baseline-capturing
 `sync` (plus explicit clean-session `sync --complete`), clean-session read-only
-`verify`, explicit private `publish`, and guarded `retry`). `verify` requires explicit
+`verify`, explicit private `publish`, guarded `retry`, and explicit
+`remote create`). `verify` requires explicit
 repository/session/path/message/verifier inputs and never commits or updates
 refs. `sync --complete` creates only an AutoGit-owned local commit ref after
 trusted verification. The foundation currently
@@ -58,7 +59,7 @@ handoff into the verified local workflow, while the CLI hook captures trusted
 session-start baselines without exposing their contents. The CLI private
 publication path is explicit and exact-SHA based; public publication returns a
 bounded preflight report until all evidence is available. Lifecycle-driven
-session completion and repository creation remain open. No command contacts
+session completion and full repository initialization remain open. No command contacts
 GitHub or modifies a user repository implicitly; provider tests/canaries are
 not live.
 

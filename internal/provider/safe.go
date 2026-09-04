@@ -34,6 +34,7 @@ var (
 	ErrLocalOnly       = errors.New("provider disabled by local-only policy")
 	ErrUnsupportedPush = errors.New("provider does not perform git pushes")
 	ErrRemoteBinding   = errors.New("git remote binding rejected")
+	ErrRemoteAbsent    = errors.New("git remote is not configured")
 )
 
 // IsRetryable reports whether a provider failure is safe to retry. Only
@@ -117,6 +118,14 @@ type PublicationProvider interface {
 	Create(context.Context, RemoteRequest) (string, error)
 	Publish(context.Context, PushRequest) error
 	ConfirmPush(context.Context, PushRequest) (PushOutcome, error)
+}
+
+// HostedRepository is the minimum provider contract for repository creation
+// transactions. ConfirmRepository is mandatory so an existing destination is
+// never attached merely because its URL happens to look plausible.
+type HostedRepository interface {
+	Create(context.Context, RemoteRequest) (string, error)
+	ConfirmRepository(context.Context, RemoteRequest) error
 }
 
 type PushOutcome string
@@ -295,6 +304,55 @@ type GitPusher struct {
 	Runner         GHRunner
 	Dir            string
 	AllowedRemotes map[string]string
+}
+
+// RemoteBinder is the narrow local Git mutation port used by repository
+// creation. It never accepts arbitrary Git arguments or aliases.
+type RemoteBinder interface {
+	RemoteURL(context.Context, string) (string, error)
+	AddRemote(context.Context, string, string) error
+}
+
+func (p GitPusher) RemoteURL(ctx context.Context, alias string) (string, error) {
+	if !validGitRemoteAlias(alias) {
+		return "", ErrRemoteBinding
+	}
+	if p.Runner == nil {
+		return "", ErrUnsupportedPush
+	}
+	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "get-url", "--push", "--", alias)...)
+	if len(res.Output) > maxOutput {
+		return "", ErrOutputLimit
+	}
+	if runErr != nil || res.Err != nil {
+		cause := runErrOrResult(runErr, res.Err)
+		if isMissingRemote(cause, res.Output) {
+			return "", ErrRemoteAbsent
+		}
+		return "", classifyFailure(cause, res.Output)
+	}
+	url := strings.TrimSuffix(res.Output, "\n")
+	if url == "" || strings.ContainsAny(url, "\r\n") {
+		return "", ErrRemoteBinding
+	}
+	return url, nil
+}
+
+func (p GitPusher) AddRemote(ctx context.Context, alias, remoteURL string) error {
+	if !validGitRemoteAlias(alias) || remoteURL == "" || strings.ContainsAny(remoteURL, "\r\n") {
+		return ErrRemoteBinding
+	}
+	if p.Runner == nil {
+		return ErrUnsupportedPush
+	}
+	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "add", "--", alias, remoteURL)...)
+	if runErr != nil || res.Err != nil {
+		return classifyFailure(runErrOrResult(runErr, res.Err), res.Output)
+	}
+	if len(res.Output) > maxOutput {
+		return ErrOutputLimit
+	}
+	return nil
 }
 
 func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
@@ -601,6 +659,14 @@ func isNotFound(cause error, output string) bool {
 	return strings.Contains(text, "404") || strings.Contains(text, "not found") || strings.Contains(text, "ref does not exist")
 }
 
+func isMissingRemote(cause error, output string) bool {
+	text := strings.ToLower(output)
+	if cause != nil {
+		text += " " + strings.ToLower(cause.Error())
+	}
+	return strings.Contains(text, "no such remote") || strings.Contains(text, "does not appear to be a git repository") || strings.Contains(text, "remote '") && strings.Contains(text, "does not exist")
+}
+
 // SafeFake is deterministic and network-free. Failures are consumed FIFO by
 // operation name: create, inspect, push, or confirm.
 type SafeFake struct {
@@ -655,6 +721,20 @@ func (f *SafeFake) Create(_ context.Context, r RemoteRequest) (string, error) {
 	}
 	f.remotes[remote] = r.Visibility
 	return remote, nil
+}
+
+func (f *SafeFake) ConfirmRepository(_ context.Context, r RemoteRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := validIdentity(r); err != nil {
+		return err
+	}
+	if visibility, ok := f.remotes[r.Owner+"/"+r.Name]; !ok {
+		return &ProviderError{Kind: KindAbsent, Err: ErrRefAbsent}
+	} else if visibility != r.Visibility {
+		return &ProviderError{Kind: KindPostcondition, Err: ErrPostcondition}
+	}
+	return nil
 }
 func (f *SafeFake) Inspect(_ context.Context, r RemoteRequest, ref string) (string, error) {
 	f.mu.Lock()

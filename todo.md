@@ -52,29 +52,31 @@ claiming a phase exit:
 - [x] Direct baseline-to-staging ownership handoff for explicit requested
   paths.
 - [x] Race-aware and size-bounded current-file capture with replacement tests.
-- [x] Durable session baseline schema migration and typed retrieval (v4).
+- [x] Durable session baseline and remote-job schema migrations with typed
+  retrieval (current schema v6).
 - [x] Idempotent baseline persistence plus redacted canonical event payloads.
 
 ## Next implementation order
 
 - [ ] Freeze Phase 0 terminology, requirement IDs, schema/lifecycle/threat
   invariants, test-traceability matrix, and compatibility window.
-- [ ] Capture durable session/task baselines from real repository observations
-  (HEAD, index, status, modes, and owned paths), then feed them into staging.
+- [x] Capture durable session/task baselines from real repository observations
+  (HEAD, index, status, modes, and owned paths), then feed them into staging;
+  lifecycle-driven completion remains a separate open slice.
 - [ ] Extend real filesystem snapshot capture to detect race substitutions and
   preserve rename/delete, ignore, linked-worktree, Unicode/control-path, and
   concurrent-writer rules; explicit regular-file content/mode capture and
   component-symlink rejection are covered.
-- [ ] Load frozen trusted verifier configuration from policy/configuration and
-  wire it into `verify` plus the session-driven local workflow.
-- [ ] Wire `sync` to reconcile lifecycle state, derive an owned candidate,
-  invoke the verified local workflow, and record resulting facts.
-- [ ] Wire `retry` and provider intent/reconciliation while retaining one exact
+- [x] Load frozen trusted verifier configuration from policy/configuration and
+  wire it into `verify` plus the explicit local workflow boundary.
+- [x] Wire explicit `sync --complete` to derive an owned candidate, invoke the
+  verified local workflow, and record resulting lifecycle facts.
+- [x] Wire `retry` and provider intent/reconciliation while retaining one exact
   local commit SHA across transient publication failures.
-- [ ] Complete CLI provider/publication flows, including exact destination and
-  public-consent/preflight summaries.
-- [ ] Complete supported-client discovery, adapter installation, and workflow
-  orchestration without granting adapters Git mutation authority.
+- [x] Complete the tested CLI provider/publication boundary, including exact
+  destination and public-consent/preflight summaries; live canary remains open.
+- [x] Complete supported-client capability discovery and the bounded adapter
+  installation surface without granting adapters Git mutation authority.
 
 ## Completed execution batch (2026-09-02)
 
@@ -187,9 +189,11 @@ These eight bounded slices were implemented with focused red-green tests:
   tree and allow public publication only after `publication.Evaluate` passes;
   trusted verifier execution and hosted identity/visibility confirmation remain
   after the local preflight boundary.
-- [ ] Emit lifecycle/domain facts from CLI `sync`/`publish` operations and
-  reconstruct the complete session-driven completion path from hook events.
-- [ ] Add provider repository creation/local-remote transaction wiring with
-  exact owner/name/visibility postconditions; never attach a collision.
+- [x] Emit lifecycle/domain facts from CLI `sync`/`publish` operations with
+  deterministic replay identities.
+- [ ] Reconstruct the complete session-driven completion path from hook events.
+- [x] Add provider repository creation/local-remote transaction wiring with
+  exact owner/name/visibility postconditions; never attach a collision. A
+  user-facing repository-initialization CLI flow remains open.
 - [ ] Add durable fault injection at every CLI/provider intent boundary and
   expand concurrency/restart schedules.

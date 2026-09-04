@@ -12,12 +12,15 @@ import (
 	"testing"
 
 	"autogit/internal/events"
+	"autogit/internal/gittransaction"
+	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
 	"autogit/internal/provider"
 	"autogit/internal/publication"
 	"autogit/internal/repository"
 	"autogit/internal/state"
 	"autogit/internal/verification"
+	localworkflow "autogit/internal/workflow"
 )
 
 func TestInvalidHookDoesNotCreateDurableState(t *testing.T) {
@@ -217,6 +220,50 @@ func TestSyncCompleteCreatesVerifiedAutoGitCommitFromCleanSession(t *testing.T) 
 	if refs, err := exec.Command("git", "-C", root, "show-ref", "--verify", "refs/autogit/commits/commit-1").CombinedOutput(); err != nil || len(refs) == 0 {
 		t.Fatalf("missing AutoGit commit ref: err=%v output=%s", err, refs)
 	}
+	var statusOut bytes.Buffer
+	if err := run([]string{"status", "--repo", root}, strings.NewReader(""), &statusOut); err != nil {
+		t.Fatalf("status after sync complete: %v output=%s", err, statusOut.String())
+	}
+	if !strings.Contains(statusOut.String(), `"commits":{"count":1`) || !strings.Contains(statusOut.String(), `"verifications":{"count":1`) {
+		t.Fatalf("sync complete did not project durable domain facts: %s", statusOut.String())
+	}
+}
+
+func TestDomainFactProjectionTracksPublishPostcondition(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	info := repository.Info{RepoID: "sha256:" + strings.Repeat("a", 64), WorktreeID: "sha256:" + strings.Repeat("b", 64)}
+	options := syncOptions{ID: "commit-facts", Session: "session-facts"}
+	result := localworkflow.Result{
+		Commit:       gittransaction.Commit{SHA: strings.Repeat("c", 40), ParentSHA: strings.Repeat("d", 40), CandidateDigest: "sha256:" + strings.Repeat("e", 64), MessageDigest: "sha256:" + strings.Repeat("f", 64)},
+		PolicyDigest: "sha256:" + strings.Repeat("1", 64), GuardDigest: "sha256:" + strings.Repeat("2", 64), OwnershipDigest: "sha256:" + strings.Repeat("3", 64),
+		Verification: verification.VerificationResult{VerifierSetDigest: "sha256:" + strings.Repeat("4", 64), EvidenceDigest: "sha256:" + strings.Repeat("5", 64)},
+	}
+	intent := state.GitCommitIntentRecord{CreatedAt: 1}
+	p := policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}
+	if err := emitSyncDomainFacts(context.Background(), statePath, p, info, options, result, intent); err != nil {
+		t.Fatalf("emit commit facts: %v", err)
+	}
+	job := state.PushJob{ID: "commit-facts", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: result.Commit.SHA, RemoteDigest: "sha256:" + strings.Repeat("6", 64), State: state.PushSucceeded, CreatedAt: 2}
+	if err := emitPublishDomainFacts(context.Background(), statePath, p, info, job, nil); err != nil {
+		t.Fatalf("emit push facts: %v", err)
+	}
+	store, err := events.OpenStore(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	data, _, err := store.LifecycleProjection(info.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projected lifecycle.State
+	if err := json.Unmarshal(data, &projected); err != nil {
+		t.Fatal(err)
+	}
+	push, ok := projected.Pushes[job.ID]
+	if !ok || push.State != lifecycle.PushSucceededStatus || push.CommitSHA != job.CommitSHA || push.RemoteDigest != job.RemoteDigest {
+		t.Fatalf("projected push=%+v all=%+v", push, projected.Pushes)
+	}
 }
 
 func TestRetryRequiresExplicitJobRepositoryAndRemote(t *testing.T) {
@@ -255,6 +302,36 @@ func TestPublishRequiresExplicitDestinationBeforeProviderDiscovery(t *testing.T)
 	}
 	if len(entries) != 0 {
 		t.Fatalf("invalid publish created state before validation: %v", entries)
+	}
+}
+
+func TestRemoteCreateRequiresExplicitIdentityAndConsent(t *testing.T) {
+	got, err := parseRemoteArgs([]string{"create", "--id", "remote-1", "--repo", "/tmp/repo", "--alias", "origin", "--owner", "owner", "--name", "repo"})
+	if err != nil || got.Visibility != "private" || got.Alias != "origin" {
+		t.Fatalf("options=%+v err=%v", got, err)
+	}
+	if _, err := parseRemoteArgs([]string{"create", "--id", "remote-1", "--repo", "/tmp/repo", "--alias", "origin", "--owner", "owner", "--name", "repo", "--visibility", "public"}); err == nil || !strings.HasPrefix(err.Error(), "E_CONSENT:") {
+		t.Fatalf("public remote creation without consent error=%v", err)
+	}
+	if _, err := parseRemoteArgs([]string{"create", "--id", "remote-1", "--repo", "/tmp/repo", "--alias", "origin", "--owner", "owner", "--name", "repo", "--unknown", "x"}); err == nil {
+		t.Fatal("unknown remote creation option accepted")
+	}
+}
+
+func TestRemoteCreateHonorsLocalOnlyPolicyBeforeProviderDiscovery(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"enable", "--repo", root, "--local"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := run([]string{"remote", "create", "--id", "remote-local", "--repo", root, "--alias", "origin", "--owner", "owner", "--name", "repo"}, strings.NewReader(""), &out)
+	if err == nil || !strings.HasPrefix(err.Error(), "E_LOCAL_ONLY:") {
+		t.Fatalf("local-only remote creation error=%v output=%s", err, out.String())
 	}
 }
 

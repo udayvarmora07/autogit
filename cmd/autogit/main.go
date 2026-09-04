@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"autogit/internal/adapters"
 	"autogit/internal/app"
@@ -68,7 +69,7 @@ func safeMessage(s string) string {
 }
 func run(args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable status plan hook verify sync publish retry logs uninstall config explain\n")
+		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable status plan hook verify sync publish remote retry logs uninstall config explain\n")
 		return nil
 	}
 	if args[0] == "hook" {
@@ -105,6 +106,9 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	}
 	if cmd == "publish" {
 		return runPublish(args[1:], dir, out)
+	}
+	if cmd == "remote" {
+		return runRemote(args[1:], dir, out)
 	}
 	if cmd == "logs" {
 		root := flag(args[1:], "--repo")
@@ -308,6 +312,11 @@ type publishOptions struct {
 	ProtectedBranch, StatusChecksRequired, StatusChecksPassed     bool
 }
 
+type remoteOptions struct {
+	ID, Repo, Alias, Owner, Name, Visibility string
+	PublicConsent                            bool
+}
+
 func validateEnableArgs(args []string, enabling bool) error {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
@@ -484,6 +493,122 @@ func parsePublishArgs(args []string) (publishOptions, error) {
 	return options, nil
 }
 
+func parseRemoteArgs(args []string) (remoteOptions, error) {
+	var options remoteOptions
+	if len(args) == 0 || args[0] != "create" {
+		return remoteOptions{}, cliError{"E_USAGE", "remote supports only remote create"}
+	}
+	seen := map[string]bool{}
+	for i := 1; i < len(args); i++ {
+		name := args[i]
+		if name == "--public-consent" {
+			if seen[name] {
+				return remoteOptions{}, cliError{"E_USAGE", name + " may be provided once"}
+			}
+			seen[name] = true
+			options.PublicConsent = true
+			continue
+		}
+		switch name {
+		case "--id", "--repo", "--alias", "--owner", "--name", "--visibility":
+		default:
+			return remoteOptions{}, cliError{"E_USAGE", "remote create supports --id, --repo, --alias, --owner, --name, --visibility, and --public-consent"}
+		}
+		if seen[name] || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return remoteOptions{}, cliError{"E_USAGE", name + " requires one value and may be provided once"}
+		}
+		seen[name] = true
+		switch name {
+		case "--id":
+			options.ID = args[i+1]
+		case "--repo":
+			options.Repo = args[i+1]
+		case "--alias":
+			options.Alias = args[i+1]
+		case "--owner":
+			options.Owner = args[i+1]
+		case "--name":
+			options.Name = args[i+1]
+		case "--visibility":
+			options.Visibility = args[i+1]
+		}
+		i++
+	}
+	if options.ID == "" || options.Repo == "" || options.Alias == "" || options.Owner == "" || options.Name == "" {
+		return remoteOptions{}, cliError{"E_SCOPE", "remote create requires --id, --repo, --alias, --owner, and --name"}
+	}
+	if options.Visibility == "" {
+		options.Visibility = "private"
+	}
+	if options.Visibility != "private" && options.Visibility != "public" {
+		return remoteOptions{}, cliError{"E_USAGE", "--visibility must be private or public"}
+	}
+	if options.Visibility == "public" && !options.PublicConsent {
+		return remoteOptions{}, cliError{"E_CONSENT", "--public-consent is required for public remote creation"}
+	}
+	return options, nil
+}
+
+func runRemote(args []string, dir string, out io.Writer) error {
+	options, err := parseRemoteArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0700)
+	key, err := loadIdentityKey(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKey(options.Repo, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	db, err := state.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	p := loadPolicy(dir, info.RepoID)
+	if !p.TrackingEnabled() {
+		return cliError{"E_CONSENT", "tracking consent is required before repository creation"}
+	}
+	if p.LocalOnly {
+		return cliError{"E_LOCAL_ONLY", "repository creation is disabled by local-only policy"}
+	}
+	if p.Provider != "github" {
+		return cliError{"E_PROVIDER", "unsupported repository provider"}
+	}
+	if p.Owner != "" && p.Owner != options.Owner || p.Destination != "" && p.Destination != options.Owner+"/"+options.Name || p.Visibility != "" && p.Visibility != options.Visibility {
+		return cliError{"E_SCOPE", "remote identity does not match approved policy"}
+	}
+	if options.Visibility == "public" && (!p.CanPublishPublic() || !options.PublicConsent) {
+		return cliError{"E_CONSENT", "public repository creation requires separate policy and command consent"}
+	}
+	ghPath, err := trustedExecutable("gh")
+	if err != nil {
+		return cliError{"E_PROVIDER", "gh is unavailable"}
+	}
+	gitPath, err := trustedExecutable("git")
+	if err != nil {
+		return cliError{"E_PROVIDER", "git is unavailable"}
+	}
+	ghRunner := provider.SystemRunner{Executable: ghPath, WorkingDir: info.Root}
+	gitRunner := provider.SystemRunner{Executable: gitPath, WorkingDir: info.Root}
+	tx := provider.RepositoryTransaction{
+		State:  db,
+		Hosted: provider.GH{Runner: ghRunner, VerifyOwner: true},
+		Git:    provider.GitPusher{Runner: gitRunner, Dir: info.Root},
+	}
+	identity, err := tx.Create(context.Background(), provider.RemoteCreateRequest{ID: options.ID, RepositoryID: info.RepoID, Alias: options.Alias, Owner: options.Owner, Name: options.Name, Visibility: options.Visibility})
+	if err != nil {
+		return cliError{"E_PROVIDER", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "REMOTE_ATTACHED", "remote": identity, "alias": options.Alias, "visibility": options.Visibility})
+}
+
 func runPublish(args []string, dir string, out io.Writer) error {
 	options, err := parsePublishArgs(args)
 	if err != nil {
@@ -565,12 +690,18 @@ func runPublish(args []string, dir string, out io.Writer) error {
 	}
 	coord := retryCoordinator(db, publication, options.ID)
 	remoteDigest := digestDestination(options.Owner, options.Name, options.Visibility, options.Ref)
-	if err := coord.Push(context.Background(), coordinator.PushRequest{ID: options.ID, Owner: options.Owner, Name: options.Name, Ref: options.Ref, CommitSHA: intent.SHA, RemoteDigest: remoteDigest}); err != nil {
+	publishErr := coord.Push(context.Background(), coordinator.PushRequest{ID: options.ID, Owner: options.Owner, Name: options.Name, Ref: options.Ref, CommitSHA: intent.SHA, RemoteDigest: remoteDigest})
+	if job, jobErr := db.PushJob(options.ID); jobErr == nil {
+		if factErr := emitPublishDomainFacts(context.Background(), filepath.Join(dir, "state.db"), p, info, job, publishErr); factErr != nil {
+			return cliError{"E_STATE", safeMessage(factErr.Error())}
+		}
+	}
+	if publishErr != nil {
 		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
 		if statusErr == nil && status == state.PushRetryWait {
 			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "pending", "action": "retry", "reason_code": "PUSH_RETRY_WAIT", "retryable": true, "job_id": options.ID, "commit_sha": intent.SHA})
 		}
-		return cliError{"E_PUSH", safeMessage(err.Error())}
+		return cliError{"E_PUSH", safeMessage(publishErr.Error())}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "PUBLISH_SUCCEEDED", "job_id": options.ID, "commit_sha": intent.SHA, "owner": options.Owner, "name": options.Name, "ref": options.Ref, "visibility": options.Visibility})
 }
@@ -858,11 +989,170 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 	if err != nil {
 		return cliError{"E_COMMIT", safeMessage(err.Error())}
 	}
+	intent, err := db.GitCommitIntentRecord(ctx, options.ID)
+	if err != nil {
+		return cliError{"E_STATE", "cannot read committed intent facts"}
+	}
+	if err := emitSyncDomainFacts(ctx, filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, options, result, intent); err != nil {
+		return cliError{"E_STATE", safeMessage(err.Error())}
+	}
 	return json.NewEncoder(out).Encode(map[string]any{
 		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "commit", "reason_code": "SYNC_COMMITTED",
 		"session_id": options.Session, "commit_sha": result.Commit.SHA, "ref": result.Commit.Ref, "ownership_digest": result.OwnershipDigest,
 		"verification": map[string]any{"verifier_set_digest": result.Verification.VerifierSetDigest, "evidence_digest": result.Verification.EvidenceDigest},
 	})
+}
+
+func emitSyncDomainFacts(ctx context.Context, statePath string, p policy.Policy, info repository.Info, options syncOptions, result localworkflow.Result, intent state.GitCommitIntentRecord) error {
+	store, err := events.OpenStore(statePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	base := digestText(result.Commit.ParentSHA)
+	changeID := "change/" + options.ID
+	taskID := "task/" + options.Session
+	correlation := "sync/" + options.ID
+	occurredAt := time.Unix(0, intent.CreatedAt).UTC().Format(time.RFC3339Nano)
+	if intent.CreatedAt <= 0 {
+		occurredAt = "1970-01-01T00:00:00Z"
+	}
+	evidence := map[string]any{
+		"candidate_digest": result.Commit.CandidateDigest,
+		"base_digest":      base,
+		"tree_digest":      result.Commit.CandidateDigest,
+		"index_digest":     result.OwnershipDigest,
+		"policy_digest":    result.PolicyDigest,
+		"verifier_digest":  result.Verification.VerifierSetDigest,
+		"guard_digest":     result.GuardDigest,
+		"message_digest":   result.Commit.MessageDigest,
+	}
+	for _, eventType := range []string{"change.detected", "change.staged"} {
+		if err := emitDomainFact(ctx, store, p, events.DomainEventRequest{EventType: eventType, OccurredAt: occurredAt, RepoID: info.RepoID, WorktreeID: info.WorktreeID, SessionID: options.Session, TaskID: taskID, ChangeID: changeID, CorrelationID: correlation, IdempotencyKey: correlation + "/" + eventType, Payload: evidence}); err != nil {
+			return err
+		}
+	}
+	verificationPayload := cloneFactPayload(evidence)
+	verificationPayload["verification_id"] = "verification/" + options.ID
+	verificationPayload["evidence_digest"] = result.Verification.EvidenceDigest
+	if err := emitDomainFact(ctx, store, p, events.DomainEventRequest{EventType: "verification.passed", OccurredAt: occurredAt, RepoID: info.RepoID, WorktreeID: info.WorktreeID, SessionID: options.Session, TaskID: taskID, ChangeID: changeID, CorrelationID: correlation, IdempotencyKey: correlation + "/verification.passed", Payload: verificationPayload}); err != nil {
+		return err
+	}
+	commitPayload := cloneFactPayload(evidence)
+	commitPayload["commit_job_id"] = options.ID
+	if err := emitDomainFact(ctx, store, p, events.DomainEventRequest{EventType: "commit.requested", OccurredAt: occurredAt, RepoID: info.RepoID, WorktreeID: info.WorktreeID, SessionID: options.Session, TaskID: taskID, ChangeID: changeID, CorrelationID: correlation, IdempotencyKey: correlation + "/commit.requested", Payload: commitPayload}); err != nil {
+		return err
+	}
+	commitPayload["commit_sha"] = result.Commit.SHA
+	return emitDomainFact(ctx, store, p, events.DomainEventRequest{EventType: "commit.created", OccurredAt: occurredAt, RepoID: info.RepoID, WorktreeID: info.WorktreeID, SessionID: options.Session, TaskID: taskID, ChangeID: changeID, CorrelationID: correlation, IdempotencyKey: correlation + "/commit.created", Payload: commitPayload})
+}
+
+func emitDomainFact(ctx context.Context, store *events.Store, p policy.Policy, request events.DomainEventRequest) error {
+	b, err := events.NewDomainEvent(request)
+	if err != nil {
+		return err
+	}
+	result, err := app.New(store, p, nil).ApplyDomain(ctx, b)
+	if err != nil {
+		return err
+	}
+	if result.Disposition == "rejected" || result.Disposition == "pending" {
+		return fmt.Errorf("domain fact %s was %s", request.EventType, result.Disposition)
+	}
+	return nil
+}
+
+func cloneFactPayload(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func emitPublishDomainFacts(ctx context.Context, statePath string, p policy.Policy, info repository.Info, job state.PushJob, operationErr error) error {
+	store, err := events.OpenStore(statePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	sessionID, taskID, changeID, ok := lifecycleScopeForCommit(store, info.RepoID, job.CommitSHA)
+	if !ok {
+		// Older/manual commit intents may predate lifecycle projection. The
+		// publication side effect remains authoritative in state; do not turn a
+		// missing optional projection into a provider failure.
+		return nil
+	}
+	ref := job.Ref
+	if !strings.HasPrefix(ref, "refs/") {
+		ref = "refs/heads/" + ref
+	}
+	when := time.Unix(0, job.CreatedAt).UTC().Format(time.RFC3339Nano)
+	if job.CreatedAt <= 0 {
+		when = "1970-01-01T00:00:00Z"
+	}
+	correlation := "publish/" + job.ID
+	payload := map[string]any{"push_job_id": job.ID, "commit_job_id": job.CommitJobID, "commit_sha": job.CommitSHA, "remote_digest": job.RemoteDigest, "ref": ref}
+	if payload["commit_job_id"] == "" {
+		payload["commit_job_id"] = job.ID
+	}
+	base := events.DomainEventRequest{OccurredAt: when, RepoID: info.RepoID, WorktreeID: info.WorktreeID, SessionID: sessionID, TaskID: taskID, ChangeID: changeID, CorrelationID: correlation}
+	requested := base
+	requested.EventType = "push.requested"
+	requested.IdempotencyKey = correlation + "/push.requested"
+	requested.Payload = cloneFactPayload(payload)
+	if err := emitDomainFact(ctx, store, p, requested); err != nil {
+		return err
+	}
+	eventType := "push.succeeded"
+	if operationErr != nil {
+		eventType = "push.failed"
+		payload["error_code"] = publishFactErrorCode(operationErr)
+	}
+	fact := base
+	fact.EventType = eventType
+	fact.IdempotencyKey = correlation + "/" + eventType
+	fact.Payload = payload
+	return emitDomainFact(ctx, store, p, fact)
+}
+
+func lifecycleScopeForCommit(store *events.Store, repositoryID, sha string) (string, string, string, bool) {
+	data, _, err := store.LifecycleProjection(repositoryID)
+	if err != nil {
+		return "", "", "", false
+	}
+	var projected lifecycle.State
+	if json.Unmarshal(data, &projected) != nil || projected.Session.ID == "" {
+		return "", "", "", false
+	}
+	for _, commit := range projected.Commits {
+		if commit.CommitSHA != sha || commit.State != lifecycle.CommitCreatedStatus {
+			continue
+		}
+		candidate := projected.Candidates[commit.CandidateID]
+		if candidate.ID == "" || candidate.TaskID == "" {
+			return "", "", "", false
+		}
+		return projected.Session.ID, candidate.TaskID, candidate.ID, true
+	}
+	return "", "", "", false
+}
+
+func publishFactErrorCode(err error) string {
+	switch {
+	case errors.Is(err, provider.ErrAuth):
+		return "auth"
+	case errors.Is(err, provider.ErrNonFastForward):
+		return "non-fast-forward"
+	case errors.Is(err, provider.ErrProtectedBranch):
+		return "unsafe"
+	case errors.Is(err, provider.ErrCollision):
+		return "collision"
+	case errors.Is(err, provider.ErrSecretScanning), errors.Is(err, provider.ErrRemoteBinding):
+		return "unsafe"
+	default:
+		return "unknown"
+	}
 }
 
 func validateVerifyArgs(args []string) error {
@@ -1049,12 +1339,18 @@ func runRetry(args []string, dir string, out io.Writer) error {
 	pusher := provider.GitPusher{Runner: gitRunner, Dir: info.Root, AllowedRemotes: map[string]string{job.Owner + "/" + job.Name: options.Remote}}
 	publication := provider.GH{Runner: ghRunner, Pusher: pusher}
 	coord := retryCoordinator(db, publication, options.ID)
-	if err := coord.RetryPush(context.Background(), options.ID); err != nil {
+	retryErr := coord.RetryPush(context.Background(), options.ID)
+	if refreshed, refreshErr := db.PushJob(options.ID); refreshErr == nil {
+		if factErr := emitPublishDomainFacts(context.Background(), filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, refreshed, retryErr); factErr != nil {
+			return cliError{"E_STATE", safeMessage(factErr.Error())}
+		}
+	}
+	if retryErr != nil {
 		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
 		if statusErr == nil && status == state.PushRetryWait {
 			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "pending", "action": "retry", "reason_code": "PUSH_RETRY_WAIT", "retryable": true, "job_id": options.ID})
 		}
-		return cliError{"E_PUSH", safeMessage(err.Error())}
+		return cliError{"E_PUSH", safeMessage(retryErr.Error())}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "PUSH_RETRIED", "job_id": options.ID})
 }
