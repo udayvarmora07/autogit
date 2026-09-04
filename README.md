@@ -41,7 +41,9 @@ safe local operations (`install`, `doctor`, `enable`, `disable`, `init`, `status
 `remote create`). `verify` requires explicit
 repository/session/path/message/verifier inputs and never commits or updates
 refs. `sync --complete` creates only an AutoGit-owned local commit ref after
-trusted verification. The foundation currently
+trusted verification; `sync --complete --all-owned` can resume a hook-captured
+session through source-free baseline fingerprints without persisting raw paths
+or source bytes. The foundation currently
 includes strict bounded event decoding
 (including duplicate-key and replay/conflict handling), permission-restricted
 SQLite receipts and causal buffering, policy defaults, canonical repository
@@ -55,12 +57,13 @@ diagnostics, six adapter translators, an adapter contract matrix, owned config
 installation, a pure local public preflight package, provider remote-alias to
 canonical-URL binding, a consent-gated repository initializer, and a
 production bounded process runner are present as tested libraries. The session
-package provides an in-memory start/complete
-handoff into the verified local workflow, while the CLI hook captures trusted
-session-start baselines without exposing their contents. The CLI private
+package provides both an in-memory start/complete handoff and a source-free
+cross-process restart handoff into the verified local workflow, while the CLI
+hook captures trusted session-start baselines without exposing their contents.
+The CLI private
 publication path is explicit and exact-SHA based; public publication returns a
-bounded preflight report until all evidence is available. Lifecycle-driven
-session completion remains open. No command contacts GitHub or modifies a user
+bounded preflight report until all evidence is available. Fully automatic
+lifecycle-driven commit orchestration remains open. No command contacts GitHub or modifies a user
 repository implicitly; provider tests/canaries are not live.
 
 Initialization is explicit. For a local project use
@@ -69,6 +72,9 @@ Initialization is explicit. For a local project use
 `--public-consent --visibility public` only when public tracking is intended.
 Add `--dry-run` to inspect the canonical root, branch, policy, and hygiene
 changes without creating state or Git metadata.
+For a hook-captured session, `sync --complete --all-owned` resumes ownership
+from the source-free baseline manifest; explicit `--path` remains available
+when the caller wants to limit the candidate.
 After initialization, `autogit remote create` is the separate resumable step
 that creates and binds the hosted destination.
 

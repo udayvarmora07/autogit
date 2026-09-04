@@ -1,7 +1,7 @@
 # AutoGit v1 implementation plan
 
 Status: Execution in progress — local workflow and private publication slices implemented; phase exits not claimed
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ## 1. Objective and delivery shape
 
@@ -278,8 +278,9 @@ be exercised without a user repository or network credentials:
   worktree metadata checks; it now exposes a read-only baseline observation
   boundary for HEAD, index/status digests, changed-path rename pairs, and
   bounded in-memory file fingerprints. `internal/staging` can consume that
-  observation directly, while `internal/state` persists only the bounded
-  session evidence and rejects changed-baseline replays.
+  observation directly, while `internal/state` persists only bounded
+  source-free HMAC path/content/mode evidence and rejects changed-baseline
+  replays.
 - `internal/gitport`: argument-array execution with bounded output and exact
   SHA-to-`refs/heads/<ref>` push construction.
 - `internal/historyscan`: bounded, read-only exact-candidate-SHA history
@@ -328,11 +329,11 @@ be exercised without a user repository or network credentials:
   process boundary for trusted verifier argv.
 
 The following planned gates remain open and are not represented as completed:
-full session-driven baseline orchestration (the observation, staging, durable
-evidence, session start/complete coordinator, and session-start hook wiring
-are implemented; the CLI now supports clean-session read-only verification,
-and explicit clean-session `sync --complete` local commits, but full
-lifecycle-driven CLI/session completion still needs wiring), complete
+fully automatic lifecycle-driven CLI/session completion (the observation,
+staging, source-free durable evidence, session start/complete coordinator,
+session-start hook wiring, and explicit `sync --complete --all-owned` resume
+path are implemented; automatic message/verifier selection and commit
+orchestration from lifecycle events still need wiring), complete
 trusted verification policy configuration for all workflow modes, complete
 adapter discovery/installation and
 workflow orchestration in the CLI, the >=609 release-test target, and the
@@ -433,5 +434,30 @@ implicitly rebinds a hosted repository after failure. A created but unattached
 job can be resumed by the same immutable identity; collision and identity
 failures remain visible and do not attach a same-name remote.
 Remote job identity is bound to the keyed repository identity (state schema
-v6), so a job cannot be replayed against another repository in the shared
+v7), so a job cannot be replayed against another repository in the shared
 application state directory.
+
+### 10.4 Cross-process ownership recovery evidence (2026-09-05)
+
+The session boundary now encodes a bounded, deterministic, source-free
+baseline manifest before recording `session.started` or an explicit `sync`
+baseline. Each recorded file uses a key-bound HMAC path identifier plus
+presence, executable-bit mode, and content digest; raw filenames and source
+bytes are not persisted. The schema-7 migration adds this evidence to existing
+session rows and validates it on replay.
+
+`sync --complete --all-owned` can resume a hook-captured session in a fresh
+process. It re-observes `HEAD`, the shared index, and current status, maps
+current paths to the manifest with the repository identity key, excludes paths
+unchanged from the baseline, blocks edits/deletions of pre-existing dirty
+paths, and owns only newly changed paths. The explicit `--path` mode remains
+available for a narrower caller-selected candidate. Tests cover clean and
+dirty cross-process resumes, pre-existing-work exclusion, changed-baseline
+blocking, key binding, malformed evidence, and absence of raw path/source
+leakage.
+
+`doctor` is read-only even before initialization: it reports unavailable
+state/lease stores without creating the state directory, database, or identity
+key. Duplicate completion ingress retries the deterministic core candidate
+promotion, while the core still requires an ingress completion claim and
+settled tool/prompt/queue state.

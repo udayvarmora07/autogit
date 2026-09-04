@@ -53,7 +53,7 @@ claiming a phase exit:
   paths.
 - [x] Race-aware and size-bounded current-file capture with replacement tests.
 - [x] Durable session baseline and remote-job schema migrations with typed
-  retrieval (current schema v6).
+  retrieval (current schema v7, including source-free restart evidence).
 - [x] Idempotent baseline persistence plus redacted canonical event payloads.
 
 ## Next implementation order
@@ -71,6 +71,9 @@ claiming a phase exit:
   wire it into `verify` plus the explicit local workflow boundary.
 - [x] Wire explicit `sync --complete` to derive an owned candidate, invoke the
   verified local workflow, and record resulting lifecycle facts.
+- [x] Add cross-process source-free baseline evidence and explicit
+  `sync --complete --all-owned` recovery that matches HMAC path IDs and
+  content/mode fingerprints without persisting raw paths or source bytes.
 - [x] Wire `retry` and provider intent/reconciliation while retaining one exact
   local commit SHA across transient publication failures.
 - [x] Complete the tested CLI provider/publication boundary, including exact
@@ -212,3 +215,21 @@ These eight bounded slices were implemented with focused red-green tests:
       idempotently.
 - [ ] Add durable fault injection at every CLI/provider intent boundary and
   expand concurrency/restart schedules.
+
+## Completed execution batch (2026-09-05)
+
+- [x] Persist bounded source-free HMAC path/content/mode evidence for session
+  baselines without storing raw paths or source bytes.
+- [x] Add schema-7 migration and compatibility handling for durable baseline
+  evidence across existing session rows.
+- [x] Resume hook-captured sessions across processes with
+  `sync --complete --all-owned`, excluding unchanged/pre-existing work and
+  blocking changed baseline paths.
+- [x] Make `doctor` read-only before initialization and report state/lease
+  readiness without creating local state.
+- [x] Require an ingress completion claim for core completion candidates and
+  retry duplicate completion ingress deterministically.
+
+The remaining unchecked items are release or policy gates, or require a
+deliberate completion profile for message/verifier selection; they are not
+silently treated as complete by these local implementation slices.

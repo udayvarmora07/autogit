@@ -217,7 +217,7 @@ The Phase 0 product has no network API. Planned CLI commands are:
 | `autogit plan` | Read-only preview of candidate, policy, checks, destination |
 | `autogit hook` | Accept one adapter ingress event and return a result |
 | `autogit verify` | Run configured verification against a candidate |
-| `autogit sync` | Explicitly reconcile and progress a safe workflow |
+| `autogit sync` | Explicitly reconcile and progress a safe workflow; `--all-owned` resumes from source-free session evidence |
 | `autogit remote create` | Create and exactly bind an approved GitHub destination |
 | `autogit retry` | Retry an eligible existing push/provider job |
 | `autogit logs` | Show redacted audit records |

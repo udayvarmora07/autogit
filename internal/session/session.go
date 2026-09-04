@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"errors"
+	"os"
 
 	"autogit/internal/policy"
 	"autogit/internal/repository"
@@ -20,6 +21,7 @@ type Request struct {
 	ClientID     string
 	Root         string
 	Paths        []string
+	IdentityKey  []byte
 }
 
 type Store interface {
@@ -46,7 +48,7 @@ type Started struct {
 // processes. ResumeFromDurable reconstructs only clean committed paths from
 // the recorded HEAD and keeps their bytes in the returned in-memory handoff.
 type DurableBaseline struct {
-	Head, IndexDigest, StatusDigest, PathsDigest string
+	Head, IndexDigest, StatusDigest, PathsDigest, Evidence string
 }
 
 // Workflow is the narrow local-commit boundary used after ownership has been
@@ -71,16 +73,26 @@ func (s Service) Start(ctx context.Context, req Request) (Started, error) {
 	return Started{Request: req, Baseline: baseline.Clone()}, nil
 }
 
-// ResumeFromDurable recreates a session handoff after a process restart. It is
-// intentionally limited to clean baselines: when the session began dirty,
-// durable digests cannot identify which pre-existing paths belong to the
-// caller, so the operation fails closed instead of guessing ownership.
+// ResumeFromDurable recreates a session handoff after a process restart. An
+// explicit path list uses immutable committed-tree reconstruction; an empty
+// path list requires the source-free HMAC baseline manifest so dirty
+// pre-existing paths can be compared without recovering their contents.
 func (s Service) ResumeFromDurable(ctx context.Context, req Request, durable DurableBaseline) (Started, error) {
 	if req.SessionID == "" || req.RepositoryID == "" || req.ClientID == "" || req.Root == "" {
 		return Started{}, errors.New("session baseline request is incomplete")
 	}
-	if len(req.Paths) == 0 {
+	if len(req.Paths) == 0 && durable.Evidence == "" {
 		return Started{}, errors.New("session baseline paths are required")
+	}
+	if len(req.Paths) == 0 {
+		evidence, err := repository.DecodeDurableBaseline(durable.Evidence)
+		if err != nil || evidence.PathsDigest != durable.PathsDigest {
+			return Started{}, errors.New("durable session baseline evidence is invalid")
+		}
+		return Started{Request: req, Baseline: repository.Baseline{
+			Head: durable.Head, IndexDigest: durable.IndexDigest, StatusDigest: durable.StatusDigest,
+			PathsDigest: durable.PathsDigest, DurableEvidence: durable.Evidence,
+		}}, nil
 	}
 	if durable.StatusDigest != repository.EmptyStatusDigest() {
 		return Started{}, errors.New("dirty session baseline cannot be resumed safely")
@@ -131,7 +143,7 @@ func (s Service) Complete(ctx context.Context, started Started, runner Workflow,
 // BuildOwnedPlanAtCurrent captures the current repository observation before
 // deriving ownership. HEAD and the shared index must still match the session
 // baseline; status is allowed to change because it includes the candidate's
-// work and is checked path-by-path by staging.
+// work and is checked path-by-path by staging or by the source-free manifest.
 func (s Service) BuildOwnedPlanAtCurrent(ctx context.Context, req Request, baseline repository.Baseline) (staging.Plan, error) {
 	if s.Runner == nil {
 		return staging.Plan{}, errors.New("owned plan observation runner is required")
@@ -145,6 +157,9 @@ func (s Service) BuildOwnedPlanAtCurrent(ctx context.Context, req Request, basel
 	}
 	if current.IndexDigest != baseline.IndexDigest {
 		return staging.Plan{}, errors.New("shared index changed since session baseline")
+	}
+	if len(req.Paths) == 0 {
+		return s.buildPlanFromDurableEvidence(req, baseline, current)
 	}
 	return staging.BuildPlanFromBaselines(baseline, current, req.Paths)
 }
@@ -170,10 +185,51 @@ func (s Service) CaptureAndRecord(ctx context.Context, req Request) (repository.
 	if err != nil {
 		return repository.Baseline{}, err
 	}
+	if len(req.IdentityKey) > 0 {
+		baseline.DurableEvidence, err = repository.EncodeDurableBaseline(baseline, req.IdentityKey)
+		if err != nil {
+			return repository.Baseline{}, err
+		}
+	}
 	if err := s.Store.RecordSessionBaseline(ctx, req.SessionID, req.RepositoryID, req.ClientID, baseline); err != nil {
 		return repository.Baseline{}, err
 	}
 	return baseline, nil
+}
+
+func (s Service) buildPlanFromDurableEvidence(req Request, baseline repository.Baseline, current repository.Baseline) (staging.Plan, error) {
+	if len(req.IdentityKey) == 0 || baseline.DurableEvidence == "" {
+		return staging.Plan{}, errors.New("durable session baseline identity is unavailable")
+	}
+	evidence, err := repository.DecodeDurableBaseline(baseline.DurableEvidence)
+	if err != nil || evidence.PathsDigest != baseline.PathsDigest {
+		return staging.Plan{}, errors.New("durable session baseline evidence is invalid")
+	}
+	byID := make(map[string]repository.DurableFileEvidence, len(evidence.Files))
+	for _, file := range evidence.Files {
+		byID[file.PathID] = file
+	}
+	fingerprints := make(map[string]staging.Fingerprint)
+	for _, name := range current.Paths {
+		pathID, idErr := repository.DurablePathID(req.IdentityKey, name)
+		if idErr != nil {
+			return staging.Plan{}, idErr
+		}
+		file, ok := byID[pathID]
+		if !ok {
+			continue
+		}
+		fingerprints[name] = staging.Fingerprint{ContentDigest: file.ContentDigest, Mode: os.FileMode(file.Mode), Present: file.Present, Symlink: file.Symlink}
+	}
+	return staging.BuildPlanFromFingerprints(fingerprints, toObserved(current), current.Paths)
+}
+
+func toObserved(baseline repository.Baseline) staging.ObservedSnapshot {
+	observed := make(staging.ObservedSnapshot, len(baseline.Files))
+	for name, file := range baseline.Files {
+		observed[name] = staging.ObservedFile{Content: append([]byte(nil), file.Content...), Mode: file.Mode, Present: file.Present, Symlink: file.Symlink}
+	}
+	return observed
 }
 
 // BuildOwnedPlan bridges the in-memory baseline captured at session start to

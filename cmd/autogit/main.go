@@ -346,7 +346,7 @@ type retryOptions struct {
 type syncOptions struct {
 	ID, Repo, Session, Client, Message, Verifiers string
 	Paths                                         []string
-	Complete                                      bool
+	Complete, AllOwned                            bool
 }
 
 type verifyOptions struct {
@@ -1062,8 +1062,16 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 			seen[name] = true
 			continue
 		}
+		if name == "--all-owned" {
+			if seen[name] {
+				return syncOptions{}, cliError{"E_USAGE", "--all-owned may be provided once"}
+			}
+			options.AllOwned = true
+			seen[name] = true
+			continue
+		}
 		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--verifiers" && name != "--path" {
-			return syncOptions{}, cliError{"E_USAGE", "sync supports baseline fields plus --complete, --id, --message, and --verifiers"}
+			return syncOptions{}, cliError{"E_USAGE", "sync supports baseline fields plus --complete, --all-owned, --id, --message, and --verifiers"}
 		}
 		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
 			return syncOptions{}, cliError{"E_USAGE", name + " requires a value"}
@@ -1090,8 +1098,14 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 		seen[name] = true
 		i++
 	}
-	if options.Repo == "" || options.Session == "" || options.Client == "" || len(options.Paths) == 0 {
-		return syncOptions{}, cliError{"E_SCOPE", "--repo, --session, --client, and at least one --path are required for sync"}
+	if options.Repo == "" || options.Session == "" || options.Client == "" || (!options.AllOwned && len(options.Paths) == 0) {
+		return syncOptions{}, cliError{"E_SCOPE", "--repo, --session, --client, and at least one --path are required for sync unless --all-owned is used"}
+	}
+	if options.AllOwned && len(options.Paths) > 0 {
+		return syncOptions{}, cliError{"E_USAGE", "--all-owned cannot be combined with --path"}
+	}
+	if options.AllOwned && !options.Complete {
+		return syncOptions{}, cliError{"E_USAGE", "--all-owned requires --complete"}
 	}
 	if !options.Complete && (options.ID != "" || options.Message != "" || options.Verifiers != "") {
 		return syncOptions{}, cliError{"E_USAGE", "--id, --message, and --verifiers require --complete"}
@@ -1127,7 +1141,7 @@ func runSync(args []string, dir string, out io.Writer) error {
 	if options.Complete {
 		return runSyncComplete(context.Background(), options, dir, info, key, db, out)
 	}
-	baseline, err := session.New(db).CaptureAndRecord(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths})
+	baseline, err := session.New(db).CaptureAndRecord(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: key})
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
 	}
@@ -1157,8 +1171,8 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}
 	service := session.New(db)
-	started, err := service.ResumeFromDurable(ctx, session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths}, session.DurableBaseline{
-		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest,
+	started, err := service.ResumeFromDurable(ctx, session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: identityKey}, session.DurableBaseline{
+		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest, Evidence: durable.BaselineEvidence,
 	})
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
@@ -1419,8 +1433,8 @@ func runVerify(args []string, dir string, out io.Writer) error {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}
 	service := session.New(db)
-	started, err := service.ResumeFromDurable(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths}, session.DurableBaseline{
-		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest,
+	started, err := service.ResumeFromDurable(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: key}, session.DurableBaseline{
+		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest, Evidence: durable.BaselineEvidence,
 	})
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
@@ -1653,6 +1667,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 	}
 	defer s.Close()
 	a := app.New(s, loadPolicy(dir, stringValue(e.Scope["repo_id"])), nil)
+	a.IdentityKey = append([]byte(nil), key...)
 	// Event receipts/projections and repository session evidence have separate
 	// package-owned ports, even though they share the same private SQLite file.
 	// The baseline service never writes raw source bytes to this database.

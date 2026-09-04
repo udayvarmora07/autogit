@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	currentSchemaVersion  = 6
+	currentSchemaVersion  = 7
 	CommitRequested       = "COMMIT_REQUESTED"
 	CommitQueued          = "QUEUED"
 	CommitRunning         = "RUNNING"
@@ -85,9 +85,9 @@ type Policy struct {
 	Revision                                         int64
 }
 type Session struct {
-	ID, RepositoryID, State                                                  string
-	BaselineHead, BaselineIndex, StatusDigest, BaselinePathsDigest, ClientID string
-	Revision                                                                 int64
+	ID, RepositoryID, State                                                                    string
+	BaselineHead, BaselineIndex, StatusDigest, BaselinePathsDigest, BaselineEvidence, ClientID string
+	Revision                                                                                   int64
 }
 type Task struct {
 	ID, SessionID, State string
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS git_commit_intents (id TEXT PRIMARY KEY,repo_dir TEXT
 CREATE TABLE IF NOT EXISTS pushes (id TEXT PRIMARY KEY,commit_job_id TEXT NOT NULL,remote_digest TEXT,owner TEXT,name TEXT,ref TEXT,commit_sha TEXT NOT NULL,state TEXT NOT NULL,local_only INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS remote_jobs (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,owner TEXT NOT NULL,name TEXT NOT NULL,alias TEXT NOT NULL,visibility TEXT NOT NULL,url TEXT NOT NULL,hosted_identity TEXT NOT NULL DEFAULT '',state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS policies (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,decision TEXT,visibility TEXT,workflow TEXT,local_only INTEGER NOT NULL,public_consent INTEGER NOT NULL,revision INTEGER NOT NULL);
-	CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,status_digest TEXT,baseline_paths_digest TEXT,client_id TEXT,revision INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,status_digest TEXT,baseline_paths_digest TEXT,baseline_evidence TEXT NOT NULL DEFAULT '',client_id TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts (id TEXT PRIMARY KEY,task_id TEXT NOT NULL,kind TEXT,state TEXT,idempotency_key TEXT UNIQUE,blocking INTEGER NOT NULL,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS changesets (id TEXT PRIMARY KEY,task_id TEXT NOT NULL,base_sha TEXT,tree_digest TEXT,index_digest TEXT,state TEXT,revision INTEGER NOT NULL);
@@ -222,7 +222,7 @@ CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
 		return err
 	}
 	if version < currentSchemaVersion {
-		if version != 0 && version != 1 && version != 2 && version != 3 && version != 4 && version != 5 {
+		if version != 0 && version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 {
 			_ = tx.Rollback()
 			return fmt.Errorf("unsupported state schema version %d", version)
 		}
@@ -280,7 +280,7 @@ func ensureSessionBaselineColumns(tx *sql.Tx) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for _, column := range []string{"status_digest", "baseline_paths_digest"} {
+	for _, column := range []string{"status_digest", "baseline_paths_digest", "baseline_evidence"} {
 		if present[column] {
 			continue
 		}
@@ -760,13 +760,13 @@ func (s *Store) Policy(id string) (Policy, error) {
 	return p, err
 }
 func (t *Tx) PutSession(x Session) error {
-	_, err := t.tx.Exec(`INSERT INTO sessions(id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,client_id,revision) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,baseline_head=excluded.baseline_head,baseline_index=excluded.baseline_index,status_digest=excluded.status_digest,baseline_paths_digest=excluded.baseline_paths_digest,revision=excluded.revision`, x.ID, x.RepositoryID, x.State, x.BaselineHead, x.BaselineIndex, x.StatusDigest, x.BaselinePathsDigest, x.ClientID, x.Revision)
+	_, err := t.tx.Exec(`INSERT INTO sessions(id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,baseline_evidence,client_id,revision) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,baseline_head=excluded.baseline_head,baseline_index=excluded.baseline_index,status_digest=excluded.status_digest,baseline_paths_digest=excluded.baseline_paths_digest,baseline_evidence=excluded.baseline_evidence,revision=excluded.revision`, x.ID, x.RepositoryID, x.State, x.BaselineHead, x.BaselineIndex, x.StatusDigest, x.BaselinePathsDigest, x.BaselineEvidence, x.ClientID, x.Revision)
 	return err
 }
 
 func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 	var x Session
-	err := s.db.QueryRowContext(ctx, `SELECT id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,client_id,revision FROM sessions WHERE id=?`, id).Scan(&x.ID, &x.RepositoryID, &x.State, &x.BaselineHead, &x.BaselineIndex, &x.StatusDigest, &x.BaselinePathsDigest, &x.ClientID, &x.Revision)
+	err := s.db.QueryRowContext(ctx, `SELECT id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,baseline_evidence,client_id,revision FROM sessions WHERE id=?`, id).Scan(&x.ID, &x.RepositoryID, &x.State, &x.BaselineHead, &x.BaselineIndex, &x.StatusDigest, &x.BaselinePathsDigest, &x.BaselineEvidence, &x.ClientID, &x.Revision)
 	return x, err
 }
 
@@ -777,11 +777,24 @@ func (s *Store) RecordSessionBaseline(ctx context.Context, sessionID, repository
 	if sessionID == "" || repositoryID == "" || clientID == "" || !validBaselineDigest(baseline.IndexDigest) || !validBaselineDigest(baseline.StatusDigest) || !validBaselineDigest(baseline.PathsDigest) || (baseline.Head != "" && !validObjectID(baseline.Head)) {
 		return errors.New("invalid session baseline")
 	}
+	if baseline.DurableEvidence != "" {
+		evidence, err := repository.DecodeDurableBaseline(baseline.DurableEvidence)
+		if err != nil || evidence.PathsDigest != baseline.PathsDigest {
+			return errors.New("invalid durable session baseline evidence")
+		}
+	}
 	return s.WithTx(ctx, func(tx *Tx) error {
 		var old Session
-		err := tx.tx.QueryRow(`SELECT id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,client_id,revision FROM sessions WHERE id=?`, sessionID).Scan(&old.ID, &old.RepositoryID, &old.State, &old.BaselineHead, &old.BaselineIndex, &old.StatusDigest, &old.BaselinePathsDigest, &old.ClientID, &old.Revision)
+		err := tx.tx.QueryRow(`SELECT id,repository_id,state,baseline_head,baseline_index,status_digest,baseline_paths_digest,baseline_evidence,client_id,revision FROM sessions WHERE id=?`, sessionID).Scan(&old.ID, &old.RepositoryID, &old.State, &old.BaselineHead, &old.BaselineIndex, &old.StatusDigest, &old.BaselinePathsDigest, &old.BaselineEvidence, &old.ClientID, &old.Revision)
 		if err == nil {
 			if old.RepositoryID != repositoryID || old.ClientID != clientID || old.BaselineHead != baseline.Head || old.BaselineIndex != baseline.IndexDigest || old.StatusDigest != baseline.StatusDigest || old.BaselinePathsDigest != baseline.PathsDigest {
+				return errors.New("session baseline identity conflict")
+			}
+			if old.BaselineEvidence == "" && baseline.DurableEvidence != "" {
+				_, err = tx.tx.Exec(`UPDATE sessions SET baseline_evidence=? WHERE id=?`, baseline.DurableEvidence, sessionID)
+				return err
+			}
+			if old.BaselineEvidence != baseline.DurableEvidence {
 				return errors.New("session baseline identity conflict")
 			}
 			return nil
@@ -789,7 +802,7 @@ func (s *Store) RecordSessionBaseline(ctx context.Context, sessionID, repository
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		return tx.PutSession(Session{ID: sessionID, RepositoryID: repositoryID, State: "ACTIVE", BaselineHead: baseline.Head, BaselineIndex: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, BaselinePathsDigest: baseline.PathsDigest, ClientID: clientID, Revision: 1})
+		return tx.PutSession(Session{ID: sessionID, RepositoryID: repositoryID, State: "ACTIVE", BaselineHead: baseline.Head, BaselineIndex: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, BaselinePathsDigest: baseline.PathsDigest, BaselineEvidence: baseline.DurableEvidence, ClientID: clientID, Revision: 1})
 	})
 }
 

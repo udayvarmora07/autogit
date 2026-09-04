@@ -160,8 +160,8 @@ func TestStoreUpgradesLegacyEvidenceColumnsAndSchemaVersion(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "6" {
-		t.Fatalf("schema version=%q, want 6", version)
+	if version != "7" {
+		t.Fatalf("schema version=%q, want 7", version)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(commits)`)
 	if err != nil {
@@ -302,6 +302,33 @@ func TestRecordSessionBaselinePersistsOnlyBoundedRepositoryEvidence(t *testing.T
 	}
 }
 
+func TestRecordSessionBaselinePersistsSourceFreeDurableEvidence(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	baseline := repository.Baseline{
+		Head: "0123456789012345678901234567890123456789", IndexDigest: "sha256:" + repeated('a'), StatusDigest: "sha256:" + repeated('b'),
+		PathsDigest: repository.DigestPaths([]string{"private.txt"}), Paths: []string{"private.txt"},
+		Files: map[string]repository.FileObservation{"private.txt": {Content: []byte("private source"), Mode: 0644, Present: true}},
+	}
+	baseline.DurableEvidence, err = repository.EncodeDurableBaseline(baseline, []byte("identity-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordSessionBaseline(context.Background(), "session-evidence", "repo-evidence", "codex", baseline); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Session(context.Background(), "session-evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaselineEvidence != baseline.DurableEvidence || strings.Contains(got.BaselineEvidence, "private source") || strings.Contains(got.BaselineEvidence, "private.txt") {
+		t.Fatalf("stored durable evidence=%q", got.BaselineEvidence)
+	}
+}
+
 func TestRecordSessionBaselineRejectsIdentityChangeOnReplay(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -424,8 +451,8 @@ func TestStoreMigratesV2ToV3IntentTable(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "6" {
-		t.Fatalf("schema version=%q, want 6", version)
+	if version != "7" {
+		t.Fatalf("schema version=%q, want 7", version)
 	}
 }
 

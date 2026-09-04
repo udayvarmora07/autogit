@@ -145,6 +145,95 @@ func TestResumeFromDurableRejectsDirtyBaseline(t *testing.T) {
 	}
 }
 
+func TestResumeFromDurableManifestAttributesNewChangesAcrossProcesses(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "preexisting.txt"), []byte("committed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "preexisting.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "preexisting.txt"), []byte("user work\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := repository.CaptureBaseline(context.Background(), repository.SystemRunner{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := []byte("session-identity-key")
+	baseline.DurableEvidence, err = repository.EncodeDurableBaseline(baseline, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "owned.txt"), []byte("session work\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Runner: repository.SystemRunner{}}
+	started, err := service.ResumeFromDurable(context.Background(), Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: root, IdentityKey: key}, DurableBaseline{
+		Head: baseline.Head, IndexDigest: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, PathsDigest: baseline.PathsDigest, Evidence: baseline.DurableEvidence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.BuildOwnedPlanAtCurrent(context.Background(), started.Request, started.Baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 1 || entries[0].Path != "owned.txt" || string(entries[0].Content) != "session work\n" {
+		t.Fatalf("cross-process candidate=%+v", entries)
+	}
+}
+
+func TestResumeFromDurableManifestBlocksChangedPreexistingPath(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "preexisting.txt"), []byte("committed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "preexisting.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "preexisting.txt"), []byte("baseline dirty\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := repository.CaptureBaseline(context.Background(), repository.SystemRunner{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := []byte("session-identity-key")
+	baseline.DurableEvidence, err = repository.EncodeDurableBaseline(baseline, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "preexisting.txt"), []byte("changed again\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Runner: repository.SystemRunner{}}
+	started, err := service.ResumeFromDurable(context.Background(), Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: root, IdentityKey: key}, DurableBaseline{
+		Head: baseline.Head, IndexDigest: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, PathsDigest: baseline.PathsDigest, Evidence: baseline.DurableEvidence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BuildOwnedPlanAtCurrent(context.Background(), started.Request, started.Baseline); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("changed pre-existing path accepted: %v", err)
+	}
+}
+
 func TestBuildOwnedPlanBridgesDurableBaselineToCurrentOwnedFiles(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {

@@ -46,6 +46,7 @@ type App struct {
 	Reducer         lifecycle.Reducer
 	Baselines       *session.Service
 	SessionWorkflow session.Workflow
+	IdentityKey     []byte
 }
 
 // CaptureSessionBaseline is the application boundary for the session
@@ -126,6 +127,7 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 			RepositoryID: stringValue(e.Scope["repo_id"]),
 			ClientID:     stringValue(e.Producer["adapter"]),
 			Root:         candidateRoot,
+			IdentityKey:  a.IdentityKey,
 		}); err != nil {
 			return Result{}, &events.Error{Code: "E_REPOSITORY", Message: "session baseline capture failed"}
 		}

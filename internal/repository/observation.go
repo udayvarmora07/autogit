@@ -196,8 +196,12 @@ type Baseline struct {
 	IndexDigest  string
 	StatusDigest string
 	PathsDigest  string
-	Paths        []string
-	Files        map[string]FileObservation
+	// DurableEvidence is an optional source-free manifest prepared by the
+	// session boundary for cross-process ownership recovery. It is never
+	// included in EventPayload and contains no raw path or source bytes.
+	DurableEvidence string
+	Paths           []string
+	Files           map[string]FileObservation
 }
 
 type BaselineOptions struct {
@@ -227,6 +231,7 @@ func (b Baseline) EventPayload() map[string]any {
 
 func (b Baseline) Clone() Baseline {
 	n := b
+	n.DurableEvidence = b.DurableEvidence
 	n.Paths = append([]string(nil), b.Paths...)
 	n.Files = make(map[string]FileObservation, len(b.Files))
 	for name, file := range b.Files {

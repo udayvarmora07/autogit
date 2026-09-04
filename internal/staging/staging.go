@@ -43,6 +43,16 @@ type ObservedFile struct {
 // mode is available at the observation boundary.
 type ObservedSnapshot map[string]ObservedFile
 
+// Fingerprint is the source-free form of a baseline file observation used
+// when a session resumes in a new process. ContentDigest is compared against
+// a fresh current observation; no baseline source bytes are required.
+type Fingerprint struct {
+	ContentDigest string
+	Mode          os.FileMode
+	Present       bool
+	Symlink       bool
+}
+
 type Change struct {
 	Path, Operation, PreviousPath string
 	Content                       string
@@ -148,6 +158,43 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 	return p, nil
 }
 
+// BuildPlanFromFingerprints derives ownership from source-free baseline
+// fingerprints and a fresh current observation. A changed pre-existing path
+// remains ambiguous; a path absent from the manifest is owned only when it is
+// currently present.
+func BuildPlanFromFingerprints(baseline map[string]Fingerprint, current ObservedSnapshot, requested []string) (Plan, error) {
+	seen := map[string]bool{}
+	p := Plan{}
+	for _, name := range requested {
+		if err := safePath(name); err != nil {
+			return Plan{}, err
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		old, had := baseline[name]
+		now, observed := current[name]
+		exists := observed && observedPresent(now)
+		if had && old.Present {
+			if !sameFingerprint(old, now) {
+				return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
+			}
+			continue
+		}
+		if !exists {
+			continue
+		}
+		if now.Symlink {
+			return Plan{}, fmt.Errorf("symlink candidate is not supported for %q", name)
+		}
+		p.Paths = append(p.Paths, name)
+		p.Changes = append(p.Changes, Change{Path: name, Operation: "added", Content: string(now.Content)})
+		p.candidate = append(p.candidate, SnapshotEntry{Path: name, Content: append([]byte(nil), now.Content...), Mode: normalizedMode(now.Mode)})
+	}
+	return finalizePlan(p), nil
+}
+
 // OwnershipDigest returns the plan identity derived from its private immutable
 // candidate snapshot. Unlike the public Digest display field, it cannot be
 // altered by a caller after plan construction.
@@ -163,6 +210,38 @@ func asObserved(snapshot Snapshot) ObservedSnapshot {
 
 func sameObservation(left, right ObservedFile) bool {
 	return left.Symlink == right.Symlink && normalizedMode(left.Mode) == normalizedMode(right.Mode) && bytes.Equal(left.Content, right.Content)
+}
+
+func sameFingerprint(old Fingerprint, now ObservedFile) bool {
+	if !old.Present || !observedPresent(now) || old.Symlink != now.Symlink || normalizedMode(old.Mode) != normalizedMode(now.Mode) {
+		return !old.Present && !observedPresent(now)
+	}
+	if old.Symlink {
+		return true
+	}
+	return old.ContentDigest == digestContent(now.Content)
+}
+
+func digestContent(content []byte) string {
+	h := sha256.Sum256(content)
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func finalizePlan(p Plan) Plan {
+	sort.Strings(p.Paths)
+	sort.Slice(p.Changes, func(i, j int) bool { return p.Changes[i].Path < p.Changes[j].Path })
+	sort.Slice(p.candidate, func(i, j int) bool { return p.candidate[i].Path < p.candidate[j].Path })
+	h := sha256.New()
+	for _, entry := range p.candidate {
+		fmt.Fprintf(h, "%s\x00%o\x00%t\x00", entry.Path, uint32(entry.Mode), entry.Delete)
+		if !entry.Delete {
+			_, _ = h.Write(entry.Content)
+		}
+		_, _ = h.Write([]byte{0})
+	}
+	p.Digest = "sha256:" + hex.EncodeToString(h.Sum(nil))
+	p.ownershipDigest = p.Digest
+	return p
 }
 
 func normalizedMode(mode os.FileMode) os.FileMode {

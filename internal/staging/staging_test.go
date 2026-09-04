@@ -2,6 +2,8 @@ package staging
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +13,11 @@ import (
 	"autogit/internal/gittransaction"
 	"autogit/internal/repository"
 )
+
+func testContentDigest(value string) string {
+	h := sha256.Sum256([]byte(value))
+	return "sha256:" + hex.EncodeToString(h[:])
+}
 
 // modeOnDisk returns the mode a freshly written file reports on this platform.
 // Windows does not model POSIX permissions: os.WriteFile(0755) and
@@ -34,6 +41,28 @@ func TestOwnershipExcludesPreexistingAndReportsOverlap(t *testing.T) {
 	}
 	if _, err := BuildPlan(baseline, current, []string{"shared.txt"}); err == nil {
 		t.Fatal("overlap was silently owned")
+	}
+}
+
+func TestBuildPlanFromFingerprintsOwnsOnlyNewChanges(t *testing.T) {
+	baseline := map[string]Fingerprint{
+		"preexisting.txt": {ContentDigest: testContentDigest("before"), Mode: 0644, Present: true},
+	}
+	current := ObservedSnapshot{
+		"preexisting.txt": {Content: []byte("changed"), Mode: 0644, Present: true},
+		"new.txt":         {Content: []byte("owned"), Mode: 0644, Present: true},
+	}
+	if _, err := BuildPlanFromFingerprints(baseline, current, []string{"preexisting.txt", "new.txt"}); err == nil {
+		t.Fatal("pre-existing fingerprint change was accepted")
+	}
+	current["preexisting.txt"] = ObservedFile{Content: []byte("before"), Mode: 0644, Present: true}
+	plan, err := BuildPlanFromFingerprints(baseline, current, []string{"preexisting.txt", "new.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 1 || entries[0].Path != "new.txt" || string(entries[0].Content) != "owned" {
+		t.Fatalf("candidate=%+v", entries)
 	}
 }
 
