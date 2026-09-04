@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,10 +21,12 @@ import (
 	"autogit/internal/coordinator"
 	"autogit/internal/events"
 	"autogit/internal/gittransaction"
+	"autogit/internal/historyscan"
 	"autogit/internal/install"
 	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
 	"autogit/internal/provider"
+	"autogit/internal/publication"
 	"autogit/internal/repository"
 	"autogit/internal/security"
 	"autogit/internal/session"
@@ -64,13 +68,19 @@ func safeMessage(s string) string {
 }
 func run(args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable status plan hook verify sync retry logs uninstall config explain\n")
+		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable status plan hook verify sync publish retry logs uninstall config explain\n")
 		return nil
 	}
 	if args[0] == "hook" {
 		return runHook(args[1:], in, out)
 	}
 	cmd := args[0]
+	if cmd == "install" && hasFlag(args[1:], "--list") {
+		if len(args) != 2 || args[1] != "--list" {
+			return cliError{"E_USAGE", "install --list cannot be combined with other arguments"}
+		}
+		return runInstallList(out)
+	}
 	dir, err := stateDir()
 	if err != nil {
 		return err
@@ -92,6 +102,9 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		return runVerify(args[1:], dir, out)
+	}
+	if cmd == "publish" {
+		return runPublish(args[1:], dir, out)
 	}
 	if cmd == "logs" {
 		root := flag(args[1:], "--repo")
@@ -123,6 +136,9 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	defer s.Close()
 	switch cmd {
 	case "enable", "disable":
+		if err := validateEnableArgs(args[1:], cmd == "enable"); err != nil {
+			return err
+		}
 		root := flag(args[1:], "--repo")
 		if root == "" {
 			return cliError{"E_SCOPE", "--repo is required"}
@@ -135,11 +151,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if cmd == "disable" {
 			p = policy.Policy{Tracking: "no", Version: p.Version + 1}
 		} else {
-			p.Tracking = "local"
-			p.LocalOnly = true
-			p.Visibility = "private"
-			p.Workflow = "safe"
-			p.Version++
+			p = enabledPolicy(args[1:], p.Version+1)
 		}
 		if err = savePolicy(dir, info.RepoID, p); err != nil {
 			return err
@@ -255,6 +267,25 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	}
 }
 
+func runInstallList(out io.Writer) error {
+	type discovered struct {
+		Adapter      string                      `json:"adapter"`
+		Installable  bool                        `json:"installable"`
+		Reason       string                      `json:"reason,omitempty"`
+		Capabilities adapters.CapabilityManifest `json:"capabilities"`
+	}
+	entries := install.ClientInstallations()
+	result := make([]discovered, 0, len(entries))
+	for _, entry := range entries {
+		manifest, err := adapters.ManifestFor(entry.Adapter)
+		if err != nil {
+			return cliError{"E_ADAPTER", safeMessage(err.Error())}
+		}
+		result = append(result, discovered{Adapter: entry.Adapter, Installable: entry.Supported, Reason: entry.UnsupportedReason, Capabilities: manifest})
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "ADAPTER_DISCOVERY", "adapters": result})
+}
+
 type retryOptions struct {
 	ID, Repo, Remote string
 }
@@ -268,6 +299,435 @@ type syncOptions struct {
 type verifyOptions struct {
 	ID, Repo, Session, Client, Message, Verifiers string
 	Paths                                         []string
+}
+
+type publishOptions struct {
+	ID, Repo, Remote, Owner, Name, Ref, Visibility, Mode, License string
+	Verifiers, Tests, CI                                          string
+	PublicConsent, ConfirmDestination, FeatureBranchApproved      bool
+	ProtectedBranch, StatusChecksRequired, StatusChecksPassed     bool
+}
+
+func validateEnableArgs(args []string, enabling bool) error {
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name == "--local" || name == "--public-consent" {
+			if !enabling {
+				return cliError{"E_USAGE", name + " is not valid with disable"}
+			}
+			if seen[name] {
+				return cliError{"E_USAGE", name + " may be provided once"}
+			}
+			seen[name] = true
+			continue
+		}
+		switch name {
+		case "--repo", "--provider", "--owner", "--destination", "--visibility":
+		default:
+			return cliError{"E_USAGE", "unknown enable argument"}
+		}
+		if seen[name] || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return cliError{"E_USAGE", name + " requires one value and may be provided once"}
+		}
+		seen[name] = true
+		i++
+	}
+	if flag(args, "--repo") == "" {
+		return cliError{"E_SCOPE", "--repo is required"}
+	}
+	if !enabling {
+		for _, name := range []string{"--provider", "--owner", "--destination", "--visibility"} {
+			if seen[name] {
+				return cliError{"E_USAGE", name + " is not valid with disable"}
+			}
+		}
+		return nil
+	}
+	remote := flag(args, "--provider") != "" || flag(args, "--owner") != "" || flag(args, "--destination") != "" || flag(args, "--visibility") != ""
+	if seen["--local"] && remote {
+		return cliError{"E_USAGE", "--local cannot be combined with remote policy fields"}
+	}
+	if remote && (flag(args, "--provider") == "" || flag(args, "--owner") == "" || flag(args, "--destination") == "") {
+		return cliError{"E_SCOPE", "--provider, --owner, and --destination are required for remote tracking"}
+	}
+	if visibility := flag(args, "--visibility"); visibility != "" && visibility != "private" && visibility != "public" {
+		return cliError{"E_USAGE", "--visibility must be private or public"}
+	}
+	if flag(args, "--visibility") == "public" && !seen["--public-consent"] {
+		return cliError{"E_CONSENT", "--public-consent is required for public tracking"}
+	}
+	if flag(args, "--provider") != "" && flag(args, "--provider") != "github" {
+		return cliError{"E_PROVIDER", "only github is supported"}
+	}
+	return nil
+}
+
+func enabledPolicy(args []string, version int) policy.Policy {
+	remote := flag(args, "--provider") != "" || flag(args, "--owner") != "" || flag(args, "--destination") != "" || flag(args, "--visibility") != ""
+	if !remote || hasFlag(args, "--local") {
+		return policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: version}
+	}
+	visibility := flag(args, "--visibility")
+	if visibility == "" {
+		visibility = "private"
+	}
+	return policy.Policy{
+		Tracking: "yes", Visibility: visibility, Provider: flag(args, "--provider"),
+		Owner: flag(args, "--owner"), Destination: flag(args, "--destination"),
+		Workflow: "safe", PublicConsent: hasFlag(args, "--public-consent"), Version: version,
+	}
+}
+
+func hasFlag(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == name {
+			return true
+		}
+	}
+	return false
+}
+
+func validatePublishArgs(args []string) error {
+	_, err := parsePublishArgs(args)
+	return err
+}
+
+func parsePublishArgs(args []string) (publishOptions, error) {
+	var options publishOptions
+	options.Mode = "private"
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name == "--public-consent" || name == "--confirm-destination" || name == "--feature-branch-approved" || name == "--protected-branch" || name == "--status-checks-required" || name == "--status-checks-passed" {
+			if seen[name] {
+				return publishOptions{}, cliError{"E_USAGE", name + " may be provided once"}
+			}
+			seen[name] = true
+			switch name {
+			case "--public-consent":
+				options.PublicConsent = true
+			case "--confirm-destination":
+				options.ConfirmDestination = true
+			case "--feature-branch-approved":
+				options.FeatureBranchApproved = true
+			case "--protected-branch":
+				options.ProtectedBranch = true
+			case "--status-checks-required":
+				options.StatusChecksRequired = true
+			case "--status-checks-passed":
+				options.StatusChecksPassed = true
+			}
+			continue
+		}
+		switch name {
+		case "--id", "--repo", "--remote", "--owner", "--name", "--ref", "--visibility", "--mode", "--license", "--verifiers", "--tests", "--ci":
+		default:
+			return publishOptions{}, cliError{"E_USAGE", "publish supports explicit destination, --license, --verifiers, readiness evidence, and consent flags"}
+		}
+		if seen[name] || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return publishOptions{}, cliError{"E_USAGE", name + " requires one value and may be provided once"}
+		}
+		seen[name] = true
+		switch name {
+		case "--id":
+			options.ID = args[i+1]
+		case "--repo":
+			options.Repo = args[i+1]
+		case "--remote":
+			options.Remote = args[i+1]
+		case "--owner":
+			options.Owner = args[i+1]
+		case "--name":
+			options.Name = args[i+1]
+		case "--ref":
+			options.Ref = args[i+1]
+		case "--visibility":
+			options.Visibility = args[i+1]
+		case "--mode":
+			options.Mode = args[i+1]
+		case "--license":
+			options.License = args[i+1]
+		case "--verifiers":
+			options.Verifiers = args[i+1]
+		case "--tests":
+			options.Tests = args[i+1]
+		case "--ci":
+			options.CI = args[i+1]
+		}
+		i++
+	}
+	if options.ID == "" || options.Repo == "" || options.Remote == "" || options.Owner == "" || options.Name == "" || options.Ref == "" {
+		return publishOptions{}, cliError{"E_SCOPE", "--id, --repo, --remote, --owner, --name, and --ref are required for publish"}
+	}
+	if options.Visibility == "" {
+		options.Visibility = "private"
+	}
+	if options.Visibility != "private" && options.Visibility != "public" {
+		return publishOptions{}, cliError{"E_USAGE", "--visibility must be private or public"}
+	}
+	if options.Mode != "private" && options.Mode != "public" {
+		return publishOptions{}, cliError{"E_USAGE", "--mode must be private or public"}
+	}
+	if options.Mode != options.Visibility {
+		return publishOptions{}, cliError{"E_SCOPE", "--mode and --visibility must match"}
+	}
+	if options.Mode == "public" && !options.PublicConsent {
+		return publishOptions{}, cliError{"E_CONSENT", "--public-consent is required for public publish"}
+	}
+	if options.Tests != "" && options.Tests != publication.StatusAbsent && options.Tests != publication.StatusPassed && options.Tests != publication.StatusFailed && options.Tests != publication.StatusUnknown {
+		return publishOptions{}, cliError{"E_USAGE", "--tests must be absent, passed, failed, or unknown"}
+	}
+	if options.CI != "" && options.CI != publication.StatusAbsent && options.CI != publication.StatusPresent && options.CI != publication.StatusPassed && options.CI != publication.StatusFailed && options.CI != publication.StatusUnknown {
+		return publishOptions{}, cliError{"E_USAGE", "--ci must be absent, present, passed, failed, or unknown"}
+	}
+	return options, nil
+}
+
+func runPublish(args []string, dir string, out io.Writer) error {
+	options, err := parsePublishArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0700)
+	key, err := loadIdentityKey(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKey(options.Repo, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	db, err := state.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	intent, err := db.GitCommitIntentRecord(context.Background(), options.ID)
+	if errors.Is(err, os.ErrNotExist) {
+		return cliError{"E_NOT_FOUND", "commit intent was not found"}
+	}
+	if err != nil {
+		return cliError{"E_STATE", "cannot read commit intent"}
+	}
+	if intent.Intent.RepoDir != info.Root || intent.State != state.CommitCreated || intent.SHA == "" {
+		return cliError{"E_STATE", "commit intent is not a completed local commit for this repository"}
+	}
+	if err := verifyStoredCommit(context.Background(), info.Root, intent); err != nil {
+		return cliError{"E_STATE", safeMessage(err.Error())}
+	}
+	p := loadPolicy(dir, info.RepoID)
+	if !p.TrackingEnabled() {
+		return cliError{"E_CONSENT", "tracking consent is required before publication"}
+	}
+	if p.LocalOnly {
+		return cliError{"E_LOCAL_ONLY", "publication is disabled by local-only policy"}
+	}
+	if p.Provider != "" && p.Provider != "github" {
+		return cliError{"E_PROVIDER", "unsupported publication provider"}
+	}
+	if p.Visibility != "" && p.Visibility != options.Visibility {
+		return cliError{"E_SCOPE", "publish visibility does not match approved policy"}
+	}
+	if p.Owner != "" && p.Owner != options.Owner {
+		return cliError{"E_SCOPE", "publish owner does not match approved policy"}
+	}
+	if p.Destination != "" && p.Destination != options.Owner+"/"+options.Name {
+		return cliError{"E_SCOPE", "publish destination does not match approved policy"}
+	}
+	if options.Mode == "public" && (!p.CanPublishPublic() || !options.PublicConsent) {
+		return cliError{"E_CONSENT", "public publication requires separate policy and command consent"}
+	}
+	if options.Mode == "public" {
+		report := buildPublicPreflight(context.Background(), dir, info.Root, intent, options, p)
+		if !report.CanPublishPublic() {
+			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "rejected", "action": "blocked", "reason_code": "PUBLIC_PREFLIGHT_REQUIRED", "job_id": options.ID, "preflight": report})
+		}
+	}
+	ghPath, err := trustedExecutable("gh")
+	if err != nil {
+		return cliError{"E_PROVIDER", "gh is unavailable"}
+	}
+	gitPath, err := trustedExecutable("git")
+	if err != nil {
+		return cliError{"E_PROVIDER", "git is unavailable"}
+	}
+	ghRunner := provider.SystemRunner{Executable: ghPath, WorkingDir: info.Root}
+	gitRunner := provider.SystemRunner{Executable: gitPath, WorkingDir: info.Root}
+	publication := provider.GH{Runner: ghRunner, Pusher: provider.GitPusher{Runner: gitRunner, Dir: info.Root, AllowedRemotes: map[string]string{options.Owner + "/" + options.Name: options.Remote}}}
+	if options.Mode == "public" {
+		if err := publication.ConfirmRepository(context.Background(), provider.RemoteRequest{Owner: options.Owner, Name: options.Name, Visibility: options.Visibility}); err != nil {
+			return cliError{"E_PROVIDER", safeMessage(err.Error())}
+		}
+	}
+	coord := retryCoordinator(db, publication, options.ID)
+	remoteDigest := digestDestination(options.Owner, options.Name, options.Visibility, options.Ref)
+	if err := coord.Push(context.Background(), coordinator.PushRequest{ID: options.ID, Owner: options.Owner, Name: options.Name, Ref: options.Ref, CommitSHA: intent.SHA, RemoteDigest: remoteDigest}); err != nil {
+		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
+		if statusErr == nil && status == state.PushRetryWait {
+			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "pending", "action": "retry", "reason_code": "PUSH_RETRY_WAIT", "retryable": true, "job_id": options.ID, "commit_sha": intent.SHA})
+		}
+		return cliError{"E_PUSH", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "PUBLISH_SUCCEEDED", "job_id": options.ID, "commit_sha": intent.SHA, "owner": options.Owner, "name": options.Name, "ref": options.Ref, "visibility": options.Visibility})
+}
+
+func verifyStoredCommit(ctx context.Context, root string, intent state.GitCommitIntentRecord) error {
+	runner := gittransaction.SystemRunner{}
+	refResult, err := runner.Run(ctx, root, nil, "rev-parse", "--verify", "--quiet", intent.Intent.Ref)
+	if err != nil || strings.TrimSpace(refResult.Output) != intent.SHA {
+		return errors.New("AutoGit ref does not name the recorded commit")
+	}
+	treeResult, err := runner.Run(ctx, root, nil, "show", "-s", "--format=%T", "--no-patch", intent.SHA)
+	if err != nil || strings.TrimSpace(treeResult.Output) != intent.Intent.TreeOID {
+		return errors.New("recorded commit tree does not match its immutable intent")
+	}
+	return nil
+}
+
+func digestDestination(owner, name, visibility, ref string) string {
+	h := sha256.Sum256([]byte(owner + "\x00" + name + "\x00" + visibility + "\x00" + ref))
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func digestText(value string) string {
+	h := sha256.Sum256([]byte(value))
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func buildPublicPreflight(ctx context.Context, trustedDir, root string, intent state.GitCommitIntentRecord, options publishOptions, p policy.Policy) publication.Report {
+	ref := "refs/heads/" + options.Ref
+	request := publication.Request{
+		Mode:                  publication.ModePublic,
+		FirstPublication:      true,
+		PublicConsent:         options.PublicConsent,
+		CandidateDigest:       intent.Intent.CandidateDigest,
+		BaseDigest:            digestText(intent.Intent.ParentSHA),
+		PolicyDigest:          intent.Intent.PolicyDigest,
+		GuardDigest:           intent.Intent.GuardDigest,
+		VerifierSetDigest:     intent.Intent.VerifierDigest,
+		Destination:           publication.Destination{Provider: "github", Host: "github.com", Owner: options.Owner, Repository: options.Name, Visibility: publication.VisibilityPublic, Ref: ref},
+		ObservedDestination:   publication.Destination{Provider: "github", Host: "github.com", Owner: options.Owner, Repository: options.Name, Visibility: publication.VisibilityPublic, Ref: ref},
+		DestinationConfirmed:  options.ConfirmDestination,
+		Readiness:             publication.Readiness{Tests: publication.StatusUnknown, CI: publication.StatusUnknown},
+		WorkflowSafe:          p.Workflow == "safe",
+		WorkflowSolo:          p.Workflow == "solo",
+		FeatureBranchApproved: options.FeatureBranchApproved,
+		ProtectedBranch:       options.ProtectedBranch,
+		StatusChecksRequired:  options.StatusChecksRequired,
+		StatusChecksPassed:    options.StatusChecksPassed,
+	}
+	if options.Tests != "" {
+		request.Readiness.Tests = options.Tests
+	}
+	if options.CI != "" {
+		request.Readiness.CI = options.CI
+	}
+	entries, err := gittransaction.SnapshotAtCommit(ctx, gittransaction.SystemRunner{}, root, intent.SHA, 64<<20)
+	if err != nil {
+		return publication.Evaluate(request)
+	}
+	files := make([]publication.FileMetadata, 0, len(entries))
+	var readme []byte
+	readmePath := ""
+	licensePresent := false
+	licensePath := ""
+	for _, entry := range entries {
+		files = append(files, publication.FileMetadata{Path: entry.Path, Bytes: int64(len(entry.Content)), Mode: uint32(entry.Mode.Perm())})
+		if strings.EqualFold(entry.Path, "README.md") || strings.EqualFold(entry.Path, "README") {
+			if readme == nil {
+				readme = append([]byte(nil), entry.Content...)
+				readmePath = entry.Path
+			}
+		}
+		if options.License != "" && strings.EqualFold(entry.Path, options.License) {
+			licensePresent = true
+			licensePath = entry.Path
+		}
+	}
+	request.Files = files
+	request.README = publication.READMEInput{Path: readmePath, Content: readme}
+	request.License = publication.LicenseEvidence{Selected: options.License, FilePath: licensePath, Present: licensePresent}
+	scan := security.Scanner{}.Scan(ctx, security.CandidateSnapshot{Files: treeSecurityFiles(entries)})
+	request.CandidateScan = publication.ScanEvidence{Scope: publication.ScanCandidate, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: scan.Safe(), Findings: len(scan.Findings), ReasonCodes: append([]string(nil), scan.ReasonCodes...), Digest: digestValue(scan)}
+	history, historyErr := historyscan.ScanHistory(ctx, gittransaction.SystemRunner{}, historyscan.Request{RepoRoot: root, CandidateSHA: intent.SHA, PolicyDigest: intent.Intent.PolicyDigest})
+	if historyErr == nil {
+		request.HistoryScan = publication.ScanEvidence{Scope: publication.ScanHistory, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: history.Safe(), Findings: len(history.Findings), ReasonCodes: append([]string(nil), history.ReasonCodes...), Digest: digestValue(history)}
+	}
+	if options.Verifiers != "" {
+		if registry, loadErr := verification.LoadTrustedRegistryFile(options.Verifiers, trustedDir, 0); loadErr == nil {
+			if verifyRoot, rootErr := writePreflightSnapshot(entries); rootErr == nil {
+				defer os.RemoveAll(verifyRoot)
+				verificationPolicy := verification.VerificationPolicy{Visibility: publication.VisibilityPublic}
+				verificationRequest := verification.TrustedRequest{CandidateDigest: intent.Intent.CandidateDigest, BaseDigest: digestText(intent.Intent.ParentSHA), PolicyDigest: intent.Intent.PolicyDigest, GuardDigest: intent.Intent.GuardDigest, Dir: verifyRoot}
+				result, verifyErr := registry.Verify(ctx, verificationPolicy, verificationRequest, verification.ExecRunner{})
+				if verifyErr == nil {
+					passedCount := 0
+					for _, evidence := range result.Evidence {
+						if evidence.ValidForTrusted(intent.Intent.CandidateDigest, digestText(intent.Intent.ParentSHA), intent.Intent.PolicyDigest, intent.Intent.GuardDigest, registry.VerifierSetDigest) {
+							passedCount++
+						}
+					}
+					request.Verification = publication.VerificationEvidence{CandidateDigest: intent.Intent.CandidateDigest, BaseDigest: digestText(intent.Intent.ParentSHA), PolicyDigest: intent.Intent.PolicyDigest, GuardDigest: intent.Intent.GuardDigest, VerifierSetDigest: registry.VerifierSetDigest, Passed: result.ValidFor(verificationRequest, verificationPolicy, registry), Required: len(result.Evidence), PassedCount: passedCount, Digest: result.EvidenceDigest}
+				}
+			}
+		}
+	}
+	return publication.Evaluate(request)
+}
+
+func writePreflightSnapshot(entries []gittransaction.SnapshotEntry) (string, error) {
+	root, err := os.MkdirTemp("", "autogit-public-preflight-")
+	if err != nil {
+		return "", err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(root)
+		}
+	}()
+	for _, entry := range entries {
+		if entry.Mode&os.FileMode(0120000) == os.FileMode(0120000) || entry.Delete {
+			return "", errors.New("public verification snapshot contains unsupported entry")
+		}
+		path := filepath.Join(root, filepath.FromSlash(entry.Path))
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			return "", errors.New("public verification snapshot path escapes root")
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(path, entry.Content, 0600); err != nil {
+			return "", err
+		}
+		if err := os.Chmod(path, entry.Mode.Perm()); err != nil {
+			return "", err
+		}
+	}
+	cleanup = false
+	return root, nil
+}
+
+func treeSecurityFiles(entries []gittransaction.SnapshotEntry) []security.CandidateFile {
+	files := make([]security.CandidateFile, 0, len(entries))
+	for _, entry := range entries {
+		files = append(files, security.CandidateFile{Path: entry.Path, Content: append([]byte(nil), entry.Content...), Mode: uint32(entry.Mode), Symlink: entry.Mode&os.FileMode(0120000) == os.FileMode(0120000)})
+	}
+	return files
+}
+
+func digestValue(value any) string {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(h[:])
 }
 
 func validateSyncArgs(args []string) error {
@@ -609,11 +1069,28 @@ func retryCoordinator(db *state.Store, publication provider.PublicationProvider,
 }
 
 func trustedExecutable(name string) (string, error) {
+	if name == "" || strings.ContainsAny(name, `/\\\x00\r\n`) {
+		return "", errors.New("invalid trusted executable")
+	}
 	path, err := exec.LookPath(name)
 	if err != nil {
 		return "", err
 	}
-	return filepath.EvalSymlinks(path)
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return "", errors.New("invalid trusted executable")
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", errors.New("invalid trusted executable")
+	}
+	if info.Mode().Perm()&0111 == 0 {
+		return "", errors.New("invalid trusted executable")
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return "", errors.New("invalid trusted executable")
+	}
+	return filepath.Join(parent, filepath.Base(path)), nil
 }
 
 func runHook(args []string, in io.Reader, out io.Writer) error {

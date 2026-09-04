@@ -48,6 +48,17 @@ func TestSafeFakeInjectsInspectionFailureAndTypedAbsentOutcome(t *testing.T) {
 	}
 }
 
+func TestGHConfirmsExistingRepositoryIdentityAndVisibility(t *testing.T) {
+	r := &argRunner{results: []Result{{Output: "owner/repo\n"}, {Output: "public\n"}}}
+	g := GH{Runner: r}
+	if err := g.ConfirmRepository(context.Background(), RemoteRequest{Owner: "owner", Name: "repo", Visibility: "public"}); err != nil {
+		t.Fatalf("confirm repository: %v", err)
+	}
+	if len(r.calls) != 2 || strings.Join(r.calls[0], "\x00") != "api\x00repos/owner/repo\x00--jq\x00.full_name" || strings.Join(r.calls[1], "\x00") != "api\x00repos/owner/repo\x00--jq\x00.visibility" {
+		t.Fatalf("calls=%#v", r.calls)
+	}
+}
+
 func TestGitPusherBindsCanonicalIdentityBeforeExactPush(t *testing.T) {
 	r := &argRunner{results: []Result{{Output: "https://github.com/owner/repo.git\n"}, {}}}
 	p := GitPusher{Runner: r, AllowedRemotes: map[string]string{"owner/repo": "origin"}}

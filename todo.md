@@ -164,3 +164,32 @@ These eight bounded slices were implemented with focused red-green tests:
   with trusted verification and AutoGit-ref-only mutation.
 - [x] Normalized ownership mode comparison to Git's executable-bit semantics,
   avoiding false conflicts from restrictive local filesystem permissions.
+
+## Completed execution batch (2026-09-04)
+
+- [x] Added explicit private `publish` CLI orchestration from a completed
+  AutoGit commit intent.
+- [x] Required explicit destination owner/name/remote/ref/visibility and
+  rejected local-only or mismatched policy before provider discovery.
+- [x] Persisted the remote destination digest in durable push intents and
+  preserved it through retries.
+- [x] Added fake-executable CLI coverage for exact remote binding, SHA/ref
+  publication, postcondition confirmation, and durable success state.
+- [x] Added public publish preflight reporting with bounded lowercase JSON and
+  provider resolution after the preflight boundary.
+- [x] Added read-only `install --list` adapter capability discovery for all
+  six registered clients.
+- [x] Rejected final-component symlinks in the CLI trusted executable resolver.
+
+## Remaining implementation order
+
+- [x] Build candidate file/history/readiness evidence from the exact committed
+  tree and allow public publication only after `publication.Evaluate` passes;
+  trusted verifier execution and hosted identity/visibility confirmation remain
+  after the local preflight boundary.
+- [ ] Emit lifecycle/domain facts from CLI `sync`/`publish` operations and
+  reconstruct the complete session-driven completion path from hook events.
+- [ ] Add provider repository creation/local-remote transaction wiring with
+  exact owner/name/visibility postconditions; never attach a collision.
+- [ ] Add durable fault injection at every CLI/provider intent boundary and
+  expand concurrency/restart schedules.

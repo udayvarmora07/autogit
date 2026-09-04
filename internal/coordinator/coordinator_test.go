@@ -152,6 +152,23 @@ func TestStateStoreCommitStatusReturnsAllImmutableEvidence(t *testing.T) {
 	}
 }
 
+func TestStateStorePushIntentRetainsRemoteDigestBinding(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := NewStateStore(db)
+	want := PushRequest{ID: "push-binding", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40), RemoteDigest: "sha256:" + strings.Repeat("b", 64)}
+	if err := store.PutPushIntent(context.Background(), want); err != nil {
+		t.Fatal(err)
+	}
+	status, got, err := store.PushStatus(context.Background(), want.ID)
+	if err != nil || status != state.PushRequested || got.RemoteDigest != want.RemoteDigest {
+		t.Fatalf("status=%q request=%+v err=%v", status, got, err)
+	}
+}
+
 func TestPushBlocksWrongExistingSHAWithoutPushing(t *testing.T) {
 	s := newMemoryStore()
 	p := &fakeProvider{confirmOutcome: PushConflict}

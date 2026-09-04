@@ -229,28 +229,28 @@ type READMEStatus struct {
 // Report is deterministic, bounded, and safe to serialize as a user-facing
 // preflight. PublicAuthorized is intentionally false for private/local modes.
 type Report struct {
-	Mode                  string
-	FirstPublication      bool
-	Ready                 bool
-	PublicAuthorized      bool
-	Destination           Destination
-	Files                 []FileMetadata
-	FileCount             int
-	TotalBytes            int64
-	CandidateScan         ScanSummary
-	HistoryScan           ScanSummary
-	Verification          VerificationSummary
-	README                READMEStatus
-	License               LicenseSummary
-	Readiness             Readiness
-	WorkflowSafe          bool
-	WorkflowSolo          bool
-	FeatureBranchApproved bool
-	ProtectedBranch       bool
-	StatusChecksRequired  bool
-	StatusChecksPassed    bool
-	ReasonCodes           []string
-	Digest                string
+	Mode                  string              `json:"mode"`
+	FirstPublication      bool                `json:"first_publication"`
+	Ready                 bool                `json:"ready"`
+	PublicAuthorized      bool                `json:"public_authorized"`
+	Destination           Destination         `json:"destination"`
+	Files                 []FileMetadata      `json:"files"`
+	FileCount             int                 `json:"file_count"`
+	TotalBytes            int64               `json:"total_bytes"`
+	CandidateScan         ScanSummary         `json:"candidate_scan"`
+	HistoryScan           ScanSummary         `json:"history_scan"`
+	Verification          VerificationSummary `json:"verification"`
+	README                READMEStatus        `json:"readme"`
+	License               LicenseSummary      `json:"license"`
+	Readiness             Readiness           `json:"readiness"`
+	WorkflowSafe          bool                `json:"workflow_safe"`
+	WorkflowSolo          bool                `json:"workflow_solo"`
+	FeatureBranchApproved bool                `json:"feature_branch_approved"`
+	ProtectedBranch       bool                `json:"protected_branch"`
+	StatusChecksRequired  bool                `json:"status_checks_required"`
+	StatusChecksPassed    bool                `json:"status_checks_passed"`
+	ReasonCodes           []string            `json:"reason_codes"`
+	Digest                string              `json:"digest"`
 }
 
 type ScanSummary struct {

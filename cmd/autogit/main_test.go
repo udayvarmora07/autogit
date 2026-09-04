@@ -7,13 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"autogit/internal/events"
+	"autogit/internal/policy"
 	"autogit/internal/provider"
+	"autogit/internal/publication"
 	"autogit/internal/repository"
 	"autogit/internal/state"
+	"autogit/internal/verification"
 )
 
 func TestInvalidHookDoesNotCreateDurableState(t *testing.T) {
@@ -235,6 +239,244 @@ func TestRetryRequiresExplicitJobRepositoryAndRemote(t *testing.T) {
 	if err := run([]string{"retry", "--id", "job", "--repo", "/tmp/repo"}, strings.NewReader(""), &out); err == nil || !strings.HasPrefix(err.Error(), "E_SCOPE:") {
 		t.Fatalf("missing retry remote error=%v", err)
 	}
+}
+
+func TestPublishRequiresExplicitDestinationBeforeProviderDiscovery(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	var out bytes.Buffer
+	err := run([]string{"publish", "--id", "commit-1", "--repo", t.TempDir()}, strings.NewReader(""), &out)
+	if err == nil || !strings.HasPrefix(err.Error(), "E_SCOPE:") {
+		t.Fatalf("publish accepted incomplete destination: %v output=%s", err, out.String())
+	}
+	entries, readErr := os.ReadDir(stateDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("invalid publish created state before validation: %v", entries)
+	}
+}
+
+func TestEnableLocalFlagRemainsLocalWithFollowingRepositoryFlag(t *testing.T) {
+	p := enabledPolicy([]string{"--local", "--repo", "/tmp/project"}, 3)
+	if p.Tracking != "local" || !p.LocalOnly || p.Provider != "" {
+		t.Fatalf("local policy was changed by following value flag: %+v", p)
+	}
+}
+
+func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(gitPath, "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Example\n\n## Usage\nrun it\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(gitPath, "-C", root, "add", "--", "README.md").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	if output, err := exec.Command(gitPath, "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	if output, err := exec.Command(gitPath, "-C", root, "remote", "add", "origin", "https://github.com/owner/repo").CombinedOutput(); err != nil {
+		t.Fatalf("git remote: %v: %s", err, output)
+	}
+	for _, config := range [][]string{{"user.name", "AutoGit"}, {"user.email", "autogit@example.test"}} {
+		if output, err := exec.Command(gitPath, "-C", root, "config", config[0], config[1]).CombinedOutput(); err != nil {
+			t.Fatalf("git config: %v: %s", err, output)
+		}
+	}
+	if err := run([]string{"enable", "--repo", root, "--provider", "github", "--owner", "owner", "--destination", "owner/repo", "--visibility", "private"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := os.ReadFile(filepath.Join(stateDir, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(mustCommand(t, gitPath, "-C", root, "rev-parse", "HEAD")))
+	tree := strings.TrimSpace(string(mustCommand(t, gitPath, "-C", root, "rev-parse", "HEAD^{tree}")))
+	digest := func(ch byte) string { return "sha256:" + strings.Repeat(string(ch), 64) }
+	db, err := state.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PutGitCommitIntent(context.Background(), state.GitCommitIntent{ID: "commit-publish", RepoDir: info.Root, Ref: "refs/autogit/commits/commit-publish", TreeOID: tree, ParentSHA: sha, Message: "feat: publish candidate\n", CandidateDigest: digest('a'), MessageDigest: digest('b'), SnapshotDigest: digest('c'), PolicyDigest: digest('d'), VerifierDigest: digest('e'), GuardDigest: digest('f')}); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.RecordGitCommit(context.Background(), "commit-publish", sha); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+	if output, err := exec.Command(gitPath, "-C", root, "update-ref", "refs/autogit/commits/commit-publish", sha).CombinedOutput(); err != nil {
+		t.Fatalf("git autogit ref: %v: %s", err, output)
+	}
+
+	fakeBin := t.TempDir()
+	ghState := filepath.Join(fakeBin, "gh-state")
+	ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else : > '" + ghState + "'; printf '%s\\n' 'Not Found' >&2; exit 1; fi\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "gh"), []byte(ghScript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "git"), []byte(gitScript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out bytes.Buffer
+	if err := run([]string{"publish", "--id", "commit-publish", "--repo", root, "--remote", "origin", "--owner", "owner", "--name", "repo", "--ref", "main", "--visibility", "private"}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("publish: %v output=%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"reason_code":"PUBLISH_SUCCEEDED"`) || !strings.Contains(out.String(), `"commit_sha":"`+sha+`"`) {
+		t.Fatalf("publish output=%s", out.String())
+	}
+	db, err = state.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := db.PushJob("commit-publish")
+	db.Close()
+	if err != nil || job.State != state.PushSucceeded || job.CommitSHA != sha || job.RemoteDigest == "" {
+		t.Fatalf("push job=%+v err=%v", job, err)
+	}
+	if err := run([]string{"enable", "--repo", root, "--provider", "github", "--owner", "owner", "--destination", "owner/repo", "--visibility", "public", "--public-consent"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	var publicOut bytes.Buffer
+	if err := run([]string{"publish", "--id", "commit-publish", "--repo", root, "--remote", "origin", "--owner", "owner", "--name", "repo", "--ref", "main", "--visibility", "public", "--mode", "public", "--public-consent"}, strings.NewReader(""), &publicOut); err != nil {
+		t.Fatalf("public preflight: %v output=%s", err, publicOut.String())
+	}
+	if !strings.Contains(publicOut.String(), `"reason_code":"PUBLIC_PREFLIGHT_REQUIRED"`) || !strings.Contains(publicOut.String(), `"preflight"`) || !strings.Contains(publicOut.String(), `"repository":"repo"`) {
+		t.Fatalf("public preflight output=%s", publicOut.String())
+	}
+}
+
+func TestParsePublishPublicEvidenceOptions(t *testing.T) {
+	got, err := parsePublishArgs([]string{
+		"--id", "commit-1", "--repo", "/repo", "--remote", "origin",
+		"--owner", "owner", "--name", "repo", "--ref", "feature/public",
+		"--visibility", "public", "--mode", "public", "--public-consent",
+		"--confirm-destination", "--feature-branch-approved", "--tests", "passed",
+		"--ci", "present", "--verifiers", "/trusted/verifiers.json",
+		"--license", "LICENSE", "--protected-branch", "--status-checks-required",
+		"--status-checks-passed",
+	})
+	if err != nil {
+		t.Fatalf("parse public publish evidence: %v", err)
+	}
+	if !got.PublicConsent || !got.ConfirmDestination || !got.FeatureBranchApproved || !got.ProtectedBranch || !got.StatusChecksRequired || !got.StatusChecksPassed {
+		t.Fatalf("boolean evidence was not retained: %+v", got)
+	}
+	if got.Tests != publication.StatusPassed || got.CI != publication.StatusPresent || got.Verifiers != "/trusted/verifiers.json" || got.License != "LICENSE" {
+		t.Fatalf("evidence values were not retained: %+v", got)
+	}
+}
+
+func TestPublicPreflightCanAuthorizeOnlyWithExactTreeEvidence(t *testing.T) {
+	stateRoot := t.TempDir()
+	root := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(gitPath, "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	for path, content := range map[string]string{
+		"README.md": "# Example\n\n## Usage\nrun it\n",
+		"LICENSE":   "Copyright AutoGit\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if output, err := exec.Command(gitPath, "-C", root, "add", "--", "README.md", "LICENSE").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	if output, err := exec.Command(gitPath, "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: publishable candidate").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	sha := strings.TrimSpace(string(mustCommand(t, gitPath, "-C", root, "rev-parse", "HEAD")))
+	tree := strings.TrimSpace(string(mustCommand(t, gitPath, "-C", root, "rev-parse", "HEAD^{tree}")))
+	verifierPath := filepath.Join(stateRoot, "verifiers.json")
+	if err := os.WriteFile(verifierPath, []byte(`{"version":"1","verifiers":[{"name":"unit","version":"1","argv":["/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.LoadTrustedRegistryFile(verifierPath, stateRoot, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := state.GitCommitIntentRecord{Intent: state.GitCommitIntent{RepoDir: root, TreeOID: tree, ParentSHA: sha, CandidateDigest: "sha256:" + strings.Repeat("a", 64), PolicyDigest: "sha256:" + strings.Repeat("b", 64), VerifierDigest: registry.VerifierSetDigest, GuardDigest: "sha256:" + strings.Repeat("c", 64)}, SHA: sha, State: state.CommitCreated}
+	report := buildPublicPreflight(context.Background(), stateRoot, root, intent, publishOptions{Owner: "owner", Name: "repo", Ref: "feature/public", Visibility: publication.VisibilityPublic, Mode: publication.ModePublic, License: "LICENSE", Verifiers: verifierPath, Tests: publication.StatusPassed, CI: publication.StatusPresent, PublicConsent: true, ConfirmDestination: true, FeatureBranchApproved: true}, policy.Policy{Workflow: publication.WorkflowSafe})
+	if !report.CanPublishPublic() {
+		t.Fatalf("complete evidence was blocked: %+v", report)
+	}
+	if report.Verification.Required != 1 || report.Verification.PassedCount != 1 || !report.CandidateScan.Passed || !report.HistoryScan.Passed {
+		t.Fatalf("evidence was not reflected in report: %+v", report)
+	}
+}
+
+func TestInstallListDiscoversAllAdapterCapabilitiesWithoutStateMutation(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	var out bytes.Buffer
+	if err := run([]string{"install", "--list"}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("install --list: %v output=%s", err, out.String())
+	}
+	for _, name := range []string{"codex", "claude-code", "cursor", "gemini-cli", "opencode", "commandcode"} {
+		if !strings.Contains(out.String(), `"adapter":"`+name+`"`) {
+			t.Fatalf("adapter %q missing from discovery output=%s", name, out.String())
+		}
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("install --list mutated state: %v", entries)
+	}
+}
+
+func TestTrustedExecutableRejectsFinalSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink executable policy is covered by native Windows process tests")
+	}
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "real-tool")
+	if err := os.WriteFile(realPath, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realPath, filepath.Join(dir, "tool")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	if _, err := trustedExecutable("tool"); err == nil {
+		t.Fatal("trusted executable accepted a final-component symlink")
+	}
+}
+
+func mustCommand(t *testing.T, executable string, args ...string) []byte {
+	t.Helper()
+	output, err := exec.Command(executable, args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("command %s %v: %v: %s", executable, args, err, output)
+	}
+	return output
 }
 
 func TestRetryRejectsTerminalJobBeforeProviderDiscovery(t *testing.T) {

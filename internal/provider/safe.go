@@ -389,6 +389,33 @@ func (g GH) EnsureRemote(ctx context.Context, owner, name, visibility string) (s
 	return g.Create(ctx, RemoteRequest{Owner: owner, Name: name, Visibility: visibility})
 }
 
+// ConfirmRepository verifies an existing repository's canonical identity and
+// visibility without creating, attaching, or mutating it. Publication calls
+// this after local preflight and before the first push.
+func (g GH) ConfirmRepository(ctx context.Context, r RemoteRequest) error {
+	if err := validIdentity(r); err != nil {
+		return err
+	}
+	if g.Runner == nil {
+		return errors.New("provider runner is required")
+	}
+	full, err := g.run(ctx, "api", "repos/"+r.Owner+"/"+r.Name, "--jq", ".full_name")
+	if err != nil {
+		return err
+	}
+	if parseGHString(full.Output) != r.Owner+"/"+r.Name {
+		return &ProviderError{Kind: KindPostcondition, Err: ErrPostcondition}
+	}
+	visibility, err := g.run(ctx, "api", "repos/"+r.Owner+"/"+r.Name, "--jq", ".visibility")
+	if err != nil {
+		return err
+	}
+	if parseGHString(visibility.Output) != r.Visibility {
+		return &ProviderError{Kind: KindPostcondition, Err: ErrPostcondition}
+	}
+	return nil
+}
+
 // InspectRef adapts the legacy remote-string port while retaining the strict
 // owner/name/ref validation used by Inspect.
 func (g GH) InspectRef(ctx context.Context, remote, ref string) (string, error) {

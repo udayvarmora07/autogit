@@ -50,6 +50,22 @@ func TestPreflightAllowsCompleteFirstPublicPublication(t *testing.T) {
 	}
 }
 
+func TestPreflightReportUsesStableLowercaseJSONFieldNames(t *testing.T) {
+	raw, err := json.Marshal(Evaluate(validRequest()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, field := range []string{`"mode"`, `"ready"`, `"public_authorized"`, `"destination"`, `"reason_codes"`, `"digest"`} {
+		if !strings.Contains(text, field) {
+			t.Fatalf("field %s missing from report JSON: %s", field, text)
+		}
+	}
+	if strings.Contains(text, `"Mode"`) || strings.Contains(text, `"PublicAuthorized"`) {
+		t.Fatalf("report exposed Go field names: %s", text)
+	}
+}
+
 func TestPreflightRequiresExplicitPublicConsent(t *testing.T) {
 	req := validRequest()
 	req.PublicConsent = false

@@ -1,7 +1,7 @@
 # AutoGit v1 implementation plan
 
-Status: Execution in progress — foundation slice implemented; Phase 1 exit not claimed  
-Last updated: 2026-09-01
+Status: Execution in progress — local workflow and private publication slices implemented; phase exits not claimed
+Last updated: 2026-09-04
 
 ## 1. Objective and delivery shape
 
@@ -246,7 +246,9 @@ Open gates and next priorities:
       window.
 - [ ] Bridge durable session/repository observations into owned candidate
       derivation and the verified local-commit workflow.
-- [ ] Wire provider intent plus `verify`/`sync`/`retry` CLI behavior.
+- [x] Complete local public preflight/provider CLI publication, including
+      readiness evidence and exact remote visibility postconditions; live
+      canary evidence remains a separate release gate.
 - [ ] Run native hosted macOS and Windows coverage.
 - [ ] Run an opt-in disposable GitHub canary with exact postconditions and
       allowlisted cleanup.
@@ -330,8 +332,10 @@ lifecycle-driven CLI/session completion still needs wiring), complete
 trusted verification policy configuration for all workflow modes, complete
 adapter discovery/installation and
 workflow orchestration in the CLI,
-the complete CLI publication/provider workflow, provider intent wiring from the
-CLI, the >=609 release-test target, and the opt-in disposable-provider canary.
+repository-creation transactions, the >=609 release-test target, and the
+opt-in disposable-provider canary. Explicit private and evidence-gated public
+`publish` paths plus durable provider intent wiring are implemented, but do not
+satisfy those broader release gates.
 The prototype shell test scripts described by the test strategy are not present
 in this checkout, so their 177-case baseline has not been rerun. Native macOS
 and Windows CI has not yet been observed; the workflow definition is evidence
@@ -347,3 +351,38 @@ commands pass locally. These are cross-build smoke checks, not native OS
 execution evidence; native macOS and Windows CI has not been observed.
 Provider credentials, network publication, and user-project fixtures are not
 used.
+
+### 10.2 Local implementation evidence (2026-09-04)
+
+The following additional slices are implemented and covered by deterministic
+tests:
+
+- `cmd/autogit publish` accepts only a completed AutoGit commit intent for the
+  discovered repository and requires an explicit remote alias, owner,
+  repository, branch, and visibility. It validates tracking/provider policy
+  before resolving `gh` and records one immutable push intent keyed by the
+  commit ID.
+- Private publication uses the provider's exact remote URL binding and exact
+  commit-SHA/ref postcondition through the durable coordinator. A transient
+  provider failure remains `RETRY_WAIT`; a successful retry reuses the same
+  SHA and destination identity.
+- Remote policy can be enabled explicitly with `--provider github`,
+  `--owner`, `--destination`, and visibility; the default `enable` behavior
+  remains local-only and private. Public policy and command consent are
+  separate requirements.
+- Public `publish` returns a bounded, lowercase-JSON preflight report before
+  provider executable discovery when the required local candidate/history,
+  verification, README/license, and readiness evidence is not available. When
+  all explicit evidence passes, it confirms hosted owner/name/visibility before
+  allowing the exact-SHA push.
+- `install --list` exposes all six adapter manifests and marks observation-only
+  clients as non-installable until a stable client hook contract exists; it
+  does not discover implicit configuration paths or mutate state.
+- The CLI trusted executable resolver rejects a final-component symlink, and
+  durable push intents retain a canonical remote-destination digest.
+
+Fresh local evidence for this slice is `go test ./...`, `go test -race ./...`,
+`go vet ./...`, and `go build ./...`. The private publication test uses fake
+local `git`/`gh` executables and no network credentials. This evidence does
+not satisfy the live GitHub canary, native macOS/Windows, prototype-regression,
+or release-count gates.

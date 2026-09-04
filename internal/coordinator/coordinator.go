@@ -16,8 +16,8 @@ import (
 type CommitRequest struct{ ID, CandidateDigest, BaseSHA, MessageDigest, PolicyDigest, VerifierDigest, GuardDigest string }
 type CommitEvidence struct{ CandidateDigest, BaseSHA, MessageDigest, PolicyDigest, VerifierDigest, GuardDigest string }
 type PushRequest struct {
-	ID, Owner, Name, Ref, CommitSHA string
-	LocalOnly                       bool
+	ID, Owner, Name, Ref, CommitSHA, RemoteDigest string
+	LocalOnly                                     bool
 }
 
 // ConfirmPushOutcome is a typed remote postcondition. A missing ref permits
@@ -139,7 +139,7 @@ func (s *StateStore) RecordReconcile(ctx context.Context, id string) error {
 }
 func (s *StateStore) PutPushIntent(ctx context.Context, r PushRequest) error {
 	return s.DB.WithTx(ctx, func(tx *state.Tx) error {
-		return tx.PutPushJob(state.PushJob{ID: r.ID, Owner: r.Owner, Name: r.Name, Ref: r.Ref, CommitSHA: r.CommitSHA, State: state.PushRequested, LocalOnly: r.LocalOnly})
+		return tx.PutPushJob(state.PushJob{ID: r.ID, Owner: r.Owner, Name: r.Name, Ref: r.Ref, CommitSHA: r.CommitSHA, RemoteDigest: r.RemoteDigest, State: state.PushRequested, LocalOnly: r.LocalOnly})
 	})
 }
 func (s *StateStore) MarkPushSkipped(ctx context.Context, id string) error {
@@ -163,7 +163,7 @@ func (s *StateStore) PushStatus(_ context.Context, id string) (string, PushReque
 	if errors.Is(e, sql.ErrNoRows) {
 		return "", PushRequest{}, nil
 	}
-	return j.State, PushRequest{ID: j.ID, Owner: j.Owner, Name: j.Name, Ref: j.Ref, CommitSHA: j.CommitSHA, LocalOnly: j.LocalOnly}, e
+	return j.State, PushRequest{ID: j.ID, Owner: j.Owner, Name: j.Name, Ref: j.Ref, CommitSHA: j.CommitSHA, RemoteDigest: j.RemoteDigest, LocalOnly: j.LocalOnly}, e
 }
 func (s *StateStore) MarkPushBlocked(ctx context.Context, id string) error {
 	j, e := s.DB.PushJob(id)
@@ -270,14 +270,14 @@ func (c Coordinator) Push(ctx context.Context, r PushRequest) (err error) {
 	if c.Store == nil {
 		return errors.New("push coordinator store missing")
 	}
-	if r.ID == "" || !shaRE.MatchString(r.CommitSHA) {
+	if r.ID == "" || !shaRE.MatchString(r.CommitSHA) || r.RemoteDigest != "" && !digestRE.MatchString(r.RemoteDigest) {
 		return errors.New("invalid push evidence")
 	}
 	status, persisted, err := c.Store.PushStatus(ctx, r.ID)
 	if err != nil {
 		return err
 	}
-	if status != "" && (persisted.Owner != r.Owner || persisted.Name != r.Name || persisted.Ref != r.Ref || persisted.CommitSHA != r.CommitSHA || persisted.LocalOnly != r.LocalOnly) {
+	if status != "" && (persisted.Owner != r.Owner || persisted.Name != r.Name || persisted.Ref != r.Ref || persisted.CommitSHA != r.CommitSHA || persisted.RemoteDigest != r.RemoteDigest || persisted.LocalOnly != r.LocalOnly) {
 		return errors.New("push job identity conflict")
 	}
 	if status == "SUCCEEDED" {
