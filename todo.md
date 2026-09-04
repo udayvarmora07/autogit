@@ -224,7 +224,8 @@ These eight bounded slices were implemented with focused red-green tests:
   evidence across existing session rows.
 - [x] Resume hook-captured sessions across processes with
   `sync --complete --all-owned`, excluding unchanged/pre-existing work and
-  blocking changed baseline paths.
+  blocking changed baseline paths, while preserving clean tracked
+  rename/delete operations from the immutable baseline tree.
 - [x] Make `doctor` read-only before initialization and report state/lease
   readiness without creating local state.
 - [x] Require an ingress completion claim for core completion candidates and

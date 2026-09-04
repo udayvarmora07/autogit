@@ -143,6 +143,28 @@ func TestCaptureCommittedFilesRejectsUnsafeTreeEntries(t *testing.T) {
 	}
 }
 
+func TestCaptureCommittedPathPresenceDoesNotReadBlobContents(t *testing.T) {
+	root := t.TempDir()
+	head := strings.Repeat("a", 40)
+	object := strings.Repeat("b", 40)
+	runner := &observationRunner{outputs: map[string]string{
+		"ls-tree\x00-z\x00--full-tree\x00" + head + "\x00--\x00deleted.txt": "100644 blob " + object + "\tdeleted.txt\x00",
+		"ls-tree\x00-z\x00--full-tree\x00" + head + "\x00--\x00new.txt":     "",
+	}}
+	got, err := CaptureCommittedPathPresence(context.Background(), runner, root, head, []string{"deleted.txt", "new.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got["deleted.txt"] || got["new.txt"] {
+		t.Fatalf("presence=%v", got)
+	}
+	for _, call := range runner.calls {
+		if len(call) >= 2 && call[0] == "cat-file" {
+			t.Fatal("path presence read blob content")
+		}
+	}
+}
+
 func TestCaptureBaselineCanonicalizesRootBeforeRunningGit(t *testing.T) {
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {

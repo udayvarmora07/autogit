@@ -162,7 +162,11 @@ func BuildObservedPlan(baseline, current ObservedSnapshot, requested []string) (
 // fingerprints and a fresh current observation. A changed pre-existing path
 // remains ambiguous; a path absent from the manifest is owned only when it is
 // currently present.
-func BuildPlanFromFingerprints(baseline map[string]Fingerprint, current ObservedSnapshot, requested []string) (Plan, error) {
+func BuildPlanFromFingerprints(baseline map[string]Fingerprint, current ObservedSnapshot, requested []string, baselineTracked ...map[string]bool) (Plan, error) {
+	tracked := map[string]bool{}
+	if len(baselineTracked) > 0 && baselineTracked[0] != nil {
+		tracked = baselineTracked[0]
+	}
 	seen := map[string]bool{}
 	p := Plan{}
 	for _, name := range requested {
@@ -176,6 +180,23 @@ func BuildPlanFromFingerprints(baseline map[string]Fingerprint, current Observed
 		old, had := baseline[name]
 		now, observed := current[name]
 		exists := observed && observedPresent(now)
+		if had && tracked[name] {
+			if !exists {
+				if old.Present {
+					return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
+				}
+				// A tracked path already deleted before the session is
+				// unchanged when it remains absent.
+				continue
+			}
+			if !old.Present {
+				return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
+			}
+			if !sameFingerprint(old, now) {
+				return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
+			}
+			continue
+		}
 		if had && old.Present {
 			if !sameFingerprint(old, now) {
 				return Plan{}, fmt.Errorf("ambiguous ownership for %q", name)
@@ -183,6 +204,11 @@ func BuildPlanFromFingerprints(baseline map[string]Fingerprint, current Observed
 			continue
 		}
 		if !exists {
+			if tracked[name] {
+				p.Paths = append(p.Paths, name)
+				p.Changes = append(p.Changes, Change{Path: name, Operation: "deleted"})
+				p.candidate = append(p.candidate, SnapshotEntry{Path: name, Delete: true})
+			}
 			continue
 		}
 		if now.Symlink {

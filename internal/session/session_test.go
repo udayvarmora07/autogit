@@ -234,6 +234,53 @@ func TestResumeFromDurableManifestBlocksChangedPreexistingPath(t *testing.T) {
 	}
 }
 
+func TestResumeFromDurableManifestOwnsCleanTrackedRenameAcrossProcesses(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "old.txt"), []byte("rename me\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "old.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	baseline, err := repository.CaptureBaseline(context.Background(), repository.SystemRunner{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := []byte("session-identity-key")
+	baseline.DurableEvidence, err = repository.EncodeDurableBaseline(baseline, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "old.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("rename me\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Runner: repository.SystemRunner{}}
+	started, err := service.ResumeFromDurable(context.Background(), Request{SessionID: "s", RepositoryID: "r", ClientID: "codex", Root: root, IdentityKey: key}, DurableBaseline{
+		Head: baseline.Head, IndexDigest: baseline.IndexDigest, StatusDigest: baseline.StatusDigest, PathsDigest: baseline.PathsDigest, Evidence: baseline.DurableEvidence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.BuildOwnedPlanAtCurrent(context.Background(), started.Request, started.Baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 2 || entries[0].Path != "new.txt" || !entries[1].Delete || entries[1].Path != "old.txt" {
+		t.Fatalf("rename candidate=%+v", entries)
+	}
+}
+
 func TestBuildOwnedPlanBridgesDurableBaselineToCurrentOwnedFiles(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {

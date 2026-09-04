@@ -66,6 +66,33 @@ func TestBuildPlanFromFingerprintsOwnsOnlyNewChanges(t *testing.T) {
 	}
 }
 
+func TestBuildPlanFromFingerprintsPreservesCleanTrackedDeletionAndRename(t *testing.T) {
+	current := ObservedSnapshot{
+		"new.txt": {Content: []byte("renamed\n"), Mode: 0644, Present: true},
+		"old.txt": {Present: false},
+	}
+	plan, err := BuildPlanFromFingerprints(nil, current, []string{"old.txt", "new.txt"}, map[string]bool{"old.txt": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := plan.CandidateSnapshot()
+	if len(entries) != 2 || entries[0].Path != "new.txt" || string(entries[0].Content) != "renamed\n" || !entries[1].Delete || entries[1].Path != "old.txt" {
+		t.Fatalf("candidate=%+v", entries)
+	}
+}
+
+func TestBuildPlanFromFingerprintsBlocksRecreationOfPreexistingTrackedDeletion(t *testing.T) {
+	_, err := BuildPlanFromFingerprints(
+		map[string]Fingerprint{"old.txt": {Present: false}},
+		ObservedSnapshot{"old.txt": {Content: []byte("recreated\n"), Mode: 0644, Present: true}},
+		[]string{"old.txt"},
+		map[string]bool{"old.txt": true},
+	)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("recreated pre-existing deletion error=%v", err)
+	}
+}
+
 func TestPlanCandidateSnapshotIsolatedFromFilesystemObservations(t *testing.T) {
 	baseline := Snapshot{
 		"unchanged.txt": "same",

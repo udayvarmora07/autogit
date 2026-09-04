@@ -450,11 +450,13 @@ session rows and validates it on replay.
 process. It re-observes `HEAD`, the shared index, and current status, maps
 current paths to the manifest with the repository identity key, excludes paths
 unchanged from the baseline, blocks edits/deletions of pre-existing dirty
-paths, and owns only newly changed paths. The explicit `--path` mode remains
-available for a narrower caller-selected candidate. Tests cover clean and
-dirty cross-process resumes, pre-existing-work exclusion, changed-baseline
-blocking, key binding, malformed evidence, and absence of raw path/source
-leakage.
+paths, and owns only newly changed paths. For clean tracked paths, it also
+consults the immutable baseline tree so deletions and renames become explicit
+delete/add entries rather than silently losing the deletion. The explicit
+`--path` mode remains available for a narrower caller-selected candidate.
+Tests cover clean and dirty cross-process resumes, pre-existing-work
+exclusion, changed-baseline blocking, clean tracked rename/delete handling,
+key binding, malformed evidence, and absence of raw path/source leakage.
 
 `doctor` is read-only even before initialization: it reports unavailable
 state/lease stores without creating the state directory, database, or identity

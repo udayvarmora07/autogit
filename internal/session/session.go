@@ -159,7 +159,7 @@ func (s Service) BuildOwnedPlanAtCurrent(ctx context.Context, req Request, basel
 		return staging.Plan{}, errors.New("shared index changed since session baseline")
 	}
 	if len(req.Paths) == 0 {
-		return s.buildPlanFromDurableEvidence(req, baseline, current)
+		return s.buildPlanFromDurableEvidence(ctx, req, baseline, current)
 	}
 	return staging.BuildPlanFromBaselines(baseline, current, req.Paths)
 }
@@ -197,7 +197,7 @@ func (s Service) CaptureAndRecord(ctx context.Context, req Request) (repository.
 	return baseline, nil
 }
 
-func (s Service) buildPlanFromDurableEvidence(req Request, baseline repository.Baseline, current repository.Baseline) (staging.Plan, error) {
+func (s Service) buildPlanFromDurableEvidence(ctx context.Context, req Request, baseline repository.Baseline, current repository.Baseline) (staging.Plan, error) {
 	if len(req.IdentityKey) == 0 || baseline.DurableEvidence == "" {
 		return staging.Plan{}, errors.New("durable session baseline identity is unavailable")
 	}
@@ -210,6 +210,10 @@ func (s Service) buildPlanFromDurableEvidence(req Request, baseline repository.B
 		byID[file.PathID] = file
 	}
 	fingerprints := make(map[string]staging.Fingerprint)
+	baselineTracked, err := repository.CaptureCommittedPathPresence(ctx, s.Runner, req.Root, baseline.Head, current.Paths)
+	if err != nil {
+		return staging.Plan{}, err
+	}
 	for _, name := range current.Paths {
 		pathID, idErr := repository.DurablePathID(req.IdentityKey, name)
 		if idErr != nil {
@@ -221,7 +225,7 @@ func (s Service) buildPlanFromDurableEvidence(req Request, baseline repository.B
 		}
 		fingerprints[name] = staging.Fingerprint{ContentDigest: file.ContentDigest, Mode: os.FileMode(file.Mode), Present: file.Present, Symlink: file.Symlink}
 	}
-	return staging.BuildPlanFromFingerprints(fingerprints, toObserved(current), current.Paths)
+	return staging.BuildPlanFromFingerprints(fingerprints, toObserved(current), current.Paths, baselineTracked)
 }
 
 func toObserved(baseline repository.Baseline) staging.ObservedSnapshot {

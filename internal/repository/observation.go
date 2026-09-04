@@ -321,6 +321,66 @@ func CaptureCommittedFiles(ctx context.Context, runner Runner, root, head string
 	return files, nil
 }
 
+// CaptureCommittedPathPresence checks whether each requested path existed in
+// an immutable committed tree without reading blob contents. It lets a
+// source-free session baseline distinguish a clean tracked deletion from a
+// newly created/untracked path during restart recovery.
+func CaptureCommittedPathPresence(ctx context.Context, runner Runner, root, head string, paths []string) (map[string]bool, error) {
+	if runner == nil || root == "" {
+		return nil, errors.New("committed-path runner and root are required")
+	}
+	if head != "" && !validObjectID(head) {
+		return nil, errors.New("invalid committed-path HEAD")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("committed-path root: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		return nil, errors.New("committed-path root is not a directory")
+	}
+	present := make(map[string]bool, len(paths))
+	seen := make(map[string]bool, len(paths))
+	for _, name := range paths {
+		if err := validateRelativePath(name); err != nil {
+			return nil, fmt.Errorf("invalid committed path: %w", err)
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		if head == "" {
+			present[name] = false
+			continue
+		}
+		treeResult, runErr := runObservation(ctx, runner, abs, nil, 1<<20, "ls-tree", "-z", "--full-tree", head, "--", name)
+		if runErr != nil {
+			return nil, fmt.Errorf("read committed path %q: %w", name, runErr)
+		}
+		mode, _, treePath, found, parseErr := parseCommittedTreeEntry(treeResult.Output)
+		if parseErr != nil {
+			return nil, fmt.Errorf("read committed path %q: %w", name, parseErr)
+		}
+		if !found {
+			present[name] = false
+			continue
+		}
+		if treePath != name {
+			return nil, fmt.Errorf("committed tree path mismatch: got %q, want %q", treePath, name)
+		}
+		if mode != 0100644 && mode != 0100755 && mode != 0120000 {
+			return nil, fmt.Errorf("committed path %q is not a supported file entry", name)
+		}
+		present[name] = true
+	}
+	return present, nil
+}
+
 type boundedRunner interface {
 	RunBounded(context.Context, string, map[string]string, int64, ...string) (CommandResult, error)
 }
