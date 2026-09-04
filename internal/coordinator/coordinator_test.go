@@ -5,6 +5,8 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,6 +33,111 @@ func TestCommitIntentPrecedesEffectAndRecoveryAvoidsDuplicate(t *testing.T) {
 	}
 	if g.calls != 1 {
 		t.Fatal("recovery repeated commit")
+	}
+}
+
+func TestCommitIntentPersistenceFailurePreventsGitEffect(t *testing.T) {
+	s := newMemoryStore()
+	s.putCommitErr = errors.New("commit intent unavailable")
+	g := &fakeGit{sha: strings.Repeat("a", 40)}
+	if err := (Coordinator{Store: s, Git: g}).Commit(context.Background(), validCommitRequest("intent-failure")); !errors.Is(err, s.putCommitErr) {
+		t.Fatalf("error=%v, want intent persistence error", err)
+	}
+	if g.calls != 0 || len(s.intents) != 0 {
+		t.Fatalf("git calls=%d intents=%d after intent failure", g.calls, len(s.intents))
+	}
+}
+
+func TestPushIntentPersistenceFailurePreventsProviderEffect(t *testing.T) {
+	s := newMemoryStore()
+	s.putPushErr = errors.New("push intent unavailable")
+	p := &fakeProvider{confirmed: true}
+	r := PushRequest{ID: "push-intent-failure", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	if err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), r); !errors.Is(err, s.putPushErr) {
+		t.Fatalf("error=%v, want intent persistence error", err)
+	}
+	if p.calls != 0 || p.confirms != 0 || s.status[r.ID] != "" {
+		t.Fatalf("provider calls=%d confirms=%d status=%q after intent failure", p.calls, p.confirms, s.status[r.ID])
+	}
+}
+
+func TestCommitResultPersistenceFailureRemainsRecoverable(t *testing.T) {
+	s := newMemoryStore()
+	s.recordCommitErr = errors.New("commit result unavailable")
+	req := validCommitRequest("result-failure")
+	sha := strings.Repeat("a", 40)
+	g := &fakeGit{sha: sha, inspect: sha}
+	if err := (Coordinator{Store: s, Git: g}).Commit(context.Background(), req); !errors.Is(err, s.recordCommitErr) {
+		t.Fatalf("error=%v, want result persistence error", err)
+	}
+	if g.calls != 1 || s.status[req.ID] != "COMMIT_REQUESTED" {
+		t.Fatalf("git calls=%d status=%q after result failure", g.calls, s.status[req.ID])
+	}
+	s.recordCommitErr = nil
+	if err := (Coordinator{Store: s, Git: g}).RecoverCommit(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if g.calls != 1 || s.status[req.ID] != "CREATED" {
+		t.Fatalf("git calls=%d status=%q after recovery", g.calls, s.status[req.ID])
+	}
+}
+
+func TestConcurrentCommitRetriesSameDurableIntentWithoutDuplicateGit(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	git := &atomicGit{sha: strings.Repeat("a", 40)}
+	coordinator := Coordinator{
+		Store: NewStateStore(db), Git: git,
+		Lease: StateLease{DB: db, TTL: time.Minute}, Owner: "worker",
+	}
+	req := validCommitRequest("concurrent-commit")
+	errs := make(chan error, 2)
+	var group sync.WaitGroup
+	for range 2 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			errs <- coordinator.Commit(context.Background(), req)
+		}()
+	}
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil && !strings.Contains(err.Error(), "lease held") {
+			t.Fatal(err)
+		}
+	}
+	if got := git.calls.Load(); got != 1 {
+		t.Fatalf("Git commit calls=%d, want one serialized effect", got)
+	}
+	if err := coordinator.Commit(context.Background(), req); err != nil {
+		t.Fatalf("retry after lease contention: %v", err)
+	}
+	if got := git.calls.Load(); got != 1 {
+		t.Fatalf("Git commit calls=%d after retry, want one serialized effect", got)
+	}
+}
+
+func TestPushResultPersistenceFailureReconcilesWithoutRepeatingProviderPush(t *testing.T) {
+	s := newMemoryStore()
+	s.markSucceededErr = errors.New("push result unavailable")
+	p := &fakeProvider{confirmed: true, confirmErrors: []error{nil}}
+	r := PushRequest{ID: "push-result-failure", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	if err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), r); !errors.Is(err, s.markSucceededErr) {
+		t.Fatalf("error=%v, want result persistence error", err)
+	}
+	if p.calls != 1 || p.confirms != 2 || s.status[r.ID] != "PUSH_REQUESTED" {
+		t.Fatalf("pushes=%d confirms=%d status=%q after result failure", p.calls, p.confirms, s.status[r.ID])
+	}
+	s.markSucceededErr = nil
+	if err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if p.calls != 1 || p.confirms != 3 || s.status[r.ID] != "SUCCEEDED" {
+		t.Fatalf("pushes=%d confirms=%d status=%q after reconciliation", p.calls, p.confirms, s.status[r.ID])
 	}
 }
 
@@ -408,14 +515,18 @@ func TestCreatedWithoutValidSHAReconcilesInsteadOfSucceeding(t *testing.T) {
 }
 
 type memoryStore struct {
-	intents        []CommitRequest
-	status         map[string]string
-	createdSHA     string
-	skipped        bool
-	trace          *[]string
-	pushes         map[string]PushRequest
-	markBlockedErr error
-	markRetryErr   error
+	intents          []CommitRequest
+	status           map[string]string
+	createdSHA       string
+	skipped          bool
+	trace            *[]string
+	pushes           map[string]PushRequest
+	putCommitErr     error
+	putPushErr       error
+	recordCommitErr  error
+	markSucceededErr error
+	markBlockedErr   error
+	markRetryErr     error
 }
 
 type recordingLease struct {
@@ -440,6 +551,9 @@ func newMemoryStore() *memoryStore {
 	return &memoryStore{status: map[string]string{}, trace: &[]string{}, pushes: map[string]PushRequest{}}
 }
 func (s *memoryStore) PutCommitIntent(_ context.Context, r CommitRequest) error {
+	if s.putCommitErr != nil {
+		return s.putCommitErr
+	}
 	*s.trace = append(*s.trace, "persist_intent")
 	s.intents = append(s.intents, r)
 	s.status[r.ID] = "COMMIT_REQUESTED"
@@ -454,6 +568,9 @@ func (s *memoryStore) CommitStatus(_ context.Context, id string) (string, string
 	return s.status[id], "", CommitRequest{}, nil
 }
 func (s *memoryStore) RecordCommit(_ context.Context, id, sha string) error {
+	if s.recordCommitErr != nil {
+		return s.recordCommitErr
+	}
 	*s.trace = append(*s.trace, "persist_result")
 	s.status[id] = "CREATED"
 	return nil
@@ -463,6 +580,9 @@ func (s *memoryStore) RecordReconcile(_ context.Context, id string) error {
 	return nil
 }
 func (s *memoryStore) PutPushIntent(_ context.Context, r PushRequest) error {
+	if s.putPushErr != nil {
+		return s.putPushErr
+	}
 	s.pushes[r.ID] = r
 	s.status[r.ID] = "PUSH_REQUESTED"
 	return nil
@@ -476,6 +596,9 @@ func (s *memoryStore) MarkPushSkipped(_ context.Context, id string) error {
 	return nil
 }
 func (s *memoryStore) MarkPushSucceeded(_ context.Context, id string) error {
+	if s.markSucceededErr != nil {
+		return s.markSucceededErr
+	}
 	s.status[id] = "SUCCEEDED"
 	return nil
 }
@@ -504,6 +627,20 @@ type fakeGit struct {
 	calls   int
 	trace   *[]string
 	inspect string
+}
+
+type atomicGit struct {
+	sha   string
+	calls atomic.Int32
+}
+
+func (g *atomicGit) Commit(context.Context, CommitRequest) (string, error) {
+	g.calls.Add(1)
+	return g.sha, nil
+}
+
+func (g *atomicGit) Inspect(context.Context, CommitRequest) (string, error) {
+	return g.sha, nil
 }
 
 func (g *fakeGit) Commit(_ context.Context, _ CommitRequest) (string, error) {

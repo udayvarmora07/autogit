@@ -89,6 +89,9 @@ func TestLeaseExpiresAndCanBeTakenOver(t *testing.T) {
 	if err := s.AcquireLease(context.Background(), Lease{Key: "repo/r", Owner: "a", ExpiresAt: now + 5}, now); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.AcquireLease(context.Background(), Lease{Key: "repo/r", Owner: "a", ExpiresAt: now + 5}, now); err == nil {
+		t.Fatal("same owner reacquired an active lease")
+	}
 	if err := s.AcquireLease(context.Background(), Lease{Key: "repo/r", Owner: "b", ExpiresAt: now + 5}, now+1); err == nil {
 		t.Fatal("active lease taken over")
 	}

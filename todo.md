@@ -63,7 +63,7 @@ claiming a phase exit:
 - [x] Capture durable session/task baselines from real repository observations
   (HEAD, index, status, modes, and owned paths), then feed them into staging;
   lifecycle-driven completion remains a separate open slice.
-- [ ] Extend real filesystem snapshot capture to detect race substitutions and
+- [x] Extend real filesystem snapshot capture to detect race substitutions and
   preserve rename/delete, ignore, linked-worktree, Unicode/control-path, and
   concurrent-writer rules; explicit regular-file content/mode capture and
   component-symlink rejection are covered.
@@ -107,8 +107,8 @@ tests:
 
 ## Required validation and release gates
 
-- [ ] Restore or replace the missing 177 prototype cases and reach the >=609
-  deterministic release-suite target.
+- [ ] Replace the recovered 177-case compatibility floor with Go v1 coverage
+  and reach the >=609 deterministic release-suite target.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
   scenarios pass; Go v1 replacement coverage and the >=609 target remain open.
 - [ ] Add fault-injection coverage for every durable intent boundary and the
@@ -237,6 +237,11 @@ These eight bounded slices were implemented with focused red-green tests:
   configuration digests.
 - [x] Add read-only `verify --all-owned` recovery for hook-captured sessions
   using source-free durable evidence without creating commit intents or refs.
+- [x] Add deterministic coordinator fault coverage proving commit/push intent
+  persistence failures cannot invoke external effects, and commit-result
+  persistence failure remains recoverable without repeating Git.
+- [x] Serialize durable lease release and reject active same-owner
+  reacquisition so concurrent commit requests cannot overlap or lose a lease.
 - [x] Require an ingress completion claim for core completion candidates and
   retry duplicate completion ingress deterministically.
 

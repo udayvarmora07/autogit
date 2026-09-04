@@ -256,8 +256,9 @@ Open gates and next priorities:
 - [ ] Run native hosted macOS and Windows coverage.
 - [ ] Run an opt-in disposable GitHub canary with exact postconditions and
       allowlisted cleanup.
-- [ ] Recover or replace the absent 177-case prototype suite and reach the
-      >=609 release-test target.
+- [x] Recover and rerun the installed 177-case prototype regression floor.
+- [ ] Replace that compatibility floor with Go v1 coverage and reach the
+      >=609 deterministic release-test target.
 - [ ] Complete all Phase 0 freeze, phase-exit, external-provider, native-OS,
       release, canary, and beta gates before claiming promotion.
 
@@ -342,11 +343,11 @@ initialization command is implemented. Explicit private and evidence-gated
 public `publish` paths, deterministic lifecycle fact emission,
 and the tested repository-creation/local-remote transaction package are
 implemented, but do not satisfy those broader release gates.
-The prototype shell test scripts described by the test strategy are not present
-in this checkout, so their 177-case baseline has not been rerun. Native macOS
-and Windows CI has not yet been observed; the workflow definition is evidence
-of planned coverage only. The local test suite does not make claims about those
-external or release-gate behaviors.
+The prototype shell test scripts are not part of this repository, but the
+installed reference checkout was rerun on 2026-09-05 and passed all 177
+disposable scenarios. Native macOS and Windows CI has not yet been observed;
+the workflow definition is evidence of planned coverage only. The local test
+suite does not make claims about those external or release-gate behaviors.
 
 ### 10.1 Portability evidence (local, 2026-09-01)
 
@@ -486,6 +487,33 @@ process. It is intentionally read-only: verification does not create a
 commit intent, move an AutoGit ref, or alter the shared index. Explicit
 `--path` verification remains available for callers that want a narrower
 candidate scope.
+
+### 10.7 Consistent filesystem baseline capture (2026-09-05)
+
+Baseline capture now re-observes `HEAD`, the Git index identity/content, and
+porcelain status after reading the selected files. Any repository change
+during that window fails closed instead of recording a mixed-time baseline.
+The capture boundary also retains the existing race-substitution checks and
+supports linked worktrees, Unicode paths, rename/delete status records, and
+Git-ignore/control-path validation. Real tests cover a concurrent status
+change, replacement during a read, linked-worktree index resolution, and a
+Unicode candidate path.
+
+### 10.8 Durable intent fault evidence (2026-09-05)
+
+Coordinator tests now inject failures at the initial commit and push intent
+write boundaries and assert that no Git or provider effect is invoked. They
+also inject commit-result persistence failure after the Git effect and verify
+that restart-style evidence reconciliation records the result without
+repeating the commit. This is deterministic boundary coverage; the required
+1,000 randomized crash/concurrency schedules and every external release gate
+remain open. A real SQLite lease test also runs two concurrent identical
+commit requests and verifies that only one Git effect occurs. Lease
+reacquisition now fails for every active owner, and release is serialized with
+acquisition, preventing same-process overlap and stale-owner release races.
+Commit processing rechecks the durable intent after waiting for the lease, so a
+contended retry observes a completed job instead of issuing a second Git
+effect.
 
 The four legacy compatibility suites were rerun from the installed reference
 checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,

@@ -218,6 +218,23 @@ func (c Coordinator) Commit(ctx context.Context, r CommitRequest) (err error) {
 				err = releaseErr
 			}
 		}()
+		// Another caller may have completed this same intent while this
+		// caller waited for the writer lease. Re-read the durable state after
+		// acquiring the lease; checking only before Acquire permits a
+		// duplicate Git effect after a contended wait.
+		status, sha, persisted, err = c.Store.CommitStatus(ctx, r.ID)
+		if err != nil {
+			return err
+		}
+		if status != "" && !r.EvidenceMatches(CommitEvidence{CandidateDigest: persisted.CandidateDigest, BaseSHA: persisted.BaseSHA, MessageDigest: persisted.MessageDigest, PolicyDigest: persisted.PolicyDigest, VerifierDigest: persisted.VerifierDigest, GuardDigest: persisted.GuardDigest}) {
+			return errors.New("commit job identity conflict")
+		}
+		if status == "CREATED" && shaRE.MatchString(sha) {
+			return nil
+		}
+		if status == "COMMIT_REQUESTED" || status == "RUNNING" {
+			return c.RecoverCommit(ctx, r)
+		}
 	}
 	if err := c.Store.PutCommitIntent(ctx, r); err != nil {
 		return err

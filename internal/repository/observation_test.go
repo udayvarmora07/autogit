@@ -21,6 +21,18 @@ type boundedObservationRunner struct {
 	limits []int64
 }
 
+type changingStatusRunner struct {
+	observationRunner
+	statusChanged bool
+}
+
+func (r *changingStatusRunner) Run(ctx context.Context, dir string, env map[string]string, args ...string) (CommandResult, error) {
+	if strings.Join(args, "\x00") == "status\x00--porcelain=v1\x00-z\x00--untracked-files=all" && r.statusChanged {
+		return CommandResult{Output: "?? race.txt\x00?? later.txt\x00"}, nil
+	}
+	return r.observationRunner.Run(ctx, dir, env, args...)
+}
+
 func (r *boundedObservationRunner) RunBounded(ctx context.Context, dir string, env map[string]string, max int64, args ...string) (CommandResult, error) {
 	r.limits = append(r.limits, max)
 	return r.observationRunner.Run(ctx, dir, env, args...)
@@ -327,6 +339,27 @@ func TestCaptureBaselineRejectsFileReplacementDuringRead(t *testing.T) {
 	}
 }
 
+func TestCaptureBaselineRejectsRepositoryChangeDuringFileCapture(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "race.txt"), []byte("before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &changingStatusRunner{observationRunner: observationRunner{outputs: map[string]string{
+		"rev-parse\x00--verify\x00--quiet\x00HEAD^{commit}":       "0123456789012345678901234567890123456789\n",
+		"rev-parse\x00--git-path\x00index":                        filepath.Join(root, ".git", "index") + "\n",
+		"status\x00--porcelain=v1\x00-z\x00--untracked-files=all": "?? race.txt\x00",
+	}}}
+	_, err := CaptureBaselineWithOptions(context.Background(), runner, root, BaselineOptions{BeforeRead: func(string) {
+		runner.statusChanged = true
+	}})
+	if err == nil {
+		t.Fatal("repository change during baseline capture was accepted")
+	}
+}
+
 func TestSystemRunnerExecutesReadOnlyGitWithArguments(t *testing.T) {
 	root := t.TempDir()
 	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
@@ -345,6 +378,42 @@ func TestSystemRunnerExecutesReadOnlyGitWithArguments(t *testing.T) {
 	want := filepath.Clean(canonical)
 	if got != want {
 		t.Fatalf("output=%q want=%q", got, want)
+	}
+}
+
+func TestCaptureBaselineSupportsLinkedWorktreeAndUnicodePath(t *testing.T) {
+	mainRoot := t.TempDir()
+	if err := exec.Command("git", "init", "-q", mainRoot).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mainRoot, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", mainRoot, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", mainRoot, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	linkedRoot := filepath.Join(t.TempDir(), "linked")
+	if output, err := exec.Command("git", "-C", mainRoot, "worktree", "add", "-q", "-b", "linked-worktree", linkedRoot).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v: %s", err, output)
+	}
+	unicodePath := "café-文件.txt"
+	if err := os.WriteFile(filepath.Join(linkedRoot, unicodePath), []byte("unicode candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := CaptureBaseline(context.Background(), SystemRunner{}, linkedRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, ok := baseline.Files[unicodePath]
+	if !ok || !file.Present || string(file.Content) != "unicode candidate\n" {
+		t.Fatalf("unicode file=%+v present=%v baseline=%+v", file, ok, baseline)
+	}
+	if baseline.Head == "" || baseline.IndexDigest == "" || baseline.StatusDigest == "" {
+		t.Fatalf("linked worktree baseline=%+v", baseline)
 	}
 }
 

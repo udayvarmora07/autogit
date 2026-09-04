@@ -437,13 +437,20 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 	if err != nil || !info.IsDir() {
 		return Baseline{}, errors.New("baseline root is not a directory")
 	}
-	headResult, headErr := runner.Run(ctx, abs, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
-	head := strings.TrimSpace(headResult.Output)
-	if headErr != nil && (head != "" || !isUnbornHeadError(headErr)) {
-		return Baseline{}, fmt.Errorf("read HEAD: %w", headErr)
+	readHead := func() (string, error) {
+		result, headErr := runner.Run(ctx, abs, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+		head := strings.TrimSpace(result.Output)
+		if headErr != nil && (head != "" || !isUnbornHeadError(headErr)) {
+			return "", fmt.Errorf("read HEAD: %w", headErr)
+		}
+		if head != "" && !validObjectID(head) {
+			return "", errors.New("invalid HEAD observation")
+		}
+		return head, nil
 	}
-	if head != "" && !validObjectID(head) {
-		return Baseline{}, errors.New("invalid HEAD observation")
+	head, err := readHead()
+	if err != nil {
+		return Baseline{}, err
 	}
 
 	indexResult, err := runner.Run(ctx, abs, nil, "rev-parse", "--git-path", "index")
@@ -500,6 +507,41 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 			return Baseline{}, captureErr
 		}
 		files[name] = file
+	}
+	finalHead, err := readHead()
+	if err != nil {
+		return Baseline{}, err
+	}
+	if finalHead != head {
+		return Baseline{}, errors.New("repository HEAD changed during baseline capture")
+	}
+	finalIndexResult, err := runner.Run(ctx, abs, nil, "rev-parse", "--git-path", "index")
+	if err != nil {
+		return Baseline{}, fmt.Errorf("re-read index path: %w", err)
+	}
+	finalIndexPath := strings.TrimSpace(finalIndexResult.Output)
+	if finalIndexPath == "" {
+		return Baseline{}, errors.New("empty final index path")
+	}
+	if !filepath.IsAbs(finalIndexPath) {
+		finalIndexPath = filepath.Join(abs, finalIndexPath)
+	}
+	if finalIndexPath != indexPath {
+		return Baseline{}, errors.New("repository index changed during baseline capture")
+	}
+	finalIndexBytes, err := os.ReadFile(finalIndexPath)
+	if err != nil && !os.IsNotExist(err) {
+		return Baseline{}, fmt.Errorf("re-read index: %w", err)
+	}
+	if digestBytes(finalIndexBytes) != digestBytes(indexBytes) {
+		return Baseline{}, errors.New("repository index changed during baseline capture")
+	}
+	finalStatusResult, err := runner.Run(ctx, abs, nil, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	if err != nil {
+		return Baseline{}, fmt.Errorf("re-read status: %w", err)
+	}
+	if digestBytes([]byte(finalStatusResult.Output)) != digestBytes([]byte(statusResult.Output)) {
+		return Baseline{}, errors.New("repository status changed during baseline capture")
 	}
 	return Baseline{
 		Head:         head,

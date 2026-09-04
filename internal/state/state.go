@@ -700,7 +700,7 @@ func (s *Store) AcquireLease(ctx context.Context, l Lease, now int64) error {
 	var owner string
 	var exp int64
 	err = conn.QueryRowContext(ctx, `SELECT owner,expires_at FROM leases WHERE lease_key=?`, l.Key).Scan(&owner, &exp)
-	if err == nil && exp > now && owner != l.Owner {
+	if err == nil && exp > now {
 		return errors.New("lease held")
 	}
 	_, err = conn.ExecContext(ctx, `INSERT INTO leases(lease_key,owner,expires_at) VALUES(?,?,?) ON CONFLICT(lease_key) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at`, l.Key, l.Owner, l.ExpiresAt)
@@ -714,6 +714,8 @@ func (s *Store) AcquireLease(ctx context.Context, l Lease, now int64) error {
 	return nil
 }
 func (s *Store) ReleaseLease(key, owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_, err := s.db.Exec(`DELETE FROM leases WHERE lease_key=? AND owner=?`, key, owner)
 	return err
 }
