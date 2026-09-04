@@ -149,6 +149,20 @@ func TestVerifyRequiresExplicitSessionEvidence(t *testing.T) {
 	}
 }
 
+func TestVerifyAllOwnedAcceptsSourceFreeSessionEvidence(t *testing.T) {
+	options, err := parseVerifyArgs([]string{
+		"--id", "verify-1", "--repo", "/tmp/project", "--session", "session",
+		"--client", "codex", "--message", "feat: verify candidate", "--verifiers", "verifiers.json",
+		"--all-owned",
+	})
+	if err != nil {
+		t.Fatalf("verify all-owned args: %v", err)
+	}
+	if !options.AllOwned || len(options.Paths) != 0 {
+		t.Fatalf("verify options=%+v", options)
+	}
+}
+
 func TestSyncAllOwnedRequiresCompletionAndNoExplicitPaths(t *testing.T) {
 	base := []string{"--repo", "/tmp/project", "--session", "session", "--client", "codex"}
 	if _, err := parseSyncArgs(append(append([]string{}, base...), "--all-owned")); err == nil || !strings.Contains(err.Error(), "requires --complete") {
@@ -510,6 +524,83 @@ func TestSyncAllOwnedResumesHookBaselineAndExcludesPreexistingWork(t *testing.T)
 	}
 	if output, err := exec.Command("git", "-C", root, "show", ref+":owned.txt").CombinedOutput(); err != nil || string(output) != "session-owned\n" {
 		t.Fatalf("owned file missing from candidate: err=%v content=%q", err, output)
+	}
+}
+
+func TestVerifyAllOwnedResumesHookBaselineWithoutCreatingCommitIntent(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("committed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commit := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline")
+	if output, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	for _, config := range [][]string{{"user.name", "AutoGit"}, {"user.email", "autogit@example.test"}} {
+		if output, err := exec.Command("git", "-C", root, "config", config[0], config[1]).CombinedOutput(); err != nil {
+			t.Fatalf("git config: %v: %s", err, output)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("pre-existing\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"enable", "--repo", root, "--local"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := os.ReadFile(filepath.Join(stateDir, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCEK", "session.started", "verify-hook", `,"session_id":"verify-hook-session"`, "", "")), &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["scope"].(map[string]any)["worktree_id"] = info.WorktreeID
+	raw["project"] = map[string]any{"candidate_root": root}
+	hookInput, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"hook"}, bytes.NewReader(hookInput), &bytes.Buffer{}); err != nil {
+		t.Fatalf("session hook: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "owned.txt"), []byte("session-owned\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	verifierConfig := filepath.Join(stateDir, "verifiers.json")
+	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"verify", "--id", "verify-hook-1", "--repo", root, "--session", "verify-hook-session", "--client", "codex", "--message", "feat: verify hook work", "--verifiers", verifierConfig, "--all-owned"}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("verify all-owned: %v output=%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"reason_code":"VERIFICATION_PASSED"`) || strings.Contains(out.String(), "session-owned") {
+		t.Fatalf("verify output=%s", out.String())
+	}
+	db, err := state.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.GitCommitIntent(context.Background(), "verify-hook-1"); err == nil {
+		t.Fatal("verify created durable commit intent")
+	}
+	if refs, err := exec.Command("git", "-C", root, "show-ref", "--verify", "refs/autogit/commits/verify-hook-1").CombinedOutput(); err == nil {
+		t.Fatalf("verify created AutoGit ref: output=%s", refs)
 	}
 }
 

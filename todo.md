@@ -235,6 +235,8 @@ These eight bounded slices were implemented with focused red-green tests:
 - [x] Include the same bounded repository evidence in `status` output.
 - [x] Keep read-only `config explain` state-free while reporting verifier
   configuration digests.
+- [x] Add read-only `verify --all-owned` recovery for hook-captured sessions
+  using source-free durable evidence without creating commit intents or refs.
 - [x] Require an ingress completion claim for core completion candidates and
   retry duplicate completion ingress deterministically.
 

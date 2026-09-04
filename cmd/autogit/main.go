@@ -422,6 +422,7 @@ type syncOptions struct {
 type verifyOptions struct {
 	ID, Repo, Session, Client, Message, Verifiers string
 	Paths                                         []string
+	AllOwned                                      bool
 }
 
 type publishOptions struct {
@@ -1432,8 +1433,16 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		name := args[i]
+		if name == "--all-owned" {
+			if seen[name] {
+				return verifyOptions{}, cliError{"E_USAGE", "--all-owned may be provided once"}
+			}
+			options.AllOwned = true
+			seen[name] = true
+			continue
+		}
 		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--verifiers" && name != "--path" {
-			return verifyOptions{}, cliError{"E_USAGE", "verify supports --id, --repo, --session, --client, --message, --verifiers, and repeated --path"}
+			return verifyOptions{}, cliError{"E_USAGE", "verify supports --id, --repo, --session, --client, --message, --verifiers, --all-owned, and repeated --path"}
 		}
 		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
 			return verifyOptions{}, cliError{"E_USAGE", name + " requires a value"}
@@ -1460,8 +1469,11 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 		seen[name] = true
 		i++
 	}
-	if options.ID == "" || options.Repo == "" || options.Session == "" || options.Client == "" || options.Message == "" || options.Verifiers == "" || len(options.Paths) == 0 {
-		return verifyOptions{}, cliError{"E_SCOPE", "--id, --repo, --session, --client, --message, --verifiers, and at least one --path are required for verify"}
+	if options.ID == "" || options.Repo == "" || options.Session == "" || options.Client == "" || options.Message == "" || options.Verifiers == "" || (!options.AllOwned && len(options.Paths) == 0) {
+		return verifyOptions{}, cliError{"E_SCOPE", "--id, --repo, --session, --client, --message, --verifiers, and at least one --path are required for verify unless --all-owned is used"}
+	}
+	if options.AllOwned && len(options.Paths) > 0 {
+		return verifyOptions{}, cliError{"E_USAGE", "--all-owned cannot be combined with --path"}
 	}
 	return options, nil
 }

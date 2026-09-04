@@ -477,6 +477,16 @@ or contacts a provider, and `plan` does not initialize AutoGit state.
 `config explain` likewise validates optional verifier configuration without
 creating AutoGit state.
 
+### 10.6 Read-only verification recovery (2026-09-05)
+
+`autogit verify --all-owned` now reconstructs a hook-captured session from its
+source-free durable baseline manifest, observes current ownership, and runs
+the trusted verifier set without requiring raw paths from the original
+process. It is intentionally read-only: verification does not create a
+commit intent, move an AutoGit ref, or alter the shared index. Explicit
+`--path` verification remains available for callers that want a narrower
+candidate scope.
+
 The four legacy compatibility suites were rerun from the installed reference
 checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,
 and 3). They remain regression-floor evidence only; they exercise the Bash

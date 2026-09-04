@@ -38,12 +38,12 @@ safe local operations (`install`, `doctor`, `enable`, `disable`, `init`, `status
 `plan`, `hook`, `logs`, `uninstall`, `config explain`, baseline-capturing
 `sync` (plus explicit clean-session `sync --complete`), clean-session read-only
 `verify`, explicit private `publish`, guarded `retry`, and explicit
-`remote create`). `verify` requires explicit
-repository/session/path/message/verifier inputs and never commits or updates
-refs. `sync --complete` creates only an AutoGit-owned local commit ref after
-trusted verification; `sync --complete --all-owned` can resume a hook-captured
-session through source-free baseline fingerprints without persisting raw paths
-or source bytes. The foundation currently
+`remote create`). `verify` accepts either explicit repository/session/path/
+message/verifier inputs or `--all-owned` for source-free restart evidence, and
+never commits or updates refs. `sync --complete` creates only an AutoGit-owned
+local commit ref after trusted verification; `sync --complete --all-owned` can
+resume a hook-captured session through source-free baseline fingerprints
+without persisting raw paths or source bytes. The foundation currently
 includes strict bounded event decoding
 (including duplicate-key and replay/conflict handling), permission-restricted
 SQLite receipts and causal buffering, policy defaults, canonical repository
@@ -83,6 +83,9 @@ index/status/path digests, changed-path count, and consent/provider checks. It
 does not stage, commit, move refs, or alter the shared index.
 `autogit config explain` is also state-free and can inspect a verifier file
 without initializing AutoGit storage.
+`autogit verify --all-owned` uses the same source-free session evidence as
+`sync --complete --all-owned`, but only runs trusted verification and never
+creates a commit intent or AutoGit ref.
 
 ### Verification and remaining release gates
 
