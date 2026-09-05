@@ -267,8 +267,6 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return logsErr
 		}
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "LOGS", "logs": logs})
-	case "verify", "sync":
-		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "unsupported", "action": "none", "reason_code": "E_UNIMPLEMENTED", "operation": cmd})
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}

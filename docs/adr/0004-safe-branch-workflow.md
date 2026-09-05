@@ -1,17 +1,20 @@
 # ADR-0004: Safe branch workflow by default
 
-- **Status:** Proposed (Phase 1; not implemented by the Phase 0 hook contract)
+- **Status:** Proposed; local/publication preflight implemented, hosted branch/PR orchestration remains open
 - **Context:** Direct pushes to a default branch can publish code before remote
   CI and protected-branch checks run. Solo developers may still prefer direct
   verified commits for small projects.
-- **Decision:** Defer branch/PR policy to Phase 1. Phase 0 recognizes the
-  existing `yes`, `yes public`, `yes private`, `yes local`, and optional `fast`
-  policy markers only. Phase 0 never force-pushes, deletes a repository, or
-  publishes failed verification. When branch policy is added, `safe` should be
-  the default, `solo` an explicit direct-push mode, `local` no-network, and
-  `checkpoint` unfinished local work.
-- **Consequences:** Phase 0 remains compatible with the installed hooks and
-  does not promise branch or PR behavior. Phase 1 will need branch identity in
-  push-job idempotency and reconciliation before enabling these modes.
+- **Decision:** `safe` is the default workflow policy, `solo` is an explicit
+  direct-push policy, `local` forbids provider operations, and `checkpoint`
+  retains unfinished local work. The local workflow and public preflight bind
+  publication to an explicit ref and require feature-branch approval for safe
+  public publication; protected-branch/status-check evidence is fail-closed.
+  AutoGit never force-pushes, deletes a repository, or publishes failed
+  verification. Creating a hosted branch or pull request remains a separate
+  provider/release capability and is not inferred by the local hook.
+- **Consequences:** Existing hooks remain compatible with conservative local
+  behavior, while explicit CLI publication can report safe/solo decisions
+  before provider access. Future branch/PR orchestration must preserve branch
+  identity in push-job idempotency and reconciliation before being enabled.
 - **Alternatives considered:** Always direct-push is simpler but weakens remote
   quality gates. Always create PRs is excessive for local-only/small experiments.
