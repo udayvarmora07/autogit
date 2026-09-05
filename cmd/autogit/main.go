@@ -1694,10 +1694,24 @@ func trustedExecutable(name string) (string, error) {
 	}
 	path = filepath.Clean(path)
 	info, err := os.Lstat(path)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	if err != nil {
 		return "", errors.New("invalid trusted executable")
 	}
-	if info.Mode().Perm()&0111 == 0 {
+	if info.Mode()&os.ModeSymlink != 0 {
+		if name != "git" && name != "gh" {
+			return "", errors.New("invalid trusted executable")
+		}
+		path, err = filepath.EvalSymlinks(path)
+		if err != nil || !filepath.IsAbs(path) {
+			return "", errors.New("invalid trusted executable")
+		}
+		path = filepath.Clean(path)
+		info, err = os.Lstat(path)
+	}
+	if err != nil || !info.Mode().IsRegular() {
+		return "", errors.New("invalid trusted executable")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
 		return "", errors.New("invalid trusted executable")
 	}
 	parent, err := filepath.EvalSymlinks(filepath.Dir(path))

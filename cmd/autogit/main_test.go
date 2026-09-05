@@ -1094,6 +1094,28 @@ func TestTrustedExecutableRejectsFinalSymlink(t *testing.T) {
 	}
 }
 
+func TestTrustedExecutableResolvesTrustedGitSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink executable policy is covered by native Windows process tests")
+	}
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "real-git")
+	if err := os.WriteFile(realPath, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realPath, filepath.Join(dir, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	resolved, err := trustedExecutable("git")
+	if err != nil {
+		t.Fatalf("trusted Git symlink rejected: %v", err)
+	}
+	if resolved != realPath {
+		t.Fatalf("resolved Git path=%q, want %q", resolved, realPath)
+	}
+}
+
 func mustCommand(t *testing.T, executable string, args ...string) []byte {
 	t.Helper()
 	output, err := exec.Command(executable, args...).CombinedOutput()

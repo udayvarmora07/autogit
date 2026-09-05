@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -354,7 +355,16 @@ func TestConcurrentLifecycleCompletionAcrossStoresCreatesOneCommit(t *testing.T)
 	if err := seed.Close(); err != nil {
 		t.Fatal(err)
 	}
-	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "true", Version: "1", Argv: []string{"/usr/bin/true"}, Applicable: true}})
+	verifierPath := "/usr/bin/true"
+	verifierArgv := []string{verifierPath}
+	if runtime.GOOS == "windows" {
+		verifierPath, err = os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifierArgv = []string{verifierPath, "-test.run=^$"}
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "true", Version: "1", Argv: verifierArgv, Applicable: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package coordinator
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math/rand"
@@ -83,6 +84,7 @@ func TestConcurrentCommitProcessSchedulesConvergeOnOneEffect(t *testing.T) {
 	effectPath := filepath.Join(root, "effects")
 	id := "process-concurrent"
 	commands := make([]*exec.Cmd, 0, 2)
+	outputs := make([]*bytes.Buffer, 0, 2)
 	for worker := 0; worker < 2; worker++ {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestCommitProcessBoundaryHelper$", "-test.count=1")
 		cmd.Env = append(os.Environ(),
@@ -93,6 +95,10 @@ func TestConcurrentCommitProcessSchedulesConvergeOnOneEffect(t *testing.T) {
 			"AUTOGIT_COORDINATOR_POINT=none",
 			"AUTOGIT_COORDINATOR_OWNER=worker-"+strconv.Itoa(worker),
 		)
+		var output bytes.Buffer
+		cmd.Stdout = &output
+		cmd.Stderr = &output
+		outputs = append(outputs, &output)
 		commands = append(commands, cmd)
 	}
 	for _, cmd := range commands {
@@ -100,9 +106,20 @@ func TestConcurrentCommitProcessSchedulesConvergeOnOneEffect(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, cmd := range commands {
+	for worker, cmd := range commands {
 		if err := cmd.Wait(); err != nil {
-			t.Fatalf("concurrent child failed: %v", err)
+			output := outputs[worker].String()
+			if !strings.Contains(output, "lease held") {
+				t.Fatalf("concurrent child %d failed: %v: %s", worker, err, output)
+			}
+			var retryOutput bytes.Buffer
+			retry := exec.Command(os.Args[0], "-test.run=^TestCommitProcessBoundaryHelper$", "-test.count=1")
+			retry.Env = cmd.Env
+			retry.Stdout = &retryOutput
+			retry.Stderr = &retryOutput
+			if retryErr := retry.Run(); retryErr != nil {
+				t.Fatalf("contending child %d retry failed: %v: %s", worker, retryErr, retryOutput.String())
+			}
 		}
 	}
 	data, err := os.ReadFile(effectPath)

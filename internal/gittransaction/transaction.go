@@ -102,12 +102,14 @@ func canonicalExecutable(path string) (string, error) {
 	if err != nil || !filepath.IsAbs(resolved) {
 		return "", errors.New("invalid Git executable")
 	}
-	resolved = filepath.Clean(resolved)
-	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
+	canon, err := filepath.EvalSymlinks(resolved)
 	if err != nil {
 		return "", errors.New("invalid Git executable")
 	}
-	canon := filepath.Join(parent, filepath.Base(resolved))
+	canon, err = filepath.Abs(filepath.Clean(canon))
+	if err != nil {
+		return "", errors.New("invalid Git executable")
+	}
 	info, err := os.Lstat(canon)
 	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return "", errors.New("invalid Git executable")
