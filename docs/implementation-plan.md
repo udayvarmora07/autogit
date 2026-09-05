@@ -46,6 +46,8 @@ passed the relevant gates; it is not the v1 security boundary.
 | Phase 4 — private alpha | Native OS CI gate passed; reproducible packaging implemented; private-alpha/release gates open | Dogfoodable local/private release on supported OSes |
 | Phase 5 — public beta | Local public-preflight implementation; canary/beta gates open | Explicit-public, portfolio-quality, supportable beta release |
 
+The release-builder integration suite is tagged `release_integration` and runs in the dedicated Ubuntu reproducible-build job; the native OS matrix retains the platform-neutral Go suite.
+
 No phase is complete because its code exists. The phase exit gate requires the
 listed deliverables, tests, security invariants, documentation, and review.
 

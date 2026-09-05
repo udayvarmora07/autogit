@@ -99,6 +99,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: release-build integration tests
+        shell: bash
+        run: go test -tags release_integration ./scripts -run '^TestReleaseBuild' -count=1
       - name: build supported binaries twice
         shell: bash
         run: |

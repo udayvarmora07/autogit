@@ -1,3 +1,5 @@
+//go:build release_integration
+
 package scripts_test
 
 import (
