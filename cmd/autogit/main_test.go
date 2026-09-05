@@ -950,22 +950,17 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	ghState := filepath.Join(fakeBin, "gh-state")
-	ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else : > '" + ghState + "'; printf '%s\\n' 'Not Found' >&2; exit 1; fi\n"
-	gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
-	ghName, gitName := "gh", "git"
 	if runtime.GOOS == "windows" {
-		ghName, gitName = "gh.cmd", "git.cmd"
-		t.Setenv("AUTOGIT_TEST_GH_STATE", ghState)
-		t.Setenv("AUTOGIT_TEST_GH_SHA", sha)
-		t.Setenv("AUTOGIT_TEST_REAL_GIT", gitPath)
-		ghScript = "@echo off\r\nif exist \"%AUTOGIT_TEST_GH_STATE%\" (echo %AUTOGIT_TEST_GH_SHA%\r\nexit /b 0)\r\ntype nul > \"%AUTOGIT_TEST_GH_STATE%\"\r\necho Not Found 1>&2\r\nexit /b 1\r\n"
-		gitScript = "@echo off\r\necho %* | findstr /c:\"remote get-url --push -- origin\" >nul\r\nif not errorlevel 1 (echo https://github.com/owner/repo\r\nexit /b 0)\r\necho %* | findstr /c:\"push -- origin\" >nul\r\nif not errorlevel 1 exit /b 0\r\n\"%AUTOGIT_TEST_REAL_GIT%\" %*\r\nexit /b %ERRORLEVEL%\r\n"
-	}
-	if err := os.WriteFile(filepath.Join(fakeBin, ghName), []byte(ghScript), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fakeBin, gitName), []byte(gitScript), 0700); err != nil {
-		t.Fatal(err)
+		installWindowsPublishFixtures(t, fakeBin, gitPath, ghState, sha)
+	} else {
+		ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else : > '" + ghState + "'; printf '%s\\n' 'Not Found' >&2; exit 1; fi\n"
+		gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
+		if err := os.WriteFile(filepath.Join(fakeBin, "gh"), []byte(ghScript), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(fakeBin, "git"), []byte(gitScript), 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var out bytes.Buffer
@@ -994,6 +989,73 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 	if !strings.Contains(publicOut.String(), `"reason_code":"PUBLIC_PREFLIGHT_REQUIRED"`) || !strings.Contains(publicOut.String(), `"preflight"`) || !strings.Contains(publicOut.String(), `"repository":"repo"`) {
 		t.Fatalf("public preflight output=%s", publicOut.String())
 	}
+}
+
+func installWindowsPublishFixtures(t *testing.T, dir, realGit, ghState, sha string) {
+	t.Helper()
+	source := filepath.Join(dir, "publish-fixture.go")
+	program := `package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+func main() {
+	name := strings.TrimSuffix(strings.ToLower(filepath.Base(os.Args[0])), ".exe")
+	if name == "gh" {
+		state := os.Getenv("AUTOGIT_TEST_GH_STATE")
+		if _, err := os.Stat(state); err == nil {
+			fmt.Fprintln(os.Stdout, os.Getenv("AUTOGIT_TEST_GH_SHA"))
+			return
+		}
+		_ = os.WriteFile(state, []byte{}, 0600)
+		fmt.Fprintln(os.Stderr, "Not Found")
+		os.Exit(1)
+	}
+	args := strings.Join(os.Args[1:], " ")
+	if strings.Contains(args, "remote get-url --push -- origin") {
+		fmt.Fprintln(os.Stdout, "https://github.com/owner/repo")
+		return
+	}
+	if strings.Contains(args, "push -- origin") {
+		return
+	}
+	command := exec.Command(os.Getenv("AUTOGIT_TEST_REAL_GIT"), os.Args[1:]...)
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			os.Exit(exit.ExitCode())
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}`
+	if err := os.WriteFile(source, []byte(program), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(dir, "publish-fixture.exe")
+	build := exec.Command("go", "build", "-o", fixture, source)
+	build.Env = append(os.Environ(), "GO111MODULE=off")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build Windows publish fixture: %v: %s", err, output)
+	}
+	binary, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"gh.exe", "git.exe"} {
+		if err := os.WriteFile(filepath.Join(dir, name), binary, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("AUTOGIT_TEST_GH_STATE", ghState)
+	t.Setenv("AUTOGIT_TEST_GH_SHA", sha)
+	t.Setenv("AUTOGIT_TEST_REAL_GIT", realGit)
 }
 
 func TestParsePublishPublicEvidenceOptions(t *testing.T) {
