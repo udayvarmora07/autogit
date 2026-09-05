@@ -150,6 +150,9 @@ tests:
 - [x] Add the opt-in disposable GitHub canary test, exact postcondition checks,
   and allowlisted cleanup workflow; live provider execution remains a release
   gate.
+- [x] Add the private-alpha/public-beta release runbook covering evidence,
+  support, compatibility migration, incident handling, and rollback; approval
+  and phase promotion remain release gates.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
   not native execution evidence.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/

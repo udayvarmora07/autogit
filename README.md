@@ -105,6 +105,8 @@ baseline. Native macOS/Windows execution, live execution of the disposable
 provider canary, hosted p95 performance threshold evidence, and
 publication/alpha/beta release gates remain open. The canary is available only
 through the manually dispatched workflow and requires a dedicated token.
+Operational rollout, incident, upgrade, and rollback procedures are documented
+in [`docs/release-runbook.md`](docs/release-runbook.md).
 The CI workflow enforces the `>=609` deterministic Go test-case floor and the
 local recovery suite covers the named durable intent boundaries, but CI
 definitions and local tests do not themselves prove those external release

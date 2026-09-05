@@ -659,3 +659,11 @@ validated repository in an exit trap. Public visibility additionally requires
 the explicit `PUBLIC` dispatch confirmation. The workflow is
 [`github-canary.yml`](../.github/workflows/github-canary.yml); live canary
 execution and cleanup evidence remain release gates.
+
+### 10.18 Release support and rollback artifact (2026-09-05)
+
+[`release-runbook.md`](release-runbook.md) records the private-alpha/public-beta
+evidence checklist, private-first rollout, incident metadata, adapter rollback,
+durable-intent reconciliation, compatibility migration, and disposable-resource
+cleanup procedure. It intentionally leaves approval, native execution, live
+canary, and phase-promotion decisions with the release owner.
