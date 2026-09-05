@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -188,6 +189,92 @@ func TestDeterministicPushIntentFaultSchedulesRetainOneProviderEffect(t *testing
 		}
 		if p.calls != 1 || s.status[request.ID] != "SUCCEEDED" {
 			t.Fatalf("schedule %d: provider effects=%d status=%q, want one SUCCEEDED result", schedule, p.calls, s.status[request.ID])
+		}
+	}
+}
+
+func TestDeterministicConcurrentCommitSchedulesConvergeAcrossStateHandles(t *testing.T) {
+	const schedules = 1000
+	rng := rand.New(rand.NewSource(0xC017))
+	sha := strings.Repeat("b", 40)
+
+	for schedule := 0; schedule < schedules; schedule++ {
+		statePath := filepath.Join(t.TempDir(), "state.db")
+		primary, err := state.Open(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		workerCount := 2 + rng.Intn(3)
+		stores := make([]*state.Store, 0, workerCount)
+		coordinators := make([]Coordinator, 0, workerCount)
+		git := &atomicGit{sha: sha}
+		request := validCommitRequest(fmt.Sprintf("concurrent-schedule-%04d", schedule))
+		for worker := 0; worker < workerCount; worker++ {
+			store := primary
+			if worker > 0 {
+				store, err = state.Open(statePath)
+				if err != nil {
+					_ = primary.Close()
+					t.Fatal(err)
+				}
+			}
+			stores = append(stores, store)
+			coordinators = append(coordinators, Coordinator{
+				Store: NewStateStore(store), Git: git,
+				Lease: StateLease{DB: store, TTL: time.Minute}, Owner: fmt.Sprintf("worker-%d", worker),
+			})
+		}
+
+		errs := make(chan error, workerCount)
+		var group sync.WaitGroup
+		delays := make([]int, workerCount)
+		for worker := range delays {
+			delays[worker] = rng.Intn(100)
+		}
+		for worker, coordinator := range coordinators {
+			group.Add(1)
+			go func(worker int, coordinator Coordinator) {
+				defer group.Done()
+				if delay := delays[worker]; delay > 0 {
+					time.Sleep(time.Duration(delay) * time.Microsecond)
+				} else {
+					runtime.Gosched()
+				}
+				errs <- coordinator.Commit(context.Background(), request)
+			}(worker, coordinator)
+		}
+		group.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil && !strings.Contains(err.Error(), "lease held") {
+				for _, store := range stores {
+					_ = store.Close()
+				}
+				t.Fatalf("schedule %d: concurrent commit failed: %v", schedule, err)
+			}
+		}
+		if got := git.calls.Load(); got != 1 {
+			for _, store := range stores {
+				_ = store.Close()
+			}
+			t.Fatalf("schedule %d: Git effects=%d, want one", schedule, got)
+		}
+		if err := coordinators[0].Commit(context.Background(), request); err != nil {
+			for _, store := range stores {
+				_ = store.Close()
+			}
+			t.Fatalf("schedule %d: post-concurrency retry failed: %v", schedule, err)
+		}
+		if got := git.calls.Load(); got != 1 {
+			for _, store := range stores {
+				_ = store.Close()
+			}
+			t.Fatalf("schedule %d: retry Git effects=%d, want one", schedule, got)
+		}
+		for _, store := range stores {
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }

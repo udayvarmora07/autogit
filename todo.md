@@ -111,16 +111,18 @@ tests:
 ## Required validation and release gates
 
 - [x] Added seeded 1,000-schedule commit and 1,000-schedule push-coordinator
-  fault matrices covering intent/result failures, transient recovery, and
-  idempotence without duplicate effects; randomized process schedules remain
-  release gates.
+  fault matrices plus 1,000 concurrent multi-store commit schedules covering
+  intent/result failures, transient recovery, leases, and idempotence without
+  duplicate effects; broader randomized process schedules remain release gates.
 - [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
   and reach the >=609 deterministic release-suite target; the local Go suite
-  currently emits 623 passing named test cases/subtests under `go test -json`.
+  currently emits 626 passing named test cases/subtests under `go test -json`.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
   scenarios pass; Go v1 coverage is enforced separately by the >=609 CI floor.
-- [ ] Add fault-injection coverage for every durable intent boundary and the
-  required crash/concurrency schedules.
+- [x] Add deterministic fault-injection coverage for the implemented commit,
+  push, Git-transaction, and hosted-create intent boundaries.
+- [ ] Complete the required randomized crash/concurrency schedules across every
+  durable intent boundary.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
   not native execution evidence.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/
