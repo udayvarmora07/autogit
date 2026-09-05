@@ -624,3 +624,19 @@ execution, the disposable provider canary, and alpha/beta promotion remain
 external release gates. The non-race release stream runs all 1,000 schedules;
 race-enabled CI samples 50 schedules per newly added persistence matrix so
 the instrumented subprocess tests stay within Go's per-package timeout.
+
+### 10.16 Local performance and traceability evidence (2026-09-05)
+
+The repository now contains 13 Go benchmarks covering canonical event build
+and decode, adapter digesting/manifests, repository path digests at 1,000 and
+100,000 paths, durable baseline encoding, commit messages, policy merge,
+security scanning, publication preflight, and lifecycle reduction. The
+benchmark suite runs with `go test -run '^$' -bench '^Benchmark' ./...`.
+This satisfies the local benchmark-suite artifact requirement, but the p95
+latency thresholds and native OS measurements remain release gates.
+
+`TestMustLevelRequirementsHaveTraceabilityRows` parses the product
+requirements and fails when a functional or non-functional requirement is
+missing from the test-strategy traceability matrix or appears more than once.
+It validates matrix maintenance locally without treating planned external
+canary, native-platform, or phase-promotion evidence as complete.

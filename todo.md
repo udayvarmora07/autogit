@@ -144,6 +144,9 @@ tests:
 - [x] Complete the required randomized crash/concurrency schedules across every
   implemented durable intent boundary; external OS and provider gates remain
   separate release requirements.
+- [x] Add automated requirements-to-test traceability validation and a local
+  benchmark suite covering the 1,000/100,000-path performance scales; hosted
+  p95 threshold evidence remains a release gate.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
   not native execution evidence.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/

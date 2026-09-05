@@ -44,8 +44,8 @@ fuzz executions are counted separately.
 | Provider fake/contract suite | Mocked `gh` only | >=40 | Create, collision, visibility, remote identity, retry, postconditions |
 | Resilience/concurrency/crash suite | Not present | >=50 | Leases, duplicate/out-of-order events, kill/restart at every intent |
 | Portfolio/publication suite | Partial prototype | >=15 | Public consent, readiness report, README/license/destination quality |
-| Performance/compatibility suite | Not present | >=12 benchmarks | p95 latency, scale, binary/OS behavior |
-| **Deterministic total** | **674 Go cases** | **>=609** | All must-level acceptance paths |
+| Performance/compatibility suite | 13 local Go benchmarks; release threshold evidence open | >=12 benchmarks | p95 latency, scale, binary/OS behavior |
+| **Deterministic total** | **675 Go cases** | **>=609** | All must-level acceptance paths |
 
 The 177 prototype scenarios are a regression floor. A v1 release cannot claim
 coverage merely because those shell scripts pass: they do not prove session
@@ -114,11 +114,12 @@ is evidence that the legacy regression floor is runnable, but it does not
 replace Go v1 coverage because those scripts exercise the Bash compatibility
 hook rather than the new core.
 
-The Go v1 suite emits 674 passing named test cases/subtests in the same audit
+The Go v1 suite emits 675 passing named test cases/subtests in the same audit
 environment when run with `go test -count=1 -json ./...`. CI enforces the
 documented >=609 deterministic floor from that stream. This count is a release
-floor, not evidence for the separate native-OS, provider-canary, performance,
-or phase-promotion gates. The randomized crash/concurrency requirement is
+floor, not evidence for the separate native-OS, provider-canary, performance
+threshold, or phase-promotion gates. The randomized crash/concurrency
+requirement is
 covered locally by the seeded 1,000-schedule subprocess matrices documented in
 the implementation plan; race-enabled CI uses a bounded representative sample
 for the newly added persistence matrices because instrumented subprocesses are
@@ -237,8 +238,9 @@ only with a documented capability and safe degradation assertion.
 - **GATE-001 Baseline:** all 177 prototype scenarios pass unchanged in their
   disposable environment.
 - **GATE-002 Traceability:** every must-level FR and every NFR has at least one
-  named acceptance case in the matrix below; no unowned requirement is marked
-  complete.
+  named acceptance case in the matrix below; `TestMustLevelRequirementsHaveTraceabilityRows`
+  rejects an uncovered or duplicate requirement ID; no unowned requirement is
+  marked complete.
 - **GATE-003 Consent/ownership:** 100% of no-consent, decline, ambiguous path,
   concurrent overlap, and pre-existing-dirty fixtures produce zero unauthorized
   Git/provider mutations.
@@ -258,8 +260,9 @@ only with a documented capability and safe degradation assertion.
   forbidden trailers are absent, and a public canary passes README/license/
   verification/secret/artifact checks.
 - **GATE-009 Performance:** no-candidate hook p95 <150 ms; baseline/status p95
-  <1 s for 100,000 tracked paths, excluding network/LFS; record CPU/memory and
-  test/build durations separately.
+  <1 s for 100,000 tracked paths, excluding network/LFS; the local benchmark
+  suite now covers both scales and representative hot paths, but release p95
+  evidence must still be recorded on the required hosted environments.
 - **GATE-010 Reliability:** core suite has >=99.5% pass rate across 20 repeated
   runs; no safety/provider test may be flaky. Any flaky test is quarantined with
   a tracked defect and cannot satisfy a release gate.

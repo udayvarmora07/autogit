@@ -102,7 +102,8 @@ Linux arm64, Darwin arm64, and Windows amd64 cross-build smoke checks pass
 locally. Native macOS and Windows CI has not yet been observed. The repository
 does not contain the prototype shell scripts used for the documented 177-case
 baseline. Native macOS/Windows execution, the disposable provider canary,
-performance evidence, and publication/alpha/beta release gates remain open.
+hosted p95 performance threshold evidence, and publication/alpha/beta release
+gates remain open.
 The CI workflow enforces the `>=609` deterministic Go test-case floor and the
 local recovery suite covers the named durable intent boundaries, but CI
 definitions and local tests do not themselves prove those external release
