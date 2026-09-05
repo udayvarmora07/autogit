@@ -121,6 +121,42 @@ func TestConcurrentCommitRetriesSameDurableIntentWithoutDuplicateGit(t *testing.
 	}
 }
 
+func TestSeparateStateStoresSerializeOneCommitAcrossProcessBoundary(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	firstDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstDB.Close()
+	secondDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondDB.Close()
+
+	git := &atomicGit{sha: strings.Repeat("a", 40)}
+	req := validCommitRequest("separate-store-commit")
+	first := Coordinator{Store: NewStateStore(firstDB), Git: git, Lease: StateLease{DB: firstDB, TTL: time.Minute}, Owner: "process-a"}
+	second := Coordinator{Store: NewStateStore(secondDB), Git: git, Lease: StateLease{DB: secondDB, TTL: time.Minute}, Owner: "process-b"}
+	errs := make(chan error, 2)
+	go func() { errs <- first.Commit(context.Background(), req) }()
+	go func() { errs <- second.Commit(context.Background(), req) }()
+	for range 2 {
+		if err := <-errs; err != nil && !strings.Contains(err.Error(), "lease held") {
+			t.Fatal(err)
+		}
+	}
+	if got := git.calls.Load(); got != 1 {
+		t.Fatalf("Git commit calls=%d, want one across separate stores", got)
+	}
+	if err := second.Commit(context.Background(), req); err != nil {
+		t.Fatalf("post-restart retry: %v", err)
+	}
+	if got := git.calls.Load(); got != 1 {
+		t.Fatalf("Git commit calls=%d after retry, want one", got)
+	}
+}
+
 func TestCommitRecoveryWaitsForWriterLeaseBeforeInspectingInFlightIntent(t *testing.T) {
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -172,6 +208,43 @@ func TestPushResultPersistenceFailureReconcilesWithoutRepeatingProviderPush(t *t
 	}
 	if p.calls != 1 || p.confirms != 3 || s.status[r.ID] != "SUCCEEDED" {
 		t.Fatalf("pushes=%d confirms=%d status=%q after reconciliation", p.calls, p.confirms, s.status[r.ID])
+	}
+}
+
+func TestPersistentPushResultFailureRecoversAfterStoreRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	firstDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("push result unavailable")
+	firstStore := &faultingStateStore{StateStore: NewStateStore(firstDB), markSucceededErr: failure}
+	request := PushRequest{ID: "persistent-push-recovery", Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	provider := &fakeProvider{confirmed: true}
+	if err := (Coordinator{Store: firstStore, Provider: provider}).Push(context.Background(), request); !errors.Is(err, failure) {
+		t.Fatalf("error=%v, want result persistence failure", err)
+	}
+	if provider.calls != 0 || provider.confirms != 1 {
+		t.Fatalf("provider pushes=%d confirms=%d, want confirmation without push", provider.calls, provider.confirms)
+	}
+	if err := firstDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	secondDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondDB.Close()
+	secondProvider := &fakeProvider{confirmed: true}
+	if err := (Coordinator{Store: NewStateStore(secondDB), Provider: secondProvider}).Push(context.Background(), request); err != nil {
+		t.Fatalf("restart reconciliation: %v", err)
+	}
+	if secondProvider.calls != 0 || secondProvider.confirms != 1 {
+		t.Fatalf("restart provider pushes=%d confirms=%d, want one confirmation and no push", secondProvider.calls, secondProvider.confirms)
+	}
+	job, err := secondDB.PushJob(request.ID)
+	if err != nil || job.State != state.PushSucceeded {
+		t.Fatalf("restarted push job=%+v err=%v", job, err)
 	}
 }
 
@@ -566,6 +639,18 @@ type memoryStore struct {
 type recordingLease struct {
 	acquired, released, owner string
 	releaseErr                error
+}
+
+type faultingStateStore struct {
+	*StateStore
+	markSucceededErr error
+}
+
+func (s *faultingStateStore) MarkPushSucceeded(ctx context.Context, id string) error {
+	if s.markSucceededErr != nil {
+		return s.markSucceededErr
+	}
+	return s.StateStore.MarkPushSucceeded(ctx, id)
 }
 
 func (l *recordingLease) Acquire(_ context.Context, key, owner string) error {

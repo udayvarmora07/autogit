@@ -9,14 +9,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"autogit/internal/coordinator"
 	"autogit/internal/events"
+	"autogit/internal/gittransaction"
 	"autogit/internal/lifecycle"
 	"autogit/internal/policy"
 	"autogit/internal/repository"
 	"autogit/internal/session"
 	"autogit/internal/staging"
+	"autogit/internal/state"
 	"autogit/internal/verification"
 	"autogit/internal/workflow"
 )
@@ -239,7 +243,7 @@ func TestTaskCompletionHookRunsConfiguredLifecycleWorkflowOnce(t *testing.T) {
 	baselineStore := &appBaselineStore{}
 	service := &session.Service{Runner: repository.SystemRunner{}, Store: baselineStore}
 	started, err := service.Start(context.Background(), session.Request{
-		SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: root, Paths: []string{"new.txt"},
+		SessionID: "session", RepositoryID: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", ClientID: "codex", Root: root, Paths: []string{"new.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -254,6 +258,11 @@ func TestTaskCompletionHookRunsConfiguredLifecycleWorkflowOnce(t *testing.T) {
 	}
 	defer store.Close()
 	a := New(store, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	const completionRepoID = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const completionWorktreeID = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	a.Resolver = func(string) (repository.Info, error) {
+		return repository.Info{RepoID: completionRepoID, WorktreeID: completionWorktreeID}, nil
+	}
 	a.Completion = &CompletionProfile{
 		Message:   "feat: complete lifecycle session",
 		Verifiers: &verification.VerifierRegistry{},
@@ -264,6 +273,18 @@ func TestTaskCompletionHookRunsConfiguredLifecycleWorkflowOnce(t *testing.T) {
 		},
 	}
 	completionInput := hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDM", "task.completed", "lifecycle-task-complete", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`)
+	var completionEvent map[string]any
+	if err := json.Unmarshal([]byte(completionInput), &completionEvent); err != nil {
+		t.Fatal(err)
+	}
+	completionEvent["project"] = map[string]any{"candidate_root": root}
+	completionEvent["scope"].(map[string]any)["repo_id"] = completionRepoID
+	completionEvent["scope"].(map[string]any)["worktree_id"] = completionWorktreeID
+	completionBytes, err := json.Marshal(completionEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completionInput = string(completionBytes)
 	for _, input := range []string{
 		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDJ", "session.started", "lifecycle-start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
 		hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDK", "task.started", "lifecycle-task-start", `,"session_id":"session","task_id":"task"`, `{"queue_state":"none","task_boundaries":"native"}`),
@@ -284,6 +305,154 @@ func TestTaskCompletionHookRunsConfiguredLifecycleWorkflowOnce(t *testing.T) {
 	duplicate, err := a.Hook(context.Background(), []byte(completionInput))
 	if err != nil || duplicate.Disposition != string(events.Duplicate) || workflow.calls != 1 || workflow.plan.OwnershipDigest() != firstPlan.OwnershipDigest() {
 		t.Fatalf("duplicate result=%+v err=%v workflow=%+v", duplicate, err, workflow)
+	}
+}
+
+func TestLifecycleCompletionRejectsLoaderScopeMismatch(t *testing.T) {
+	ingress := events.Event{
+		Scope:    map[string]any{"repo_id": "repo", "session_id": "session"},
+		Producer: map[string]any{"adapter": "codex"},
+		Project:  map[string]any{"candidate_root": "/repo"},
+	}
+	started := session.Started{Request: session.Request{SessionID: "other-session", RepositoryID: "repo", ClientID: "codex", Root: "/repo"}}
+	if completionScopeMatches(ingress, started) {
+		t.Fatal("completion accepted a loader handoff for a different session")
+	}
+}
+
+func TestLifecycleCompletionRequiresTrustedProjectRoot(t *testing.T) {
+
+	ingress := events.Event{
+		Scope:    map[string]any{"repo_id": "repo", "session_id": "session"},
+		Producer: map[string]any{"adapter": "codex"},
+	}
+	started := session.Started{Request: session.Request{SessionID: "session", RepositoryID: "repo", ClientID: "codex", Root: "/repo"}}
+	if completionScopeMatches(ingress, started) {
+		t.Fatal("completion accepted a handoff without an ingress project root")
+	}
+}
+
+func TestConcurrentLifecycleCompletionAcrossStoresCreatesOneCommit(t *testing.T) {
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	seed, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := []byte("01234567890123456789012345678901")
+	if _, err := session.New(seed).CaptureAndRecord(context.Background(), session.Request{SessionID: "concurrent-session", RepositoryID: info.RepoID, ClientID: "codex", Root: root, IdentityKey: key}); err != nil {
+		seed.Close()
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "true", Version: "1", Argv: []string{"/usr/bin/true"}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeApp := func() (*App, func()) {
+		eventStore, openErr := events.OpenStore(statePath)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		stateStore, openErr := state.Open(statePath)
+		if openErr != nil {
+			eventStore.Close()
+			t.Fatal(openErr)
+		}
+		a := New(eventStore, policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"}, nil)
+		a.IdentityKey = append([]byte(nil), key...)
+		a.Resolver = func(string) (repository.Info, error) { return info, nil }
+		baselines := session.New(stateStore)
+		workflowService := &workflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(stateStore), VerifierRunner: verification.ExecRunner{}, Lease: coordinator.StateLease{DB: stateStore}, TrustedVerifierDir: t.TempDir(), IdentityKey: key}
+		a.Completion = &CompletionProfile{
+			Message: "feat: concurrent lifecycle completion", Verifiers: registry, Workflow: workflowService, Baselines: &baselines,
+			Load: func(loadCtx context.Context, req session.Request) (session.Started, error) {
+				durable, readErr := stateStore.Session(loadCtx, req.SessionID)
+				if readErr != nil {
+					return session.Started{}, readErr
+				}
+				return baselines.ResumeFromDurable(loadCtx, req, session.DurableBaseline{Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest, Evidence: durable.BaselineEvidence})
+			},
+		}
+		return a, func() { stateStore.Close(); eventStore.Close() }
+	}
+	first, closeFirst := makeApp()
+	defer closeFirst()
+	second, closeSecond := makeApp()
+	defer closeSecond()
+	withScope := func(input string, task bool) []byte {
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(input), &raw); err != nil {
+			t.Fatal(err)
+		}
+		scope := raw["scope"].(map[string]any)
+		scope["repo_id"], scope["worktree_id"] = info.RepoID, info.WorktreeID
+		if task {
+			scope["task_id"] = "concurrent-task"
+		}
+		raw["project"] = map[string]any{"candidate_root": root}
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	for _, input := range [][]byte{
+		withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCD1", "session.started", "concurrent-start", `,"session_id":"concurrent-session"`, `{"queue_state":"none","task_boundaries":"native"}`), false),
+		withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCD2", "task.started", "concurrent-task-start", `,"session_id":"concurrent-session","task_id":"concurrent-task"`, `{"queue_state":"none","task_boundaries":"native"}`), true),
+	} {
+		if _, err := first.Hook(context.Background(), input); err != nil {
+			t.Fatalf("input=%s: %v", input, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "candidate.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	completion := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCD3", "task.completed", "concurrent-task-complete", `,"session_id":"concurrent-session","task_id":"concurrent-task"`, `{"queue_state":"none","task_boundaries":"native"}`), true)
+	errs := make(chan error, 2)
+	var group sync.WaitGroup
+	for _, app := range []*App{first, second} {
+		group.Add(1)
+		go func(a *App) {
+			defer group.Done()
+			_, hookErr := a.Hook(context.Background(), completion)
+			errs <- hookErr
+		}(app)
+	}
+	group.Wait()
+	close(errs)
+	for hookErr := range errs {
+		if hookErr != nil {
+			t.Fatal(hookErr)
+		}
+	}
+	refsOutput, err := exec.Command("git", "-C", root, "for-each-ref", "--format=%(refname)", "refs/autogit/commits").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list AutoGit refs: %v: %s", err, refsOutput)
+	}
+	refs := strings.TrimSpace(string(refsOutput))
+	if strings.Count(refs, "refs/autogit/commits/") != 1 {
+		t.Fatalf("AutoGit refs=%q, want one concurrent completion result", refs)
+	}
+	data, _, err := first.Store.LifecycleProjection(info.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projected lifecycle.State
+	if err := json.Unmarshal(data, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if !projected.TaskCompleted("concurrent-task") {
+		t.Fatalf("task was not durably completed: %+v", projected.Tasks["concurrent-task"])
 	}
 }
 

@@ -221,8 +221,9 @@ These eight bounded slices were implemented with focused red-green tests:
       active tool or blocking prompt remains; direct domain completion still
       requires that candidate fact, and duplicate ingress retries promotion
       idempotently.
-- [ ] Add durable fault injection at every CLI/provider intent boundary and
-  expand concurrency/restart schedules.
+- [x] Add deterministic durable fault injection at every implemented
+  CLI/provider intent boundary and expand cross-process concurrency/restart
+  schedules; the randomized release schedule remains a separate gate.
 
 ## Completed execution batch (2026-09-05)
 
@@ -250,6 +251,12 @@ These eight bounded slices were implemented with focused red-green tests:
       intent persistence blocks hosted creation, and a retry after hosted
       creation/result persistence failure confirms the exact destination before
       attaching without repeating creation.
+- [x] Add local Git transaction fault coverage proving commit intent
+      persistence blocks `commit-tree`, while commit-result persistence failure
+      recovers the existing AutoGit ref without creating a second commit.
+- [x] Bind lifecycle completion handoffs to the ingress session, repository,
+      client, and required ephemeral trusted hook root before invoking the
+      workflow.
 - [x] Serialize durable lease release and reject active same-owner
   reacquisition so concurrent commit requests cannot overlap or lose a lease.
 - [x] Require an ingress completion claim for core completion candidates and

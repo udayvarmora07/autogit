@@ -539,7 +539,7 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	_ = os.Chmod(filepath.Dir(path), 0700)
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}

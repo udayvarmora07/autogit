@@ -245,6 +245,9 @@ func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool
 	if err != nil {
 		return false, err
 	}
+	if !completionScopeMatches(ingress, started) {
+		return false, errors.New("lifecycle session handoff does not match completion event")
+	}
 	baselines := profile.Baselines
 	if baselines == nil {
 		baselines = a.Baselines
@@ -273,6 +276,21 @@ func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool
 		return false, fmt.Errorf("session completion fact was %s", result.Disposition)
 	}
 	return true, nil
+}
+
+func completionScopeMatches(ingress events.Event, started session.Started) bool {
+	req := started.Request
+	if req.SessionID != stringValue(ingress.Scope["session_id"]) || req.RepositoryID != stringValue(ingress.Scope["repo_id"]) || req.ClientID != stringValue(ingress.Producer["adapter"]) || req.Root == "" {
+		return false
+	}
+	if ingress.Project == nil {
+		return false
+	}
+	root := stringValue(ingress.Project["candidate_root"])
+	if root == "" || req.Root != root {
+		return false
+	}
+	return true
 }
 
 func lifecycleCompletionID(parts ...string) string {

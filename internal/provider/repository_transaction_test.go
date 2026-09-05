@@ -14,12 +14,13 @@ import (
 )
 
 type transactionBinder struct {
-	url       string
-	addErr    error
-	inspect   int
-	add       int
-	addedURL  string
-	addedName string
+	url               string
+	addErr            error
+	addAfterEffectErr error
+	inspect           int
+	add               int
+	addedURL          string
+	addedName         string
 }
 
 func (b *transactionBinder) RemoteURL(context.Context, string) (string, error) {
@@ -37,6 +38,9 @@ func (b *transactionBinder) AddRemote(_ context.Context, alias, url string) erro
 		return b.addErr
 	}
 	b.url = url
+	if b.addAfterEffectErr != nil {
+		return b.addAfterEffectErr
+	}
 	return nil
 }
 
@@ -184,6 +188,32 @@ func TestRepositoryTransactionResumesCreatedIntentWithoutRecreatingHostedRepo(t 
 	}
 }
 
+func TestRepositoryTransactionRecoversAfterLocalAttachEffectFailure(t *testing.T) {
+	db, err := state.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	binder := &transactionBinder{addAfterEffectErr: errors.New("local attach response lost")}
+	hosted := &transactionProvider{}
+	tx := RepositoryTransaction{State: db, Hosted: hosted, Git: binder}
+	req := RemoteCreateRequest{ID: "remote-attach-recovery", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	if _, err := tx.Create(context.Background(), req); err == nil || !strings.Contains(err.Error(), "local attach response lost") {
+		t.Fatalf("first attach error=%v", err)
+	}
+	binder.addAfterEffectErr = nil
+	if got, err := tx.Create(context.Background(), req); err != nil || got != "owner/repo" {
+		t.Fatalf("attach recovery got=%q err=%v", got, err)
+	}
+	if hosted.created != 1 || binder.add != 1 {
+		t.Fatalf("hosted creates=%d local adds=%d, want one each", hosted.created, binder.add)
+	}
+	job, err := db.RemoteJob(req.ID)
+	if err != nil || job.State != state.RemoteAttached {
+		t.Fatalf("recovered job=%+v err=%v", job, err)
+	}
+}
+
 func TestRepositoryTransactionSerializesHostedCreationWithDurableLease(t *testing.T) {
 	db, err := state.Open(t.TempDir() + "/state.db")
 	if err != nil {
@@ -217,6 +247,49 @@ func TestRepositoryTransactionSerializesHostedCreationWithDurableLease(t *testin
 	}
 	if got := hosted.created.Load(); got != 1 {
 		t.Fatalf("hosted create calls=%d, want one", got)
+	}
+}
+
+func TestRepositoryTransactionSeparateStateStoresRecoverOneHostedCreate(t *testing.T) {
+	statePath := t.TempDir() + "/state.db"
+	firstDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstDB.Close()
+	secondDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondDB.Close()
+
+	hosted := &blockingTransactionProvider{entered: make(chan struct{}), second: make(chan struct{}), release: make(chan struct{})}
+	req := RemoteCreateRequest{ID: "remote-separate-store", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	first := RepositoryTransaction{State: firstDB, Hosted: hosted, Git: &transactionBinder{}, Lease: durableTransactionLease{db: firstDB}, Owner: "process-a"}
+	second := RepositoryTransaction{State: secondDB, Hosted: hosted, Git: &transactionBinder{}, Lease: durableTransactionLease{db: secondDB}, Owner: "process-b"}
+	firstErr := make(chan error, 1)
+	go func() { _, createErr := first.Create(context.Background(), req); firstErr <- createErr }()
+	<-hosted.entered
+	secondErr := make(chan error, 1)
+	go func() { _, createErr := second.Create(context.Background(), req); secondErr <- createErr }()
+	select {
+	case <-hosted.second:
+		t.Fatal("second process reached hosted creation while first held the lease")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(hosted.release)
+	if err := <-firstErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondErr; err != nil && !strings.Contains(err.Error(), "lease held") {
+		t.Fatal(err)
+	}
+	if got := hosted.created.Load(); got != 1 {
+		t.Fatalf("hosted create calls=%d, want one across separate stores", got)
+	}
+	job, err := secondDB.RemoteJob(req.ID)
+	if err != nil || job.State != state.RemoteAttached {
+		t.Fatalf("restarted remote job=%+v err=%v", job, err)
 	}
 }
 
@@ -261,9 +334,50 @@ func TestRepositoryTransactionRecoversHostedCreateAfterResultPersistenceFailure(
 	}
 }
 
+func TestRepositoryTransactionReopensStateAfterHostedCreateResultFailure(t *testing.T) {
+	statePath := t.TempDir() + "/state.db"
+	firstDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &faultRemoteJobStore{inner: stateRemoteJobStore{db: firstDB}, failOn: 2, failErr: errors.New("remote result unavailable")}
+	hosted := &recoverableHostedProvider{}
+	req := RemoteCreateRequest{ID: "remote-restart", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	first := RepositoryTransaction{Jobs: store, Hosted: hosted, Git: &transactionBinder{}}
+	if _, err := first.Create(context.Background(), req); !errors.Is(err, store.failErr) {
+		t.Fatalf("error=%v, want durable result failure", err)
+	}
+	if err := firstDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	secondDB, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondDB.Close()
+	second := RepositoryTransaction{Jobs: stateRemoteJobStore{db: secondDB}, Hosted: hosted, Git: &transactionBinder{}}
+	if got, err := second.Create(context.Background(), req); err != nil || got != "owner/repo" {
+		t.Fatalf("restart recovery got=%q err=%v", got, err)
+	}
+	if hosted.created != 1 {
+		t.Fatalf("hosted create calls=%d, want one after restart", hosted.created)
+	}
+}
+
 type transactionLease struct {
 	mu   sync.Mutex
 	held bool
+}
+
+type durableTransactionLease struct{ db *state.Store }
+
+func (l durableTransactionLease) Acquire(ctx context.Context, key, owner string) error {
+	now := time.Now()
+	return l.db.AcquireLease(ctx, state.Lease{Key: key, Owner: owner, ExpiresAt: now.Add(time.Minute).UnixNano()}, now.UnixNano())
+}
+
+func (l durableTransactionLease) Release(_ context.Context, key, owner string) error {
+	return l.db.ReleaseLease(key, owner)
 }
 
 func (l *transactionLease) Acquire(context.Context, string, string) error {
@@ -309,6 +423,25 @@ type recoverableRemoteJobStore struct {
 	puts    int
 	failOn  int
 	failErr error
+}
+
+type faultRemoteJobStore struct {
+	inner   RemoteJobStore
+	puts    int
+	failOn  int
+	failErr error
+}
+
+func (s *faultRemoteJobStore) RemoteJob(id string) (state.RemoteJob, error) {
+	return s.inner.RemoteJob(id)
+}
+
+func (s *faultRemoteJobStore) PutRemoteJob(ctx context.Context, job state.RemoteJob) error {
+	s.puts++
+	if s.puts == s.failOn {
+		return s.failErr
+	}
+	return s.inner.PutRemoteJob(ctx, job)
 }
 
 func (s *recoverableRemoteJobStore) RemoteJob(string) (state.RemoteJob, error) {

@@ -536,6 +536,44 @@ func TestCreateMarksUnknownRefUpdateAndRecoveryProvesIt(t *testing.T) {
 	}
 }
 
+func TestCommitIntentPersistenceFailurePreventsCommitTreeEffect(t *testing.T) {
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	writeFile(t, filepath.Join(repo, "a.txt"), "candidate\n")
+	runner := &countingRunner{base: SystemRunner{}}
+	failure := errors.New("commit intent unavailable")
+	store := &memoryIntentStore{putErr: failure}
+	req := Request{ID: "intent-write-failure", RepoDir: repo, Snapshot: []SnapshotEntry{{Path: "a.txt", Content: []byte("candidate\n"), Mode: 0644}}, Message: "feat: intent failure", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest()}
+	if _, err := New(runner, store).Create(context.Background(), req); !errors.Is(err, failure) {
+		t.Fatalf("error=%v, want intent persistence failure", err)
+	}
+	if runner.commitTrees != 0 || strings.Contains(showRefs(t, repo), "refs/autogit/commits/") {
+		t.Fatalf("commit effect escaped intent failure: commit-trees=%d refs=%q", runner.commitTrees, showRefs(t, repo))
+	}
+}
+
+func TestCommitResultPersistenceFailureRecoversWithoutSecondCommitTree(t *testing.T) {
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	writeFile(t, filepath.Join(repo, "a.txt"), "candidate\n")
+	runner := &countingRunner{base: SystemRunner{}}
+	store := &memoryIntentStore{recordErr: errors.New("commit result unavailable")}
+	tx := New(runner, store)
+	req := Request{ID: "result-write-failure", RepoDir: repo, Snapshot: []SnapshotEntry{{Path: "a.txt", Content: []byte("candidate\n"), Mode: 0644}}, Message: "feat: result failure", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest()}
+	if _, err := tx.Create(context.Background(), req); !errors.Is(err, store.recordErr) {
+		t.Fatalf("error=%v, want result persistence failure", err)
+	}
+	store.recordErr = nil
+	if _, err := tx.Create(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if runner.commitTrees != 1 {
+		t.Fatalf("commit-tree effects=%d, want one after recovery", runner.commitTrees)
+	}
+}
+
 func TestCreateReusesExistingIntentAndDoesNotCreateAnotherCommit(t *testing.T) {
 	repo := newRepo(t)
 	git(t, repo, "config", "user.name", "AutoGit Test")
@@ -774,6 +812,8 @@ type memoryIntentStore struct {
 	intents    map[string]Intent
 	commits    map[string]string
 	reconciled map[string]string
+	putErr     error
+	recordErr  error
 }
 
 func (s *memoryIntentStore) init() {
@@ -789,6 +829,9 @@ func (s *memoryIntentStore) init() {
 }
 func (s *memoryIntentStore) PutCommitIntent(_ context.Context, i Intent) error {
 	s.init()
+	if s.putErr != nil {
+		return s.putErr
+	}
 	if old, ok := s.intents[i.ID]; ok && old != i {
 		return os.ErrExist
 	}
@@ -819,6 +862,9 @@ func (s *memoryIntentStore) GetCommitRecord(ctx context.Context, id string) (Rec
 }
 func (s *memoryIntentStore) RecordCommit(_ context.Context, id, sha string) error {
 	s.init()
+	if s.recordErr != nil {
+		return s.recordErr
+	}
 	s.commits[id] = sha
 	return nil
 }

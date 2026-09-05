@@ -88,6 +88,44 @@ func TestPersistentIntentPortRecoversRealGitRefAfterLostResponse(t *testing.T) {
 	}
 }
 
+func TestPersistentIntentPortReopensAfterCommitResultFailure(t *testing.T) {
+	repo := newRepo(t)
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	store, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("commit result unavailable")
+	fault := &failRecordOncePort{inner: NewStateIntentPort(store), err: failure}
+	runner := &countingRunner{base: SystemRunner{}}
+	req := Request{ID: "persistent-result-recovery", RepoDir: repo, Snapshot: []SnapshotEntry{{Path: "a.txt", Content: []byte("candidate\n"), Mode: 0644}}, Message: "feat: persistent result recovery", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest()}
+	if _, err := New(runner, fault).Create(context.Background(), req); !errors.Is(err, failure) {
+		t.Fatalf("error=%v, want result persistence failure", err)
+	}
+	if runner.commitTrees != 1 {
+		t.Fatalf("commit-tree calls=%d, want one before restart", runner.commitTrees)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	got, err := New(runner, NewStateIntentPort(restarted)).Recover(context.Background(), req.ID)
+	if err != nil || got.SHA == "" {
+		t.Fatalf("restart recovery commit=%+v err=%v", got, err)
+	}
+	if runner.commitTrees != 1 {
+		t.Fatalf("commit-tree calls=%d after restart, want one", runner.commitTrees)
+	}
+	record, err := restarted.GitCommitIntentRecord(context.Background(), req.ID)
+	if err != nil || record.State != state.CommitCreated || record.SHA != got.SHA {
+		t.Fatalf("durable record=%+v err=%v", record, err)
+	}
+}
+
 func TestPersistentIntentPortRejectsSnapshotIdentityCollision(t *testing.T) {
 	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -132,4 +170,30 @@ func testPersistentIntent(id string) Intent {
 		return "sha256:" + string(b)
 	}
 	return Intent{ID: id, RepoDir: testRepoDir, Ref: "refs/autogit/commits/" + id, ParentSHA: "", TreeOID: "0123456789012345678901234567890123456789", Message: "feat: persist\n", CandidateDigest: d('a'), MessageDigest: d('b'), SnapshotDigest: d('c'), PolicyDigest: d('d'), VerifierDigest: d('e'), GuardDigest: d('f')}
+}
+
+type failRecordOncePort struct {
+	inner IntentPort
+	err   error
+}
+
+func (p *failRecordOncePort) PutCommitIntent(ctx context.Context, intent Intent) error {
+	return p.inner.PutCommitIntent(ctx, intent)
+}
+
+func (p *failRecordOncePort) GetCommitIntent(ctx context.Context, id string) (Intent, error) {
+	return p.inner.GetCommitIntent(ctx, id)
+}
+
+func (p *failRecordOncePort) RecordCommit(ctx context.Context, id, sha string) error {
+	if p.err != nil {
+		err := p.err
+		p.err = nil
+		return err
+	}
+	return p.inner.RecordCommit(ctx, id, sha)
+}
+
+func (p *failRecordOncePort) RecordReconcile(ctx context.Context, id, reason string) error {
+	return p.inner.RecordReconcile(ctx, id, reason)
 }

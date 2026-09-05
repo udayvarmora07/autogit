@@ -518,6 +518,25 @@ release races. Commit processing rechecks the durable intent after waiting for
 the lease, so a contended retry observes a completed job instead of issuing a
 second Git effect.
 
+The local Git transaction tests also inject failure at commit-intent
+persistence and assert that `commit-tree` and AutoGit refs remain untouched.
+They inject commit-result persistence failure after ref creation and verify a
+retry recovers the existing ref without creating a second commit. Lifecycle
+completion now validates that the loader handoff matches the ingress session,
+repository, client, and required ephemeral trusted root before running the
+workflow.
+
+Independent state-store handles now exercise concurrent commit and hosted-create
+requests as process-boundary tests, including reopening SQLite after a lost
+commit, push, or hosted-create result. Receipt/projection and durable state
+transactions use SQLite immediate writer locking with a bounded busy timeout;
+this prevents deferred read-to-write upgrades from returning `SQLITE_BUSY`
+while preserving transactional rollback and idempotent replay. Concurrent
+duplicate lifecycle completion ingress is verified to converge on one AutoGit
+ref and one durable task completion fact. A local remote-attachment response
+loss is also retried from the exact durable hosted identity without recreating
+or reattaching the remote twice.
+
 The four legacy compatibility suites were rerun from the installed reference
 checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,
 and 3). They remain regression-floor evidence only; they exercise the Bash
