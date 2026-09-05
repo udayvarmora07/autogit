@@ -123,7 +123,7 @@ tests:
   duplicate effects; broader randomized process schedules remain release gates.
 - [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
   and reach the >=609 deterministic release-suite target; the local Go suite
-  currently emits 660 passing named test cases/subtests under `go test -json`.
+  currently emits 663 passing named test cases/subtests under `go test -json`.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
   scenarios pass; Go v1 coverage is enforced separately by the >=609 CI floor.
 - [x] Add deterministic fault-injection coverage for the implemented commit,
@@ -281,6 +281,14 @@ These eight bounded slices were implemented with focused red-green tests:
   reacquisition so concurrent commit requests cannot overlap or lose a lease.
 - [x] Require an ingress completion claim for core completion candidates and
   retry duplicate completion ingress deterministically.
+- [x] Fail closed when a durable hosted-repository intent cannot be reread
+  before creation, preventing a transient state-store error from issuing a
+  duplicate provider create request.
+- [x] Reject incomplete `REMOTE_CREATED`/`REMOTE_ATTACHED` records without an
+  exact hosted identity instead of retrying hosted creation from ambiguous
+  durable state.
+- [x] Propagate push-job read failures before lifecycle fact projection so a
+  successful publication is never reported with silently missing durable facts.
 
 The remaining unchecked items are release or policy gates, or require automatic
 message/verifier profile selection; installed hooks do not infer those values,

@@ -86,6 +86,9 @@ func (t RepositoryTransaction) Create(ctx context.Context, req RemoteCreateReque
 		if job.RepositoryID != req.RepositoryID || job.Owner != req.Owner || job.Name != req.Name || job.Alias != req.Alias || job.Visibility != req.Visibility || job.URL != remoteURL {
 			return "", errors.New("repository creation intent identity conflict")
 		}
+		if (job.State == state.RemoteCreated || job.State == state.RemoteAttached) && job.HostedIdentity == "" {
+			return "", errors.New("repository creation intent lacks hosted identity")
+		}
 		if job.State == state.RemoteAttached {
 			return identity, nil
 		}
@@ -120,7 +123,13 @@ func (t RepositoryTransaction) Create(ctx context.Context, req RemoteCreateReque
 		return "", localErr
 	}
 
-	job, _ = jobs.RemoteJob(req.ID)
+	job, err = jobs.RemoteJob(req.ID)
+	if err != nil {
+		// The intent was durably written above. A read failure here leaves the
+		// hosted side effect unknown; creating again would risk a duplicate
+		// repository. Retry/reconcile only after the durable record is readable.
+		return "", err
+	}
 	hostedIdentity := job.HostedIdentity
 	if job.State == state.RemoteRequested {
 		// A crash can occur after hosted creation and before the durable

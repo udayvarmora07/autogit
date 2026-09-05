@@ -334,6 +334,46 @@ func TestRepositoryTransactionRecoversHostedCreateAfterResultPersistenceFailure(
 	}
 }
 
+func TestRepositoryTransactionFailsClosedWhenIntentReadFailsBeforeHostedCreate(t *testing.T) {
+	db, err := state.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	failure := errors.New("remote intent read unavailable")
+	store := &readFailingRemoteJobStore{inner: stateRemoteJobStore{db: db}, failOn: 2, err: failure}
+	hosted := &transactionProvider{}
+	req := RemoteCreateRequest{ID: "remote-read-failure", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	tx := RepositoryTransaction{Jobs: store, Hosted: hosted, Git: &transactionBinder{}}
+	if _, err := tx.Create(context.Background(), req); !errors.Is(err, failure) {
+		t.Fatalf("error=%v, want durable intent read failure", err)
+	}
+	if hosted.created != 0 {
+		t.Fatalf("hosted create calls=%d after intent read failure", hosted.created)
+	}
+}
+
+func TestRepositoryTransactionFailsClosedWhenCreatedIntentLacksHostedIdentity(t *testing.T) {
+	db, err := state.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	req := RemoteCreateRequest{ID: "remote-missing-identity", RepositoryID: "sha256:" + strings.Repeat("1", 64), Alias: "origin", Owner: "owner", Name: "repo", Visibility: "private"}
+	if err := db.WithTx(context.Background(), func(tx *state.Tx) error {
+		return tx.PutRemoteJob(state.RemoteJob{ID: req.ID, RepositoryID: req.RepositoryID, Alias: req.Alias, Owner: req.Owner, Name: req.Name, Visibility: req.Visibility, URL: "https://github.com/owner/repo.git", State: state.RemoteCreated})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hosted := &transactionProvider{}
+	if _, err := (RepositoryTransaction{State: db, Hosted: hosted, Git: &transactionBinder{}}).Create(context.Background(), req); err == nil {
+		t.Fatal("incomplete created intent unexpectedly triggered recovery")
+	}
+	if hosted.created != 0 {
+		t.Fatalf("hosted create calls=%d for incomplete created intent", hosted.created)
+	}
+}
+
 func TestRepositoryTransactionReopensStateAfterHostedCreateResultFailure(t *testing.T) {
 	statePath := t.TempDir() + "/state.db"
 	firstDB, err := state.Open(statePath)
@@ -430,6 +470,25 @@ type faultRemoteJobStore struct {
 	puts    int
 	failOn  int
 	failErr error
+}
+
+type readFailingRemoteJobStore struct {
+	inner  RemoteJobStore
+	reads  int
+	failOn int
+	err    error
+}
+
+func (s *readFailingRemoteJobStore) RemoteJob(id string) (state.RemoteJob, error) {
+	s.reads++
+	if s.reads == s.failOn {
+		return state.RemoteJob{}, s.err
+	}
+	return s.inner.RemoteJob(id)
+}
+
+func (s *readFailingRemoteJobStore) PutRemoteJob(ctx context.Context, job state.RemoteJob) error {
+	return s.inner.PutRemoteJob(ctx, job)
 }
 
 func (s *faultRemoteJobStore) RemoteJob(id string) (state.RemoteJob, error) {

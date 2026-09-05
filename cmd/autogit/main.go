@@ -966,10 +966,8 @@ func runPublish(args []string, dir string, out io.Writer) error {
 	coord := retryCoordinator(db, publication, options.ID)
 	remoteDigest := digestDestination(options.Owner, options.Name, options.Visibility, options.Ref)
 	publishErr := coord.Push(context.Background(), coordinator.PushRequest{ID: options.ID, Owner: options.Owner, Name: options.Name, Ref: options.Ref, CommitSHA: intent.SHA, RemoteDigest: remoteDigest})
-	if job, jobErr := db.PushJob(options.ID); jobErr == nil {
-		if factErr := emitPublishDomainFacts(context.Background(), filepath.Join(dir, "state.db"), p, info, job, publishErr); factErr != nil {
-			return cliError{"E_STATE", safeMessage(factErr.Error())}
-		}
+	if factErr := emitStoredPushDomainFacts(context.Background(), db, filepath.Join(dir, "state.db"), p, info, options.ID, publishErr); factErr != nil {
+		return cliError{"E_STATE", safeMessage(factErr.Error())}
 	}
 	if publishErr != nil {
 		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
@@ -1412,6 +1410,17 @@ func emitPublishDomainFacts(ctx context.Context, statePath string, p policy.Poli
 	return emitDomainFact(ctx, store, p, fact)
 }
 
+func emitStoredPushDomainFacts(ctx context.Context, db *state.Store, statePath string, p policy.Policy, info repository.Info, jobID string, operationErr error) error {
+	if db == nil {
+		return errors.New("push-job state store is required")
+	}
+	job, err := db.PushJob(jobID)
+	if err != nil {
+		return err
+	}
+	return emitPublishDomainFacts(ctx, statePath, p, info, job, operationErr)
+}
+
 func lifecycleScopeForCommit(store *events.Store, repositoryID, sha string) (string, string, string, bool) {
 	data, _, err := store.LifecycleProjection(repositoryID)
 	if err != nil {
@@ -1650,10 +1659,8 @@ func runRetry(args []string, dir string, out io.Writer) error {
 	publication := provider.GH{Runner: ghRunner, Pusher: pusher}
 	coord := retryCoordinator(db, publication, options.ID)
 	retryErr := coord.RetryPush(context.Background(), options.ID)
-	if refreshed, refreshErr := db.PushJob(options.ID); refreshErr == nil {
-		if factErr := emitPublishDomainFacts(context.Background(), filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, refreshed, retryErr); factErr != nil {
-			return cliError{"E_STATE", safeMessage(factErr.Error())}
-		}
+	if factErr := emitStoredPushDomainFacts(context.Background(), db, filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, options.ID, retryErr); factErr != nil {
+		return cliError{"E_STATE", safeMessage(factErr.Error())}
 	}
 	if retryErr != nil {
 		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)

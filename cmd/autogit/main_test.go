@@ -769,6 +769,21 @@ func TestDomainFactProjectionTracksPublishPostcondition(t *testing.T) {
 	}
 }
 
+func TestStoredPushDomainFactsPropagatesJobReadFailure(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info := repository.Info{RepoID: "sha256:" + strings.Repeat("a", 64), WorktreeID: "sha256:" + strings.Repeat("b", 64)}
+	err = emitStoredPushDomainFacts(context.Background(), db, filepath.Join(t.TempDir(), "state.db"), policy.Policy{}, info, "missing", nil)
+	if err == nil {
+		t.Fatal("closed push-job store was treated as a successful fact projection")
+	}
+}
+
 func TestRetryRequiresExplicitJobRepositoryAndRemote(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)

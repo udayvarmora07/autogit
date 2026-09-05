@@ -576,3 +576,20 @@ repository creation and local attachment, proving that a lost hosted-create
 or attach result is recovered from the exact durable identity. These tests
 strengthen the process-boundary evidence, but do not close the required 1,000
 randomized schedules across every durable intent boundary.
+
+### 10.13 Fail-closed hosted intent reads (2026-09-05)
+
+The hosted-repository transaction now propagates a durable intent read error
+after the initial intent write instead of treating an unavailable record as an
+empty request. A regression test proves that no hosted create call occurs when
+that read fails, preventing a transient state-store failure from issuing a
+duplicate provider operation.
+
+It also rejects `REMOTE_CREATED` and `REMOTE_ATTACHED` records that lack the
+exact hosted identity required for recovery. This prevents an incomplete
+record from being interpreted as permission to create the destination again.
+
+The CLI publication and retry paths now propagate push-job read failures
+before emitting lifecycle facts. A closed or unavailable state store therefore
+returns an explicit state error instead of silently reporting a publication
+without its durable projection attempt.
