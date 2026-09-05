@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -505,13 +506,9 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 		}
 	}
 	sort.Strings(paths)
-	files := make(map[string]FileObservation, len(paths))
-	for _, name := range paths {
-		file, captureErr := captureBaselineFile(abs, name, maxFileSize, options.BeforeRead)
-		if captureErr != nil {
-			return Baseline{}, captureErr
-		}
-		files[name] = file
+	files, err := captureBaselineFiles(abs, paths, maxFileSize, options.BeforeRead)
+	if err != nil {
+		return Baseline{}, err
 	}
 	finalHead, err := readHead()
 	if err != nil {
@@ -556,6 +553,63 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 		Paths:        paths,
 		Files:        files,
 	}, nil
+}
+
+// captureBaselineFiles performs independent filesystem observations with a
+// bounded worker pool. Large repositories otherwise spend most of baseline
+// capture waiting on serial metadata calls, especially on Windows. The
+// deterministic fault-injection hook intentionally keeps the serial path so
+// replacement-race tests retain their ordering and semantics.
+func captureBaselineFiles(root string, paths []string, maxFileSize int64, beforeRead func(string)) (map[string]FileObservation, error) {
+	files := make(map[string]FileObservation, len(paths))
+	if len(paths) < 64 || beforeRead != nil {
+		for _, name := range paths {
+			file, err := captureBaselineFile(root, name, maxFileSize, beforeRead)
+			if err != nil {
+				return nil, err
+			}
+			files[name] = file
+		}
+		return files, nil
+	}
+
+	workerCount := runtime.GOMAXPROCS(0) * 2
+	if workerCount < 4 {
+		workerCount = 4
+	}
+	if workerCount > 16 {
+		workerCount = 16
+	}
+	if workerCount > len(paths) {
+		workerCount = len(paths)
+	}
+
+	results := make([]FileObservation, len(paths))
+	errorsByPath := make([]error, len(paths))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for i := 0; i < workerCount; i++ {
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				results[index], errorsByPath[index] = captureBaselineFile(root, paths[index], maxFileSize, nil)
+			}
+		}()
+	}
+	for index := range paths {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+
+	for index, name := range paths {
+		if err := errorsByPath[index]; err != nil {
+			return nil, err
+		}
+		files[name] = results[index]
+	}
+	return files, nil
 }
 
 func isUnbornHeadError(err error) bool {
