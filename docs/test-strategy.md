@@ -117,8 +117,12 @@ hook rather than the new core.
 The Go v1 suite emits 674 passing named test cases/subtests in the same audit
 environment when run with `go test -count=1 -json ./...`. CI enforces the
 documented >=609 deterministic floor from that stream. This count is a release
-floor, not evidence for the separate native-OS, randomized crash/concurrency,
-provider-canary, performance, or phase-promotion gates.
+floor, not evidence for the separate native-OS, provider-canary, performance,
+or phase-promotion gates. The randomized crash/concurrency requirement is
+covered locally by the seeded 1,000-schedule subprocess matrices documented in
+the implementation plan; race-enabled CI uses a bounded representative sample
+for the newly added persistence matrices because instrumented subprocesses are
+slower.
 
 ## 5. Test design by risk
 

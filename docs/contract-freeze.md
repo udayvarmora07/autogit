@@ -84,9 +84,11 @@ The implementation evidence is distributed as follows:
 
 The remaining review/release gates are recorded in
 [`docs/implementation-plan.md`](implementation-plan.md) and are not silently
-closed by this contract record: implicit message/verifier inference without an
-explicit trusted profile, randomized crash schedules, native macOS/Windows
-execution, the disposable provider canary, and alpha/beta promotion. The
-protected `enable --auto-complete --verifiers FILE` profile, deterministic
-task-intent message composition, and trusted hook completion path are covered
-by the implementation evidence in the plan.
+closed by this contract record: acceptance approval of the frozen contract,
+native macOS/Windows execution, the disposable provider canary, and alpha/beta
+promotion. Implicit message/verifier inference remains intentionally
+unsupported without an explicit trusted profile; it is a policy boundary, not
+permission to infer completion. The protected
+`enable --auto-complete --verifiers FILE` profile, deterministic task-intent
+message composition, trusted hook completion path, and randomized recovery
+schedules are covered by the implementation evidence in the plan.

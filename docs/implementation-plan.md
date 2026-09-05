@@ -333,20 +333,21 @@ be exercised without a user repository or network credentials:
   `internal/verification.ExecRunner` provides the corresponding bounded
   process boundary for trusted verifier argv.
 
-The following planned gates remain open and are not represented as completed:
-implicit message/verifier inference without an explicit trusted profile (the
-protected `enable --auto-complete --verifiers FILE` profile, source-free
-durable evidence, session start/complete coordinator, session-start hook
-wiring, explicit `sync --complete --all-owned` resume path, deterministic
-task-intent message composer, and trusted hook completion path are now
-implemented), complete trusted verification policy configuration for all
-publication/readiness profiles, complete adapter discovery/installation and
-workflow orchestration in the CLI and the
-opt-in disposable-provider canary. The user-facing consent-gated repository-
-initialization command is implemented. Explicit private and evidence-gated
-public `publish` paths, deterministic lifecycle fact emission,
-and the tested repository-creation/local-remote transaction package are
-implemented, but do not satisfy those broader release gates.
+The following review/release gates remain open and are not represented as
+completed: acceptance of the Phase 0 contract, native macOS/Windows execution,
+the opt-in disposable-provider canary, and alpha/beta promotion. Implicit
+message/verifier inference remains intentionally unavailable without an
+explicit trusted profile; the protected
+`enable --auto-complete --verifiers FILE` profile, source-free durable
+evidence, session start/complete coordinator, session-start hook wiring,
+explicit `sync --complete --all-owned` resume path, deterministic task-intent
+message composer, and trusted hook completion path are implemented. The
+user-facing consent-gated repository-initialization command, explicit private
+and evidence-gated public `publish` paths, deterministic lifecycle fact
+emission, tested repository-creation/local-remote transaction package, adapter
+discovery/install surface, and randomized durable-boundary recovery matrices
+are implemented, but local evidence does not satisfy those external release
+gates.
 The prototype shell test scripts are not part of this repository, but the
 installed reference checkout was rerun on 2026-09-05 and passed all 177
 disposable scenarios. Native macOS and Windows CI has not yet been observed;
