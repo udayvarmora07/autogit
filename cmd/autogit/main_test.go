@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1009,9 +1010,16 @@ import (
 	"strings"
 )
 
+const (
+	testGHState = ` + strconv.Quote(ghState) + `
+	testGHSHA = ` + strconv.Quote(sha) + `
+	testRealGit = ` + strconv.Quote(realGit) + `
+	testGitLog = ` + strconv.Quote(filepath.Join(dir, "git-log")) + `
+)
+
 func main() {
 	name := strings.TrimSuffix(strings.ToLower(filepath.Base(os.Args[0])), ".exe")
-	if logPath := os.Getenv("AUTOGIT_TEST_GIT_LOG"); name == "git" && logPath != "" {
+	if logPath := testGitLog; name == "git" && logPath != "" {
 		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err == nil {
 			defer f.Close()
@@ -1019,9 +1027,9 @@ func main() {
 		}
 	}
 	if name == "gh" {
-		state := os.Getenv("AUTOGIT_TEST_GH_STATE")
+		state := testGHState
 		if _, err := os.Stat(state); err == nil {
-			fmt.Fprintln(os.Stdout, os.Getenv("AUTOGIT_TEST_GH_SHA"))
+			fmt.Fprintln(os.Stdout, testGHSHA)
 			return
 		}
 		_ = os.WriteFile(state, []byte{}, 0600)
@@ -1036,7 +1044,7 @@ func main() {
 	if strings.Contains(args, "push -- origin") {
 		return
 	}
-	command := exec.Command(os.Getenv("AUTOGIT_TEST_REAL_GIT"), os.Args[1:]...)
+	command := exec.Command(testRealGit, os.Args[1:]...)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
@@ -1065,10 +1073,6 @@ func main() {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("AUTOGIT_TEST_GH_STATE", ghState)
-	t.Setenv("AUTOGIT_TEST_GH_SHA", sha)
-	t.Setenv("AUTOGIT_TEST_REAL_GIT", realGit)
-	t.Setenv("AUTOGIT_TEST_GIT_LOG", filepath.Join(dir, "git-log"))
 }
 
 func TestParsePublishPublicEvidenceOptions(t *testing.T) {
