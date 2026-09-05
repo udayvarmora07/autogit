@@ -965,6 +965,11 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var out bytes.Buffer
 	if err := run([]string{"publish", "--id", "commit-publish", "--repo", root, "--remote", "origin", "--owner", "owner", "--name", "repo", "--ref", "main", "--visibility", "private"}, strings.NewReader(""), &out); err != nil {
+		if runtime.GOOS == "windows" {
+			if log, readErr := os.ReadFile(filepath.Join(fakeBin, "git-log")); readErr == nil {
+				t.Fatalf("publish: %v output=%s git-log=%s", err, out.String(), log)
+			}
+		}
 		t.Fatalf("publish: %v output=%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), `"reason_code":"PUBLISH_SUCCEEDED"`) || !strings.Contains(out.String(), `"commit_sha":"`+sha+`"`) {
@@ -1006,6 +1011,13 @@ import (
 
 func main() {
 	name := strings.TrimSuffix(strings.ToLower(filepath.Base(os.Args[0])), ".exe")
+	if logPath := os.Getenv("AUTOGIT_TEST_GIT_LOG"); name == "git" && logPath != "" {
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err == nil {
+			defer f.Close()
+			fmt.Fprintln(f, strings.Join(os.Args[1:], "\x00"))
+		}
+	}
 	if name == "gh" {
 		state := os.Getenv("AUTOGIT_TEST_GH_STATE")
 		if _, err := os.Stat(state); err == nil {
@@ -1056,6 +1068,7 @@ func main() {
 	t.Setenv("AUTOGIT_TEST_GH_STATE", ghState)
 	t.Setenv("AUTOGIT_TEST_GH_SHA", sha)
 	t.Setenv("AUTOGIT_TEST_REAL_GIT", realGit)
+	t.Setenv("AUTOGIT_TEST_GIT_LOG", filepath.Join(dir, "git-log"))
 }
 
 func TestParsePublishPublicEvidenceOptions(t *testing.T) {
