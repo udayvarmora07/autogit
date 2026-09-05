@@ -108,10 +108,11 @@ tests:
 
 ## Required validation and release gates
 
-- [ ] Replace the recovered 177-case compatibility floor with Go v1 coverage
-  and reach the >=609 deterministic release-suite target.
+- [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
+  and reach the >=609 deterministic release-suite target; the local Go suite
+  currently emits 623 passing named test cases/subtests under `go test -json`.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
-  scenarios pass; Go v1 replacement coverage and the >=609 target remain open.
+  scenarios pass; Go v1 coverage is enforced separately by the >=609 CI floor.
 - [ ] Add fault-injection coverage for every durable intent boundary and the
   required crash/concurrency schedules.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are

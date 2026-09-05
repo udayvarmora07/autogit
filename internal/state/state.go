@@ -129,6 +129,46 @@ type Store struct {
 }
 type Tx struct{ tx *sql.Tx }
 
+// ReadOnlyHealth checks an existing state database without running migrations
+// or creating any missing files. The CLI uses this for doctor so diagnostics
+// cannot repair, upgrade, or otherwise mutate application state.
+func ReadOnlyHealth(ctx context.Context, path string) (databaseReady, leaseReady bool, err error) {
+	if path == "" {
+		return false, false, errors.New("state path is empty")
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_query_only=true&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return false, false, err
+	}
+	defer db.Close()
+	if err := db.PingContext(ctx); err != nil {
+		return false, false, err
+	}
+	var integrity string
+	if err := db.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil || integrity != "ok" {
+		if err == nil {
+			err = fmt.Errorf("state integrity check: %s", integrity)
+		}
+		return false, false, err
+	}
+	var version string
+	if err := db.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
+		return false, false, err
+	}
+	parsedVersion, err := strconv.Atoi(version)
+	if err != nil || parsedVersion < 1 || parsedVersion > currentSchemaVersion {
+		if err == nil {
+			err = fmt.Errorf("unsupported state schema version %q", version)
+		}
+		return false, false, err
+	}
+	var leaseTable int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='leases'`).Scan(&leaseTable); err != nil {
+		return false, false, err
+	}
+	return true, leaseTable == 1, nil
+}
+
 func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("state path is empty")

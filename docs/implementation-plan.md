@@ -258,8 +258,9 @@ Open gates and next priorities:
 - [ ] Run an opt-in disposable GitHub canary with exact postconditions and
       allowlisted cleanup.
 - [x] Recover and rerun the installed 177-case prototype regression floor.
-- [ ] Replace that compatibility floor with Go v1 coverage and reach the
-      >=609 deterministic release-test target.
+- [x] Replace that compatibility floor with Go v1 coverage and reach the
+      >=609 deterministic release-test target. CI enforces the floor by
+      counting passing named Go test cases/subtests from `go test -json`.
 - [ ] Complete all Phase 0 freeze, phase-exit, external-provider, native-OS,
       release, canary, and beta gates before claiming promotion.
 
@@ -337,7 +338,7 @@ session-start hook wiring, explicit `sync --complete --all-owned` resume path,
 and explicit trusted hook completion profile are implemented), complete
 trusted verification policy configuration for all workflow modes, complete
 adapter discovery/installation and
-workflow orchestration in the CLI, the >=609 release-test target, and the
+workflow orchestration in the CLI and the
 opt-in disposable-provider canary. The user-facing consent-gated repository-
 initialization command is implemented. Explicit private and evidence-gated
 public `publish` paths, deterministic lifecycle fact emission,
@@ -540,4 +541,4 @@ or reattaching the remote twice.
 The four legacy compatibility suites were rerun from the installed reference
 checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,
 and 3). They remain regression-floor evidence only; they exercise the Bash
-hook and do not satisfy the Go v1 `>=609` release-test target.
+hook and do not replace the Go v1 suite or its enforced `>=609` floor.

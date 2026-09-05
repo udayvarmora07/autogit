@@ -72,6 +72,68 @@ func TestDoctorReportsOperationalDependencySurface(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsCorruptStateAsUnavailableWithoutRepairingIt(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	databasePath := filepath.Join(stateRoot, "state.db")
+	original := []byte("not a sqlite database")
+	if err := os.WriteFile(databasePath, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+
+	var out bytes.Buffer
+	if err := run([]string{"doctor"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["state_database"] != "unavailable" || result["lock_store"] != "unavailable" {
+		t.Fatalf("doctor reported corrupt state as usable: %v", result)
+	}
+	if result["reason_code"] != "STATE_UNAVAILABLE" {
+		t.Fatalf("doctor reason code=%v, want STATE_UNAVAILABLE", result["reason_code"])
+	}
+	got, err := os.ReadFile(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("read-only doctor changed corrupt state database: %q", got)
+	}
+}
+
+func TestDoctorReportsHealthyInitializedStateAndLeaseStore(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.Open(filepath.Join(stateRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+
+	var out bytes.Buffer
+	if err := run([]string{"doctor"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["state_database"] != "available" || result["lock_store"] != "available" || result["reason_code"] != "DOCTOR_OK" {
+		t.Fatalf("doctor healthy-state diagnostics=%v", result)
+	}
+}
+
 func TestSchemaInvalidHookDoesNotCreateDurableState(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", dir)

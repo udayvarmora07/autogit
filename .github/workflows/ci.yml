@@ -37,6 +37,13 @@ jobs:
       - name: tests
         shell: bash
         run: go test ./...
+      - name: deterministic Go release test floor
+        shell: bash
+        run: |
+          set -o pipefail
+          count="$(go test -count=1 -json ./... | awk '/"Action":"pass"/ && /"Test":/ {n++} END {print n+0}')"
+          echo "deterministic Go test cases: ${count}"
+          test "${count}" -ge 609
       - name: race tests
         if: matrix.race
         shell: bash

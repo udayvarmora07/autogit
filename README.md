@@ -93,7 +93,7 @@ Fresh repository-wide `go test ./...`, `go vet ./...`, `go build ./...`, and
 Linux arm64, Darwin arm64, and Windows amd64 cross-build smoke checks pass
 locally. Native macOS and Windows CI has not yet been observed. The repository
 does not contain the prototype shell scripts used for the documented 177-case
-baseline, and the full `>=609` release-test target, complete CLI workflow,
-provider canary, and publication/recovery release gates remain open. The CI
-workflow defines the intended native matrix but does not itself constitute
-proof that those release gates have passed.
+baseline, complete CLI workflow, provider canary, and publication/recovery
+release gates remain open. The CI workflow enforces the `>=609` deterministic
+Go test-case floor, but it does not itself constitute proof that those external
+release gates have passed.

@@ -368,6 +368,10 @@ func runDoctor(dir string, out io.Writer) error {
 	}
 	if gitErr != nil {
 		result["reason_code"] = "GIT_UNAVAILABLE"
+	} else if stateDatabase == "unavailable" {
+		result["reason_code"] = "STATE_UNAVAILABLE"
+	} else if lockStore == "unavailable" {
+		result["reason_code"] = "LEASE_STORE_UNAVAILABLE"
 	}
 	return json.NewEncoder(out).Encode(result)
 }
@@ -386,6 +390,13 @@ func inspectDoctorState(dir string) (string, string) {
 	}
 	if err != nil || dbInfo.Mode()&os.ModeSymlink != 0 || !dbInfo.Mode().IsRegular() || (runtime.GOOS != "windows" && dbInfo.Mode().Perm()&0077 != 0) {
 		return "unavailable", "unavailable"
+	}
+	databaseReady, leaseReady, healthErr := state.ReadOnlyHealth(context.Background(), filepath.Join(dir, "state.db"))
+	if healthErr != nil || !databaseReady {
+		return "unavailable", "unavailable"
+	}
+	if !leaseReady {
+		return "available", "unavailable"
 	}
 	return "available", "available"
 }
