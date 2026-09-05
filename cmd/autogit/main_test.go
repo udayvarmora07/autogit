@@ -1106,13 +1106,17 @@ func TestTrustedExecutableResolvesTrustedGitSymlink(t *testing.T) {
 	if err := os.Symlink(realPath, filepath.Join(dir, "git")); err != nil {
 		t.Fatal(err)
 	}
+	wantPath, err := filepath.EvalSymlinks(realPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("PATH", dir)
 	resolved, err := trustedExecutable("git")
 	if err != nil {
 		t.Fatalf("trusted Git symlink rejected: %v", err)
 	}
-	if resolved != realPath {
-		t.Fatalf("resolved Git path=%q, want %q", resolved, realPath)
+	if resolved != wantPath {
+		t.Fatalf("resolved Git path=%q, want %q", resolved, wantPath)
 	}
 }
 
