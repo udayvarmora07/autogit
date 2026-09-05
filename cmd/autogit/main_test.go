@@ -23,6 +23,26 @@ import (
 	localworkflow "autogit/internal/workflow"
 )
 
+func testVerifierConfig(t *testing.T) []byte {
+	t.Helper()
+	argv := []string{"/usr/bin/true"}
+	if runtime.GOOS == "windows" {
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		argv = []string{executable, "-test.run=^$"}
+	}
+	b, err := json.Marshal(map[string]any{
+		"version":   "1",
+		"verifiers": []any{map[string]any{"name": "true", "version": "1", "argv": argv}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
 func TestInvalidHookDoesNotCreateDurableState(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", dir)
@@ -465,7 +485,7 @@ func TestVerifyReconstructsCleanSessionWithoutCreatingCommitIntent(t *testing.T)
 		t.Fatal(err)
 	}
 	verifierConfig := filepath.Join(stateDir, "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	var verifyOut bytes.Buffer
@@ -522,7 +542,7 @@ func TestSyncCompleteCreatesVerifiedAutoGitCommitFromCleanSession(t *testing.T) 
 		t.Fatal(err)
 	}
 	verifierConfig := filepath.Join(stateDir, "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	var completeOut bytes.Buffer
@@ -561,7 +581,7 @@ func TestSyncCompleteResolvesTrustedPolicyProfileForGeneratedIntent(t *testing.T
 		t.Fatalf("git commit: %v: %s", err, output)
 	}
 	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := run([]string{"enable", "--repo", root, "--local", "--auto-complete", "--verifiers", verifierConfig}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
@@ -636,7 +656,7 @@ func TestSyncAllOwnedResumesHookBaselineAndExcludesPreexistingWork(t *testing.T)
 		t.Fatal(err)
 	}
 	verifierConfig := filepath.Join(stateDir, "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -709,7 +729,7 @@ func TestVerifyAllOwnedResumesHookBaselineWithoutCreatingCommitIntent(t *testing
 		t.Fatal(err)
 	}
 	verifierConfig := filepath.Join(stateDir, "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -1018,7 +1038,7 @@ func TestPublicPreflightCanAuthorizeOnlyWithExactTreeEvidence(t *testing.T) {
 	sha := strings.TrimSpace(string(mustCommand(t, gitPath, "-C", root, "rev-parse", "HEAD")))
 	tree := strings.TrimSpace(string(mustCommand(t, gitPath, "-C", root, "rev-parse", "HEAD^{tree}")))
 	verifierPath := filepath.Join(stateRoot, "verifiers.json")
-	if err := os.WriteFile(verifierPath, []byte(`{"version":"1","verifiers":[{"name":"unit","version":"1","argv":["/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierPath, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	registry, err := verification.LoadTrustedRegistryFile(verifierPath, stateRoot, 0)
@@ -1514,7 +1534,7 @@ func TestHookCompletionProfileCommitsDurableSessionCandidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	verifierConfig := filepath.Join(stateRoot, "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	withScope := func(input string, task bool) []byte {
@@ -1568,7 +1588,7 @@ func TestHookAutomaticCompletionUsesTrustedPolicyAndTaskIntent(t *testing.T) {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
 	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
-	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(verifierConfig, testVerifierConfig(t), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := run([]string{"enable", "--repo", root, "--local", "--auto-complete", "--verifiers", verifierConfig}, strings.NewReader(""), &bytes.Buffer{}); err != nil {

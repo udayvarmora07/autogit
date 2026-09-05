@@ -44,6 +44,11 @@ type InstallPlan struct {
 	Exists   bool
 	Mode     os.FileMode
 	Changed  bool
+	// resolvedDir records the canonical directory observed during planning.
+	// The spelling of an absolute path may legitimately change across platforms
+	// (for example /var -> /private/var on macOS), so Apply compares canonical
+	// identities rather than raw path strings.
+	resolvedDir string
 }
 
 var (
@@ -72,7 +77,7 @@ func Plan(spec ConfigSpec, roots []string) (InstallPlan, error) {
 	if err != nil {
 		return InstallPlan{}, err
 	}
-	p := InstallPlan{Spec: spec, Path: path, Mode: 0600}
+	p := InstallPlan{Spec: spec, Path: path, Mode: 0600, resolvedDir: resolvedInstallDir(filepath.Dir(path))}
 	info, err := os.Lstat(path)
 	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
@@ -118,7 +123,10 @@ func Apply(p InstallPlan) error {
 		return err
 	}
 	canonicalDir, err := filepath.EvalSymlinks(dir)
-	if err != nil || canonicalDir != dir {
+	if err != nil {
+		return ErrScope
+	}
+	if p.resolvedDir != "" && canonicalDir != p.resolvedDir {
 		return ErrScope
 	}
 	if info, err := os.Lstat(p.Path); err == nil {
@@ -166,6 +174,14 @@ func Apply(p InstallPlan) error {
 	}
 	_ = os.Chmod(p.Path, 0600)
 	return syncDir(dir)
+}
+
+func resolvedInstallDir(dir string) string {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return ""
+	}
+	return resolved
 }
 
 // Uninstall removes only an entry carrying AutoGit's ownership marker. A

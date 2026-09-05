@@ -99,9 +99,10 @@ func canonicalExecutable(path string) (string, error) {
 		path = "git"
 	}
 	resolved, err := exec.LookPath(path)
-	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+	if err != nil || !filepath.IsAbs(resolved) {
 		return "", errors.New("invalid Git executable")
 	}
+	resolved = filepath.Clean(resolved)
 	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
 	if err != nil {
 		return "", errors.New("invalid Git executable")
@@ -152,7 +153,9 @@ func safeGitArgs(args ...string) []string {
 }
 
 func transactionArgs(executable string, args ...string) []string {
-	if filepath.Base(executable) == "git" || executable == "git" {
+	base := strings.ToLower(filepath.Base(executable))
+	base = strings.TrimSuffix(base, ".exe")
+	if base == "git" || executable == "git" {
 		return safeGitArgs(args...)
 	}
 	return args
@@ -687,10 +690,17 @@ func repositoryRoot(ctx context.Context, g Runner, dir string) (string, error) {
 		return "", err
 	}
 	root, err = filepath.EvalSymlinks(root)
-	if err != nil || root != abs {
+	if err != nil || !samePath(root, abs) {
 		return "", errors.New("repository directory must be the Git root")
 	}
 	return root, nil
+}
+
+func samePath(left, right string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	}
+	return filepath.Clean(left) == filepath.Clean(right)
 }
 
 func validateSnapshot(root string, requested []SnapshotEntry) ([]SnapshotEntry, []string, error) {

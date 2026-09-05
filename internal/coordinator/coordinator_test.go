@@ -86,7 +86,7 @@ func TestCommitResultPersistenceFailureRemainsRecoverable(t *testing.T) {
 }
 
 func TestDeterministicCommitIntentFaultSchedulesRecoverWithoutDuplicateEffects(t *testing.T) {
-	const schedules = 1000
+	const schedules = processScheduleCount
 	rng := rand.New(rand.NewSource(0xA017))
 	sha := strings.Repeat("a", 40)
 
@@ -132,7 +132,7 @@ func TestDeterministicCommitIntentFaultSchedulesRecoverWithoutDuplicateEffects(t
 }
 
 func TestDeterministicPushIntentFaultSchedulesRetainOneProviderEffect(t *testing.T) {
-	const schedules = 1000
+	const schedules = processScheduleCount
 	rng := rand.New(rand.NewSource(0xB017))
 	request := PushRequest{Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
 
@@ -194,7 +194,7 @@ func TestDeterministicPushIntentFaultSchedulesRetainOneProviderEffect(t *testing
 }
 
 func TestDeterministicConcurrentCommitSchedulesConvergeAcrossStateHandles(t *testing.T) {
-	const schedules = 1000
+	const schedules = processScheduleCount
 	rng := rand.New(rand.NewSource(0xC017))
 	sha := strings.Repeat("b", 40)
 

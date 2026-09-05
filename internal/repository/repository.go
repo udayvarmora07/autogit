@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -41,7 +42,7 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 	}
 	home, _ := os.UserHomeDir()
 	home, _ = filepath.EvalSymlinks(home)
-	if root == string(filepath.Separator) || root == home {
+	if root == string(filepath.Separator) || samePath(root, home) {
 		return Info{}, errors.New("protected repository root")
 	}
 	st, err := os.Stat(root)
@@ -66,7 +67,7 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	if root == string(filepath.Separator) || root == home {
+	if root == string(filepath.Separator) || samePath(root, home) {
 		return Info{}, errors.New("protected repository root")
 	}
 	gst, err := os.Lstat(gitPath)
@@ -144,14 +145,24 @@ func verifyLinkedWorktree(root, expectedGitDir string) error {
 		return errors.New("invalid linked worktree metadata")
 	}
 	actualRoot, err := filepath.EvalSymlinks(lines[0])
-	if err != nil || actualRoot != root {
+	if err != nil || !samePath(actualRoot, root) {
 		return errors.New("linked worktree root mismatch")
 	}
 	actualGit, err := filepath.EvalSymlinks(lines[1])
-	if err != nil || actualGit != expectedGitDir {
+	if err != nil || !samePath(actualGit, expectedGitDir) {
 		return errors.New("linked worktree gitdir mismatch")
 	}
 	return nil
+}
+
+func samePath(left, right string) bool {
+	if left == "" || right == "" {
+		return left == right
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	}
+	return filepath.Clean(left) == filepath.Clean(right)
 }
 func digest(key []byte, kind, value string) string {
 	h := hmac.New(sha256.New, key)

@@ -71,7 +71,7 @@ func TestSeededRandomizedGitTransactionProcessBoundarySchedules(t *testing.T) {
 	if os.Getenv("AUTOGIT_GITTX_HELPER") == "1" {
 		return
 	}
-	const schedules = 1000
+	const schedules = processScheduleCount
 	points := []string{"after_intent", "after_ref", "after_result", "none"}
 	rng := rand.New(rand.NewSource(0xF017))
 	seen := map[string]bool{}

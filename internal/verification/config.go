@@ -211,14 +211,14 @@ func LoadTrustedRegistryFile(path, trustedDir string, max int64) (*VerifierRegis
 	if err != nil || filepath.Clean(candidate) != candidate {
 		return nil, errors.New("trusted verifier path is invalid")
 	}
-	rel, err := filepath.Rel(root, candidate)
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(candidate))
+	if err != nil {
+		return nil, errors.New("trusted verifier configuration parent is unsafe")
+	}
+	canonicalCandidate := filepath.Join(resolvedParent, filepath.Base(candidate))
+	rel, err := filepath.Rel(root, canonicalCandidate)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return nil, errors.New("trusted verifier configuration must be inside state directory")
-	}
-	parent := filepath.Dir(candidate)
-	resolvedParent, err := filepath.EvalSymlinks(parent)
-	if err != nil || resolvedParent != parent {
-		return nil, errors.New("trusted verifier configuration parent is unsafe")
 	}
 	return LoadRegistryFile(candidate, max)
 }

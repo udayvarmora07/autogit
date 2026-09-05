@@ -3,6 +3,7 @@ package repository
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -18,6 +19,9 @@ func TestDiscoverRejectsHomeAndFilesystemRoot(t *testing.T) {
 func TestDiscoverRejectsRepositoryFoundAtHomeAfterWalkingUp(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	}
 	root := filepath.Join(home, "project")
 	if err := os.Mkdir(root, 0700); err != nil {
 		t.Fatal(err)

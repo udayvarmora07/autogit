@@ -190,7 +190,7 @@ func canonicalProjectRoot(candidate string) (string, error) {
 	if resolved, evalErr := filepath.EvalSymlinks(home); evalErr == nil {
 		home = resolved
 	}
-	if root == string(filepath.Separator) || (home != "" && root == home) {
+	if root == string(filepath.Separator) || (home != "" && samePath(root, home)) {
 		return "", errors.New("protected project root")
 	}
 	return root, nil

@@ -155,6 +155,25 @@ func TestLoadTrustedRegistryFileRequiresProtectedStateDirectory(t *testing.T) {
 	}
 }
 
+func TestLoadTrustedRegistryFileAcceptsCanonicalDirectoryAliases(t *testing.T) {
+	state := t.TempDir()
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	aliasParent := t.TempDir()
+	alias := filepath.Join(aliasParent, "state")
+	if err := os.Symlink(state, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	path := filepath.Join(alias, "verifiers.json")
+	if err := os.WriteFile(path, verifierConfigJSON(t, nil), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTrustedRegistryFile(path, alias, 1<<20); err != nil {
+		t.Fatalf("canonical directory alias rejected: %v", err)
+	}
+}
+
 func TestLoadTrustedRegistryFileRejectsSymlinkedParentInsideStateDirectory(t *testing.T) {
 	state := t.TempDir()
 	if err := os.Chmod(state, 0700); err != nil {

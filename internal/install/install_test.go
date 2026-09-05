@@ -171,6 +171,26 @@ func TestApplyRejectsParentDirectorySwapAfterPlanning(t *testing.T) {
 	}
 }
 
+func TestApplyAcceptsCanonicalAliasForPlannedDirectory(t *testing.T) {
+	realParent := t.TempDir()
+	root := filepath.Join(realParent, "root")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	aliasParent := filepath.Join(t.TempDir(), "parent")
+	if err := os.Symlink(realParent, aliasParent); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	path := filepath.Join(aliasParent, "root", "client.json")
+	plan, err := Plan(ConfigSpec{Adapter: "codex", Path: path, Format: FormatJSON}, []string{filepath.Join(aliasParent, "root")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(plan); err != nil {
+		t.Fatalf("canonical directory alias rejected: %v", err)
+	}
+}
+
 func fileMode(path string) os.FileMode {
 	info, _ := os.Stat(path)
 	return info.Mode()

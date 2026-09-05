@@ -1689,9 +1689,10 @@ func trustedExecutable(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+	if !filepath.IsAbs(path) {
 		return "", errors.New("invalid trusted executable")
 	}
+	path = filepath.Clean(path)
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return "", errors.New("invalid trusted executable")

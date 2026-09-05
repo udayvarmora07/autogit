@@ -67,9 +67,10 @@ func canonicalExecutable(path string) (string, error) {
 		path = "git"
 	}
 	resolved, err := exec.LookPath(path)
-	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+	if err != nil || !filepath.IsAbs(resolved) {
 		return "", errors.New("invalid Git executable")
 	}
+	resolved = filepath.Clean(resolved)
 	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
 	if err != nil {
 		return "", errors.New("invalid Git executable")
@@ -139,7 +140,9 @@ func safeGitArgs(args ...string) []string {
 }
 
 func observationArgs(executable string, args ...string) []string {
-	if filepath.Base(executable) == "git" || executable == "git" {
+	base := strings.ToLower(filepath.Base(executable))
+	base = strings.TrimSuffix(base, ".exe")
+	if base == "git" || executable == "git" {
 		return safeGitArgs(args...)
 	}
 	return args

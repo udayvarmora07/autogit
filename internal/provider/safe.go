@@ -205,9 +205,10 @@ func (r SystemRunner) Run(ctx context.Context, dir string, args ...string) (Resu
 }
 
 func canonicalExecutable(path string) (string, error) {
-	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+	if path == "" || !filepath.IsAbs(path) {
 		return "", errors.New("invalid command executable")
 	}
+	path = filepath.Clean(path)
 	// Resolve symlinked parent components (for example /var -> /private/var on
 	// macOS or 8.3 short names on Windows) but keep the final component
 	// untouched, then reject a final-component symlink explicitly.
@@ -230,9 +231,10 @@ func canonicalWorkingDir(dir string) (string, error) {
 	if dir == "" {
 		return "", errors.New("invalid command working directory")
 	}
-	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
+	if !filepath.IsAbs(dir) {
 		return "", errors.New("invalid command working directory")
 	}
+	dir = filepath.Clean(dir)
 	parent, err := filepath.EvalSymlinks(filepath.Dir(dir))
 	if err != nil {
 		return "", errors.New("invalid command working directory")

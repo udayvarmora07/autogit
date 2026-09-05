@@ -118,7 +118,7 @@ func TestSeededRandomizedCoordinatorProcessBoundarySchedules(t *testing.T) {
 	if os.Getenv("AUTOGIT_COORDINATOR_HELPER") == "1" || os.Getenv("AUTOGIT_PUSH_HELPER") == "1" {
 		return
 	}
-	const schedules = 1000
+	const schedules = processScheduleCount
 	rng := rand.New(rand.NewSource(0xD017))
 	commitPoints := []string{"after_intent", "after_git", "after_result", "none"}
 	pushPoints := []string{"after_intent", "after_provider", "after_result", "none"}

@@ -70,7 +70,7 @@ func TestSeededRandomizedRepositoryProcessBoundarySchedules(t *testing.T) {
 	if os.Getenv("AUTOGIT_REMOTE_HELPER") == "1" {
 		return
 	}
-	const schedules = 1000
+	const schedules = processScheduleCount
 	points := []string{"after_intent", "after_hosted", "after_created", "after_attached", "none"}
 	rng := rand.New(rand.NewSource(0xE017))
 	seen := map[string]bool{}

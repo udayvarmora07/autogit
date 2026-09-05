@@ -46,9 +46,10 @@ func canonicalExecutable(path string) (string, error) {
 		path = "git"
 	}
 	resolved, err := exec.LookPath(path)
-	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+	if err != nil || !filepath.IsAbs(resolved) {
 		return "", fmt.Errorf("invalid Git executable")
 	}
+	resolved = filepath.Clean(resolved)
 	parent, err := filepath.EvalSymlinks(filepath.Dir(resolved))
 	if err != nil {
 		return "", fmt.Errorf("invalid Git executable")
