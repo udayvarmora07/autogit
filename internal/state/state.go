@@ -177,11 +177,23 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		return nil, fmt.Errorf("state directory: %w", err)
 	}
+	// Establish a new database file with its restrictive mode before SQLite can
+	// open it. A concurrent opener must observe either this 0600 file or an
+	// existing file whose permissions can be checked; it must never observe
+	// SQLite's platform-default creation mode during migration.
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	if err == nil {
+		if closeErr := file.Close(); closeErr != nil {
+			return nil, closeErr
+		}
+	} else if !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
 	if info, err := os.Stat(path); err == nil {
 		if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 			return nil, errors.New("state database permissions are too broad")
 		}
-	} else if !os.IsNotExist(err) {
+	} else {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)")
@@ -189,7 +201,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{db: db, path: path}
-	if err := s.migrate(); err != nil {
+	if err := s.migrateWithRetry(); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -206,6 +218,27 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
+
+func (s *Store) migrateWithRetry() error {
+	var err error
+	for attempt := 0; attempt < 8; attempt++ {
+		err = s.migrate()
+		if err == nil || !isSQLiteBusy(err) {
+			return err
+		}
+		time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
+	}
+	return err
+}
+
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") || strings.Contains(message, "sqlite_busy")
+}
+
 func (s *Store) migrate() error {
 	// Read the version before changing any tables. A newer state database is
 	// intentionally rejected rather than partially mutated by an older binary.
@@ -440,6 +473,7 @@ var (
 	gitRefRE           = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 	gitDigestRE        = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	repositoryDigestRE = regexp.MustCompile(`^(?:sha256|hmac-sha256):[0-9a-f]{64}$`)
+	recordStateRE      = regexp.MustCompile(`^[A-Z][A-Z0-9_-]{0,63}$`)
 )
 
 func (t *Tx) PutGitCommitIntent(i GitCommitIntent) error {
@@ -812,6 +846,38 @@ func (s *Store) Session(ctx context.Context, id string) (Session, error) {
 	return x, err
 }
 
+func (s *Store) ChangeSet(ctx context.Context, id string) (ChangeSet, error) {
+	if !gitIntentIDRE.MatchString(id) {
+		return ChangeSet{}, errors.New("invalid change set identity")
+	}
+	var x ChangeSet
+	err := s.db.QueryRowContext(ctx, `SELECT id,task_id,base_sha,tree_digest,index_digest,state,revision FROM changesets WHERE id=?`, id).Scan(&x.ID, &x.TaskID, &x.BaseSHA, &x.TreeDigest, &x.IndexDigest, &x.State, &x.Revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ChangeSet{}, os.ErrNotExist
+	}
+	return x, err
+}
+
+func (s *Store) GetChangeSet(ctx context.Context, id string) (ChangeSet, error) {
+	return s.ChangeSet(ctx, id)
+}
+
+func (s *Store) Verification(ctx context.Context, id string) (VerificationJob, error) {
+	if !gitIntentIDRE.MatchString(id) {
+		return VerificationJob{}, errors.New("invalid verification identity")
+	}
+	var x VerificationJob
+	err := s.db.QueryRowContext(ctx, `SELECT id,changeset_id,candidate_digest,policy_digest,verifier_digest,state,evidence_digest,revision FROM verifications WHERE id=?`, id).Scan(&x.ID, &x.ChangeSetID, &x.CandidateDigest, &x.PolicyDigest, &x.VerifierDigest, &x.State, &x.EvidenceDigest, &x.Revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return VerificationJob{}, os.ErrNotExist
+	}
+	return x, err
+}
+
+func (s *Store) GetVerification(ctx context.Context, id string) (VerificationJob, error) {
+	return s.Verification(ctx, id)
+}
+
 // RecordSessionBaseline durably records only baseline identity and digests.
 // The source bytes and raw changed paths remain in the caller's in-memory
 // observation and are never written to the state database.
@@ -872,11 +938,55 @@ func (t *Tx) PutPrompt(x Prompt) error {
 	return err
 }
 func (t *Tx) PutChangeSet(x ChangeSet) error {
-	_, err := t.tx.Exec(`INSERT INTO changesets(id,task_id,base_sha,tree_digest,index_digest,state,revision) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,revision=excluded.revision`, x.ID, x.TaskID, x.BaseSHA, x.TreeDigest, x.IndexDigest, x.State, x.Revision)
+	if !validChangeSet(x) {
+		return errors.New("invalid change set")
+	}
+	var old ChangeSet
+	err := t.tx.QueryRow(`SELECT id,task_id,base_sha,tree_digest,index_digest,state,revision FROM changesets WHERE id=?`, x.ID).Scan(&old.ID, &old.TaskID, &old.BaseSHA, &old.TreeDigest, &old.IndexDigest, &old.State, &old.Revision)
+	if err == nil {
+		if old.TaskID != x.TaskID || old.BaseSHA != x.BaseSHA || old.TreeDigest != x.TreeDigest || old.IndexDigest != x.IndexDigest {
+			return errors.New("change set identity conflict")
+		}
+		_, err = t.tx.Exec(`UPDATE changesets SET state=?,revision=? WHERE id=?`, x.State, x.Revision, x.ID)
+		return err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = t.tx.Exec(`INSERT INTO changesets(id,task_id,base_sha,tree_digest,index_digest,state,revision) VALUES(?,?,?,?,?,?,?)`, x.ID, x.TaskID, x.BaseSHA, x.TreeDigest, x.IndexDigest, x.State, x.Revision)
 	return err
 }
 func (t *Tx) PutVerification(x VerificationJob) error {
-	_, err := t.tx.Exec(`INSERT INTO verifications(id,changeset_id,candidate_digest,policy_digest,verifier_digest,state,evidence_digest,revision) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,evidence_digest=excluded.evidence_digest,revision=excluded.revision`, x.ID, x.ChangeSetID, x.CandidateDigest, x.PolicyDigest, x.VerifierDigest, x.State, x.EvidenceDigest, x.Revision)
+	if !validVerification(x) {
+		return errors.New("invalid verification")
+	}
+	var old VerificationJob
+	err := t.tx.QueryRow(`SELECT id,changeset_id,candidate_digest,policy_digest,verifier_digest,state,evidence_digest,revision FROM verifications WHERE id=?`, x.ID).Scan(&old.ID, &old.ChangeSetID, &old.CandidateDigest, &old.PolicyDigest, &old.VerifierDigest, &old.State, &old.EvidenceDigest, &old.Revision)
+	if err == nil {
+		if old.ChangeSetID != x.ChangeSetID || old.CandidateDigest != x.CandidateDigest || old.PolicyDigest != x.PolicyDigest || old.VerifierDigest != x.VerifierDigest {
+			return errors.New("verification identity conflict")
+		}
+		_, err = t.tx.Exec(`UPDATE verifications SET state=?,evidence_digest=?,revision=? WHERE id=?`, x.State, x.EvidenceDigest, x.Revision, x.ID)
+		return err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = t.tx.Exec(`INSERT INTO verifications(id,changeset_id,candidate_digest,policy_digest,verifier_digest,state,evidence_digest,revision) VALUES(?,?,?,?,?,?,?,?)`, x.ID, x.ChangeSetID, x.CandidateDigest, x.PolicyDigest, x.VerifierDigest, x.State, x.EvidenceDigest, x.Revision)
 	return err
+}
+
+func validChangeSet(x ChangeSet) bool {
+	return gitIntentIDRE.MatchString(x.ID) && gitIntentIDRE.MatchString(x.TaskID) &&
+		(x.BaseSHA == "" || gitCommitSHARE.MatchString(x.BaseSHA)) &&
+		gitDigestRE.MatchString(x.TreeDigest) && gitDigestRE.MatchString(x.IndexDigest) &&
+		recordStateRE.MatchString(x.State) && x.Revision > 0
+}
+
+func validVerification(x VerificationJob) bool {
+	return gitIntentIDRE.MatchString(x.ID) && gitIntentIDRE.MatchString(x.ChangeSetID) &&
+		gitDigestRE.MatchString(x.CandidateDigest) && gitDigestRE.MatchString(x.PolicyDigest) &&
+		gitDigestRE.MatchString(x.VerifierDigest) && recordStateRE.MatchString(x.State) &&
+		(x.EvidenceDigest == "" || gitDigestRE.MatchString(x.EvidenceDigest)) && x.Revision > 0
 }
 func JSON(v any) []byte { b, _ := json.Marshal(v); return b }

@@ -123,7 +123,7 @@ tests:
   duplicate effects; broader randomized process schedules remain release gates.
 - [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
   and reach the >=609 deterministic release-suite target; the local Go suite
-  currently emits 663 passing named test cases/subtests under `go test -json`.
+  currently emits 674 passing named test cases/subtests under `go test -json`.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
   scenarios pass; Go v1 coverage is enforced separately by the >=609 CI floor.
 - [x] Add deterministic fault-injection coverage for the implemented commit,
@@ -132,8 +132,18 @@ tests:
   and push recovery schedules, plus Git-transaction and hosted-create restart
   schedules; the required 1,000 randomized schedules across every durable
   boundary remain a release gate.
-- [ ] Complete the required randomized crash/concurrency schedules across every
-  durable intent boundary.
+- [x] Run seeded 1,000-schedule randomized subprocess matrices for coordinator
+  commit/push, Git transactions, and hosted create/attach, with coverage
+  assertions for every named point in those side-effect boundaries; companion
+  persistence-boundary matrices are recorded below.
+- [x] Run seeded 1,000-schedule randomized subprocess matrices for event
+  receipts, session baselines, and candidate/verification persistence, with
+  typed restart reads, immutable evidence-conflict checks, and concurrent
+  state-initialization coverage. Together with the side-effect matrices above,
+  all named durable intent boundaries now have randomized local evidence.
+- [x] Complete the required randomized crash/concurrency schedules across every
+  implemented durable intent boundary; external OS and provider gates remain
+  separate release requirements.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
   not native execution evidence.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/

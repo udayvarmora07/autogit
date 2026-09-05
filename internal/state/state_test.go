@@ -1,10 +1,13 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -209,6 +212,319 @@ func TestStoreFailsClosedForFutureSchemaVersion(t *testing.T) {
 	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), "unsupported state schema") {
 		t.Fatalf("Open future schema error=%v", err)
 	}
+}
+
+func TestCandidateAndVerificationEvidenceIsValidatedAndImmutable(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	change := ChangeSet{
+		ID: "change-1", TaskID: "task-1", BaseSHA: strings.Repeat("a", 40),
+		TreeDigest: "sha256:" + repeated('b'), IndexDigest: "sha256:" + repeated('c'),
+		State: "READY", Revision: 1,
+	}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutChangeSet(change) }); err != nil {
+		t.Fatal(err)
+	}
+	gotChange, err := s.ChangeSet(context.Background(), change.ID)
+	if err != nil || gotChange != change {
+		t.Fatalf("change set=%+v err=%v", gotChange, err)
+	}
+	conflictingChange := change
+	conflictingChange.TreeDigest = "sha256:" + repeated('d')
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutChangeSet(conflictingChange) }); err == nil {
+		t.Fatal("conflicting candidate evidence replaced an existing change set")
+	}
+	verification := VerificationJob{
+		ID: "verification-1", ChangeSetID: change.ID, CandidateDigest: change.TreeDigest,
+		PolicyDigest: "sha256:" + repeated('e'), VerifierDigest: "sha256:" + repeated('f'),
+		State: "PASSED", EvidenceDigest: "sha256:" + repeated('1'), Revision: 1,
+	}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutVerification(verification) }); err != nil {
+		t.Fatal(err)
+	}
+	gotVerification, err := s.Verification(context.Background(), verification.ID)
+	if err != nil || gotVerification != verification {
+		t.Fatalf("verification=%+v err=%v", gotVerification, err)
+	}
+	conflictingVerification := verification
+	conflictingVerification.PolicyDigest = "sha256:" + repeated('2')
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutVerification(conflictingVerification) }); err == nil {
+		t.Fatal("conflicting verification evidence replaced an existing verification")
+	}
+}
+
+func TestCandidateAndVerificationRejectMalformedEvidence(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.WithTx(context.Background(), func(tx *Tx) error {
+		return tx.PutChangeSet(ChangeSet{ID: "change-1", TaskID: "task-1", BaseSHA: "not-a-sha", TreeDigest: "sha256:" + repeated('a'), IndexDigest: "sha256:" + repeated('b'), State: "READY", Revision: 1})
+	}); err == nil {
+		t.Fatal("malformed candidate evidence accepted")
+	}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error {
+		return tx.PutVerification(VerificationJob{ID: "verification-1", ChangeSetID: "change-1", CandidateDigest: "bad", PolicyDigest: "sha256:" + repeated('a'), VerifierDigest: "sha256:" + repeated('b'), State: "PASSED", Revision: 1})
+	}); err == nil {
+		t.Fatal("malformed verification evidence accepted")
+	}
+}
+
+func TestSeededRandomizedCandidateVerificationProcessSchedules(t *testing.T) {
+	if os.Getenv("AUTOGIT_CANDIDATE_HELPER") == "1" {
+		return
+	}
+	const schedules = randomizedProcessScheduleCount
+	points := []string{"before_changeset", "after_changeset", "after_verification", "none", "concurrent"}
+	rng := rand.New(rand.NewSource(0xCAFE))
+	seen := map[string]bool{}
+	for schedule := 0; schedule < schedules; schedule++ {
+		point := points[rng.Intn(len(points))]
+		seen[point] = true
+		runCandidateVerificationProcessSchedule(t, schedule, point)
+	}
+	for _, point := range points {
+		if !seen[point] {
+			t.Fatalf("seeded schedule did not cover candidate/verification point %q", point)
+		}
+	}
+}
+
+func TestSeededRandomizedSessionBaselineProcessSchedules(t *testing.T) {
+	if os.Getenv("AUTOGIT_BASELINE_HELPER") == "1" {
+		return
+	}
+	const schedules = randomizedProcessScheduleCount
+	points := []string{"before_baseline", "after_baseline", "none", "concurrent"}
+	rng := rand.New(rand.NewSource(0xBA5E))
+	seen := map[string]bool{}
+	for schedule := 0; schedule < schedules; schedule++ {
+		point := points[rng.Intn(len(points))]
+		seen[point] = true
+		runSessionBaselineProcessSchedule(t, schedule, point)
+	}
+	for _, point := range points {
+		if !seen[point] {
+			t.Fatalf("seeded schedule did not cover session baseline point %q", point)
+		}
+	}
+}
+
+func runSessionBaselineProcessSchedule(t *testing.T, schedule int, point string) {
+	t.Helper()
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.db")
+	id := "baseline-" + strconv.Itoa(schedule)
+	start := func() *exec.Cmd {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestSessionBaselineProcessBoundaryHelper$", "-test.count=1")
+		cmd.Env = append(os.Environ(),
+			"AUTOGIT_BASELINE_HELPER=1",
+			"AUTOGIT_BASELINE_STATE="+statePath,
+			"AUTOGIT_BASELINE_ID="+id,
+			"AUTOGIT_BASELINE_POINT="+point,
+		)
+		return cmd
+	}
+	if point == "concurrent" {
+		first, second := start(), start()
+		var firstOutput, secondOutput bytes.Buffer
+		first.Stdout, first.Stderr = &firstOutput, &firstOutput
+		second.Stdout, second.Stderr = &secondOutput, &secondOutput
+		if err := first.Start(); err != nil {
+			t.Fatalf("baseline schedule %d first start: %v", schedule, err)
+		}
+		if err := second.Start(); err != nil {
+			t.Fatalf("baseline schedule %d second start: %v", schedule, err)
+		}
+		if err := first.Wait(); err != nil {
+			t.Fatalf("baseline schedule %d first child: %v: %s", schedule, err, firstOutput.String())
+		}
+		if err := second.Wait(); err != nil {
+			t.Fatalf("baseline schedule %d second child: %v: %s", schedule, err, secondOutput.String())
+		}
+	} else {
+		cmd := start()
+		err := cmd.Run()
+		if point == "none" {
+			if err != nil {
+				t.Fatalf("baseline schedule %d child: %v", schedule, err)
+			}
+		} else if err == nil {
+			t.Fatalf("baseline schedule %d crash point %q did not terminate child", schedule, point)
+		}
+	}
+	s, err := Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	baseline := sessionBaselineRecord(id)
+	if err := s.RecordSessionBaseline(context.Background(), "session-"+id, baseline.RepositoryID, baseline.ClientID, baseline.Baseline); err != nil {
+		t.Fatalf("baseline schedule %d recovery: %v", schedule, err)
+	}
+	got, err := s.Session(context.Background(), "session-"+id)
+	if err != nil || got.RepositoryID != baseline.RepositoryID || got.BaselineEvidence != baseline.DurableEvidence || got.BaselinePathsDigest != baseline.PathsDigest {
+		t.Fatalf("baseline schedule %d session=%+v err=%v", schedule, got, err)
+	}
+}
+
+func TestSessionBaselineProcessBoundaryHelper(t *testing.T) {
+	if os.Getenv("AUTOGIT_BASELINE_HELPER") != "1" {
+		return
+	}
+	point := os.Getenv("AUTOGIT_BASELINE_POINT")
+	if point == "before_baseline" {
+		os.Exit(97)
+	}
+	s, err := Open(os.Getenv("AUTOGIT_BASELINE_STATE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	record := sessionBaselineRecord(os.Getenv("AUTOGIT_BASELINE_ID"))
+	if err := s.RecordSessionBaseline(context.Background(), "session-"+record.ID, record.RepositoryID, record.ClientID, record.Baseline); err != nil {
+		t.Fatal(err)
+	}
+	if point == "after_baseline" {
+		os.Exit(98)
+	}
+	if point == "none" || point == "concurrent" {
+		return
+	}
+	t.Fatalf("unknown baseline schedule point %q", point)
+}
+
+type baselineRecord struct {
+	ID, RepositoryID, ClientID, DurableEvidence, PathsDigest string
+	Baseline                                                 repository.Baseline
+}
+
+func sessionBaselineRecord(id string) baselineRecord {
+	paths := []string{"owned.txt"}
+	baseline := repository.Baseline{
+		IndexDigest:  "sha256:" + repeated('a'),
+		StatusDigest: "sha256:" + repeated('b'),
+		PathsDigest:  repository.DigestPaths(paths),
+		Paths:        paths,
+		Files:        map[string]repository.FileObservation{"owned.txt": {Content: []byte("owned"), Mode: 0644, Present: true}},
+	}
+	evidence, err := repository.EncodeDurableBaseline(baseline, []byte("baseline-identity-key"))
+	if err != nil {
+		panic(err)
+	}
+	baseline.DurableEvidence = evidence
+	return baselineRecord{ID: id, RepositoryID: "hmac-sha256:" + repeated('c'), ClientID: "client", DurableEvidence: evidence, PathsDigest: baseline.PathsDigest, Baseline: baseline}
+}
+
+func runCandidateVerificationProcessSchedule(t *testing.T, schedule int, point string) {
+	t.Helper()
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.db")
+	id := "candidate-" + strconv.Itoa(schedule)
+	start := func() *exec.Cmd {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestCandidateVerificationProcessBoundaryHelper$", "-test.count=1")
+		cmd.Env = append(os.Environ(),
+			"AUTOGIT_CANDIDATE_HELPER=1",
+			"AUTOGIT_CANDIDATE_STATE="+statePath,
+			"AUTOGIT_CANDIDATE_ID="+id,
+			"AUTOGIT_CANDIDATE_POINT="+point,
+		)
+		return cmd
+	}
+	if point == "concurrent" {
+		first, second := start(), start()
+		var firstOutput, secondOutput bytes.Buffer
+		first.Stdout, first.Stderr = &firstOutput, &firstOutput
+		second.Stdout, second.Stderr = &secondOutput, &secondOutput
+		if err := first.Start(); err != nil {
+			t.Fatalf("concurrent candidate schedule %d first start: %v", schedule, err)
+		}
+		if err := second.Start(); err != nil {
+			t.Fatalf("concurrent candidate schedule %d second start: %v", schedule, err)
+		}
+		if err := first.Wait(); err != nil {
+			t.Fatalf("concurrent candidate schedule %d first child: %v: %s", schedule, err, firstOutput.String())
+		}
+		if err := second.Wait(); err != nil {
+			t.Fatalf("concurrent candidate schedule %d second child: %v: %s", schedule, err, secondOutput.String())
+		}
+	} else {
+		cmd := start()
+		err := cmd.Run()
+		if point == "none" {
+			if err != nil {
+				t.Fatalf("candidate schedule %d child: %v", schedule, err)
+			}
+		} else if err == nil {
+			t.Fatalf("candidate schedule %d crash point %q did not terminate child", schedule, point)
+		}
+	}
+	s, err := Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	change, verification := candidateVerificationRecords(id)
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutChangeSet(change) }); err != nil {
+		t.Fatalf("candidate schedule %d candidate recovery: %v", schedule, err)
+	}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutVerification(verification) }); err != nil {
+		t.Fatalf("candidate schedule %d verification recovery: %v", schedule, err)
+	}
+	gotChange, err := s.ChangeSet(context.Background(), change.ID)
+	if err != nil || gotChange != change {
+		t.Fatalf("candidate schedule %d change=%+v err=%v", schedule, gotChange, err)
+	}
+	gotVerification, err := s.Verification(context.Background(), verification.ID)
+	if err != nil || gotVerification != verification {
+		t.Fatalf("candidate schedule %d verification=%+v err=%v", schedule, gotVerification, err)
+	}
+}
+
+func TestCandidateVerificationProcessBoundaryHelper(t *testing.T) {
+	if os.Getenv("AUTOGIT_CANDIDATE_HELPER") != "1" {
+		return
+	}
+	s, err := Open(os.Getenv("AUTOGIT_CANDIDATE_STATE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	change, verification := candidateVerificationRecords(os.Getenv("AUTOGIT_CANDIDATE_ID"))
+	point := os.Getenv("AUTOGIT_CANDIDATE_POINT")
+	if point == "before_changeset" {
+		os.Exit(97)
+	}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutChangeSet(change) }); err != nil {
+		t.Fatal(err)
+	}
+	if point == "after_changeset" {
+		os.Exit(98)
+	}
+	if err := s.WithTx(context.Background(), func(tx *Tx) error { return tx.PutVerification(verification) }); err != nil {
+		t.Fatal(err)
+	}
+	if point == "after_verification" {
+		os.Exit(99)
+	}
+}
+
+func candidateVerificationRecords(id string) (ChangeSet, VerificationJob) {
+	change := ChangeSet{
+		ID: id, TaskID: "task-" + id,
+		TreeDigest: "sha256:" + repeated('a'), IndexDigest: "sha256:" + repeated('b'),
+		State: "READY", Revision: 1,
+	}
+	verification := VerificationJob{
+		ID: "verification-" + id, ChangeSetID: id, CandidateDigest: change.TreeDigest,
+		PolicyDigest: "sha256:" + repeated('c'), VerifierDigest: "sha256:" + repeated('d'),
+		State: "PASSED", EvidenceDigest: "sha256:" + repeated('e'), Revision: 1,
+	}
+	return change, verification
 }
 
 func TestGitCommitIntentPersistsAcrossRestartAndContainsNoSnapshotBytes(t *testing.T) {

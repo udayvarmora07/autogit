@@ -593,3 +593,33 @@ The CLI publication and retry paths now propagate push-job read failures
 before emitting lifecycle facts. A closed or unavailable state store therefore
 returns an explicit state error instead of silently reporting a publication
 without its durable projection attempt.
+
+### 10.14 Seeded randomized subprocess schedules (2026-09-05)
+
+The release test suite now runs three reproducible 1,000-schedule subprocess
+matrices: coordinator commit/push intent/effect/result boundaries, local Git
+transaction intent/ref/result boundaries, and hosted repository intent/create/
+created/attached boundaries. Each matrix asserts one effect, exact durable
+completion, and coverage of every named boundary. This closes the randomized
+process evidence for those side-effect protocols; the remaining persistence
+boundaries are recorded below.
+
+### 10.15 Randomized persistence-boundary schedules (2026-09-05)
+
+The release suite now also runs reproducible 1,000-schedule subprocess
+matrices for event receipt acceptance, session-baseline persistence, and
+candidate/verification persistence. Each matrix covers pre-write, post-write,
+normal, and concurrent process schedules, then reopens the durable store and
+asserts one exact receipt or immutable evidence record. Candidate and
+verification records now have typed restart reads, digest/state validation, and
+same-ID immutable identity-conflict rejection.
+
+The state opener establishes a new SQLite file with mode `0600` before
+migration and retries bounded `SQLITE_BUSY` migration failures. This closes the
+randomized local crash/concurrency evidence for every implemented durable
+intent boundary: event receipt, baseline, candidate/verification, local Git
+transaction, hosted create/attach, and coordinator commit/push. Native OS
+execution, the disposable provider canary, and alpha/beta promotion remain
+external release gates. The non-race release stream runs all 1,000 schedules;
+race-enabled CI samples 50 schedules per newly added persistence matrix so
+the instrumented subprocess tests stay within Go's per-package timeout.

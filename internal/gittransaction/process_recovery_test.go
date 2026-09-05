@@ -2,6 +2,7 @@ package gittransaction
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +64,79 @@ func TestGitTransactionProcessBoundarySchedules(t *testing.T) {
 				t.Fatalf("commit-tree effect count=%d, want one", count)
 			}
 		})
+	}
+}
+
+func TestSeededRandomizedGitTransactionProcessBoundarySchedules(t *testing.T) {
+	if os.Getenv("AUTOGIT_GITTX_HELPER") == "1" {
+		return
+	}
+	const schedules = 1000
+	points := []string{"after_intent", "after_ref", "after_result", "none"}
+	rng := rand.New(rand.NewSource(0xF017))
+	seen := map[string]bool{}
+	for schedule := 0; schedule < schedules; schedule++ {
+		point := points[rng.Intn(len(points))]
+		seen[point] = true
+		runRandomGitTransactionProcessSchedule(t, schedule, point)
+	}
+	for _, point := range points {
+		if !seen[point] {
+			t.Fatalf("seeded schedule did not cover Git transaction point %q", point)
+		}
+	}
+}
+
+func runRandomGitTransactionProcessSchedule(t *testing.T, schedule int, point string) {
+	t.Helper()
+	repo := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	logPath := filepath.Join(t.TempDir(), "git-effects")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestGitTransactionProcessBoundaryHelper$", "-test.count=1")
+	cmd.Env = append(os.Environ(),
+		"AUTOGIT_GITTX_HELPER=1",
+		"AUTOGIT_GITTX_REPO="+repo,
+		"AUTOGIT_GITTX_STATE="+statePath,
+		"AUTOGIT_GITTX_LOG="+logPath,
+		"AUTOGIT_GITTX_POINT="+point,
+	)
+	err := cmd.Run()
+	if point == "none" {
+		if err != nil {
+			t.Fatalf("random Git transaction schedule %d: child: %v", schedule, err)
+		}
+	} else if err == nil {
+		t.Fatalf("random Git transaction schedule %d: crash point %q did not terminate child", schedule, point)
+	}
+	db, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	port := NewStateIntentPort(db)
+	req := processGitRequest(repo)
+	if point == "after_intent" {
+		if _, err := New(SystemRunner{}, port).Recover(context.Background(), req.ID); err == nil {
+			t.Fatalf("random Git transaction schedule %d: pre-effect intent recovered as committed", schedule)
+		}
+		record, recordErr := db.GitCommitIntentRecord(context.Background(), req.ID)
+		if recordErr != nil || record.State != state.CommitIntentReconcile {
+			t.Fatalf("random Git transaction schedule %d: record=%+v err=%v", schedule, record, recordErr)
+		}
+		if got := strings.TrimSpace(gitCommandOutput(repo, "show-ref", "--heads")); got != "" {
+			t.Fatalf("random Git transaction schedule %d: pre-effect crash created a ref: %q", schedule, got)
+		}
+		return
+	}
+	got, err := New(SystemRunner{}, port).Recover(context.Background(), req.ID)
+	if err != nil || got.SHA == "" {
+		t.Fatalf("random Git transaction schedule %d: recovery commit=%+v err=%v", schedule, got, err)
+	}
+	if count := strings.Count(string(readGitEffect(logPath)), "commit-tree\n"); count != 1 {
+		t.Fatalf("random Git transaction schedule %d: commit-tree effects=%d, want one", schedule, count)
 	}
 }
 

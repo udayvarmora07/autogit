@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -110,6 +111,124 @@ func TestConcurrentCommitProcessSchedulesConvergeOnOneEffect(t *testing.T) {
 	}
 	if got := strings.Count(string(data), "commit\n"); got != 1 {
 		t.Fatalf("concurrent Git effect count=%d, want one", got)
+	}
+}
+
+func TestSeededRandomizedCoordinatorProcessBoundarySchedules(t *testing.T) {
+	if os.Getenv("AUTOGIT_COORDINATOR_HELPER") == "1" || os.Getenv("AUTOGIT_PUSH_HELPER") == "1" {
+		return
+	}
+	const schedules = 1000
+	rng := rand.New(rand.NewSource(0xD017))
+	commitPoints := []string{"after_intent", "after_git", "after_result", "none"}
+	pushPoints := []string{"after_intent", "after_provider", "after_result", "none"}
+	seen := map[string]bool{}
+	for schedule := 0; schedule < schedules; schedule++ {
+		if rng.Intn(2) == 0 {
+			point := commitPoints[rng.Intn(len(commitPoints))]
+			seen["commit/"+point] = true
+			runRandomCommitProcessSchedule(t, schedule, point)
+			continue
+		}
+		point := pushPoints[rng.Intn(len(pushPoints))]
+		seen["push/"+point] = true
+		runRandomPushProcessSchedule(t, schedule, point)
+	}
+	for _, point := range commitPoints {
+		if !seen["commit/"+point] {
+			t.Fatalf("seeded schedule did not cover commit point %q", point)
+		}
+	}
+	for _, point := range pushPoints {
+		if !seen["push/"+point] {
+			t.Fatalf("seeded schedule did not cover push point %q", point)
+		}
+	}
+}
+
+func runRandomCommitProcessSchedule(t *testing.T, schedule int, point string) {
+	t.Helper()
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.db")
+	effectPath := filepath.Join(root, "effects")
+	id := "random-commit-" + strconv.Itoa(schedule)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestCommitProcessBoundaryHelper$", "-test.count=1")
+	cmd.Env = append(os.Environ(),
+		"AUTOGIT_COORDINATOR_HELPER=1",
+		"AUTOGIT_COORDINATOR_STATE="+statePath,
+		"AUTOGIT_COORDINATOR_EFFECT="+effectPath,
+		"AUTOGIT_COORDINATOR_ID="+id,
+		"AUTOGIT_COORDINATOR_POINT="+point,
+	)
+	err := cmd.Run()
+	if point == "none" {
+		if err != nil {
+			t.Fatalf("random commit schedule %d: child: %v", schedule, err)
+		}
+	} else if err == nil {
+		t.Fatalf("random commit schedule %d: crash point %q did not terminate child", schedule, point)
+	}
+	db, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	coord := Coordinator{Store: NewStateStore(db), Git: processGit{effectPath: effectPath, sha: processSHA}}
+	req := validCommitRequest(id)
+	if point == "after_intent" {
+		if err := coord.Commit(context.Background(), req); err != nil {
+			t.Fatalf("random commit schedule %d: first recovery: %v", schedule, err)
+		}
+	}
+	if err := coord.Commit(context.Background(), req); err != nil {
+		t.Fatalf("random commit schedule %d: final recovery: %v", schedule, err)
+	}
+	if got := strings.Count(string(readEffect(effectPath)), "commit\n"); got != 1 {
+		t.Fatalf("random commit schedule %d: effects=%d, want one", schedule, got)
+	}
+	status, sha, _, err := NewStateStore(db).CommitStatus(context.Background(), id)
+	if err != nil || status != state.CommitCreated || sha != processSHA {
+		t.Fatalf("random commit schedule %d: status=%q sha=%q err=%v", schedule, status, sha, err)
+	}
+}
+
+func runRandomPushProcessSchedule(t *testing.T, schedule int, point string) {
+	t.Helper()
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.db")
+	effectPath := filepath.Join(root, "push-effects")
+	id := "random-push-" + strconv.Itoa(schedule)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestPushProcessBoundaryHelper$", "-test.count=1")
+	cmd.Env = append(os.Environ(),
+		"AUTOGIT_PUSH_HELPER=1",
+		"AUTOGIT_PUSH_STATE="+statePath,
+		"AUTOGIT_PUSH_EFFECT="+effectPath,
+		"AUTOGIT_PUSH_ID="+id,
+		"AUTOGIT_PUSH_POINT="+point,
+	)
+	err := cmd.Run()
+	if point == "none" {
+		if err != nil {
+			t.Fatalf("random push schedule %d: child: %v", schedule, err)
+		}
+	} else if err == nil {
+		t.Fatalf("random push schedule %d: crash point %q did not terminate child", schedule, point)
+	}
+	db, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	coord := Coordinator{Store: NewStateStore(db), Provider: processProvider{effectPath: effectPath}}
+	if err := coord.Push(context.Background(), processPushRequest(id)); err != nil {
+		t.Fatalf("random push schedule %d: final recovery: %v", schedule, err)
+	}
+	if got := strings.Count(string(readEffect(effectPath)), "push\n"); got != 1 {
+		t.Fatalf("random push schedule %d: effects=%d, want one", schedule, got)
+	}
+	status, _, err := NewStateStore(db).PushStatus(context.Background(), id)
+	if err != nil || status != state.PushSucceeded {
+		t.Fatalf("random push schedule %d: status=%q err=%v", schedule, status, err)
 	}
 }
 

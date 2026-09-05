@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,72 @@ func TestRepositoryTransactionProcessBoundarySchedules(t *testing.T) {
 				t.Fatalf("durable remote job=%+v err=%v", job, err)
 			}
 		})
+	}
+}
+
+func TestSeededRandomizedRepositoryProcessBoundarySchedules(t *testing.T) {
+	if os.Getenv("AUTOGIT_REMOTE_HELPER") == "1" {
+		return
+	}
+	const schedules = 1000
+	points := []string{"after_intent", "after_hosted", "after_created", "after_attached", "none"}
+	rng := rand.New(rand.NewSource(0xE017))
+	seen := map[string]bool{}
+	for schedule := 0; schedule < schedules; schedule++ {
+		point := points[rng.Intn(len(points))]
+		seen[point] = true
+		runRandomRepositoryProcessSchedule(t, schedule, point)
+	}
+	for _, point := range points {
+		if !seen[point] {
+			t.Fatalf("seeded schedule did not cover hosted boundary %q", point)
+		}
+	}
+}
+
+func runRandomRepositoryProcessSchedule(t *testing.T, schedule int, point string) {
+	t.Helper()
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.db")
+	hostedPath := filepath.Join(root, "hosted-effects")
+	attachedPath := filepath.Join(root, "attached-effects")
+	id := "random-remote-" + strconv.Itoa(schedule)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRepositoryTransactionProcessBoundaryHelper$", "-test.count=1")
+	cmd.Env = append(os.Environ(),
+		"AUTOGIT_REMOTE_HELPER=1",
+		"AUTOGIT_REMOTE_STATE="+statePath,
+		"AUTOGIT_REMOTE_HOSTED="+hostedPath,
+		"AUTOGIT_REMOTE_ATTACHED="+attachedPath,
+		"AUTOGIT_REMOTE_ID="+id,
+		"AUTOGIT_REMOTE_POINT="+point,
+	)
+	err := cmd.Run()
+	if point == "none" {
+		if err != nil {
+			t.Fatalf("random repository schedule %d: child: %v", schedule, err)
+		}
+	} else if err == nil {
+		t.Fatalf("random repository schedule %d: crash point %q did not terminate child", schedule, point)
+	}
+	db, err := state.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	req := processRemoteRequest(id)
+	transaction := RepositoryTransaction{State: db, Hosted: processHosted{path: hostedPath}, Git: processBinder{path: attachedPath}}
+	if got, err := transaction.Create(context.Background(), req); err != nil || got != "owner/repo" {
+		t.Fatalf("random repository schedule %d: recovery identity=%q err=%v", schedule, got, err)
+	}
+	if got := strings.Count(string(readProcessEffect(hostedPath)), "create\n"); got != 1 {
+		t.Fatalf("random repository schedule %d: hosted creates=%d, want one", schedule, got)
+	}
+	if got := strings.Count(string(readProcessEffect(attachedPath)), "attach\n"); got != 1 {
+		t.Fatalf("random repository schedule %d: attachments=%d, want one", schedule, got)
+	}
+	job, err := db.RemoteJob(id)
+	if err != nil || job.State != state.RemoteAttached || job.HostedIdentity != "owner/repo" {
+		t.Fatalf("random repository schedule %d: job=%+v err=%v", schedule, job, err)
 	}
 }
 
