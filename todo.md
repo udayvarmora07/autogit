@@ -146,7 +146,10 @@ tests:
   separate release requirements.
 - [x] Add automated requirements-to-test traceability validation and a local
   benchmark suite covering the 1,000/100,000-path performance scales; hosted
-  p95 threshold evidence remains a release gate.
+  native p95 threshold evidence remains a release gate.
+- [x] Add the opt-in disposable GitHub canary test, exact postcondition checks,
+  and allowlisted cleanup workflow; live provider execution remains a release
+  gate.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
   not native execution evidence.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/

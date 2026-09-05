@@ -44,7 +44,7 @@ fuzz executions are counted separately.
 | Provider fake/contract suite | Mocked `gh` only | >=40 | Create, collision, visibility, remote identity, retry, postconditions |
 | Resilience/concurrency/crash suite | Not present | >=50 | Leases, duplicate/out-of-order events, kill/restart at every intent |
 | Portfolio/publication suite | Partial prototype | >=15 | Public consent, readiness report, README/license/destination quality |
-| Performance/compatibility suite | 13 local Go benchmarks; release threshold evidence open | >=12 benchmarks | p95 latency, scale, binary/OS behavior |
+| Performance/compatibility suite | 15 local Go benchmarks; release threshold evidence open | >=12 benchmarks | p95 latency, scale, binary/OS behavior |
 | **Deterministic total** | **675 Go cases** | **>=609** | All must-level acceptance paths |
 
 The 177 prototype scenarios are a regression floor. A v1 release cannot claim
@@ -164,13 +164,17 @@ protected-branch, secret-scanning, and false-success responses. Contract tests
 must assert no force/mirror/all-ref/delete operation and must verify the remote
 postcondition.
 
-The optional GitHub canary uses a dedicated test owner, a unique
-`autogit-v1-test-<run-id>` name, an explicit disposable label/description, and
-an allowlisted cleanup job. Tests may create only repositories whose generated
-name and owner match the run manifest. Public tests are opt-in, run against a
-throwaway repository, verify private-by-default separately, and must not use a
-developer token or user repository. Cleanup failures block the suite and are
-reported for manual cleanup; cleanup must never use a broad delete pattern.
+The optional GitHub canary uses the manually dispatched
+[`github-canary.yml`](../.github/workflows/github-canary.yml) workflow and
+[`github-canary.sh`](../scripts/github-canary.sh). It requires a dedicated
+test owner, a unique `autogit-v1-test-<run-id>` name, a disposable repository,
+and an allowlisted cleanup job. The tagged test creates only the generated
+identity, verifies owner/name/visibility/ref/SHA postconditions, and the
+cleanup trap deletes only that exact name. Public tests are opt-in, require a
+separate `PUBLIC` confirmation, and must not use a developer token or user
+repository. Cleanup failures block the suite and are reported for manual
+cleanup; cleanup never uses a broad delete pattern. The workflow has not yet
+been run against a live provider.
 
 ### Verification and security tests
 
@@ -260,9 +264,9 @@ only with a documented capability and safe degradation assertion.
   forbidden trailers are absent, and a public canary passes README/license/
   verification/secret/artifact checks.
 - **GATE-009 Performance:** no-candidate hook p95 <150 ms; baseline/status p95
-  <1 s for 100,000 tracked paths, excluding network/LFS; the local benchmark
-  suite now covers both scales and representative hot paths, but release p95
-  evidence must still be recorded on the required hosted environments.
+  <1 s for 100,000 tracked paths, excluding network/LFS; the local
+  `scripts/performance-gate.sh` enforces both limits, but release p95 evidence
+  must still be recorded on the required hosted environments.
 - **GATE-010 Reliability:** core suite has >=99.5% pass rate across 20 repeated
   runs; no safety/provider test may be flaky. Any flaky test is quarantined with
   a tracked defect and cannot satisfy a release gate.

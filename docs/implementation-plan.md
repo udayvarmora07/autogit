@@ -627,16 +627,35 @@ the instrumented subprocess tests stay within Go's per-package timeout.
 
 ### 10.16 Local performance and traceability evidence (2026-09-05)
 
-The repository now contains 13 Go benchmarks covering canonical event build
+The repository now contains 15 Go benchmarks covering the no-candidate core
+hook, canonical event build
 and decode, adapter digesting/manifests, repository path digests at 1,000 and
-100,000 paths, durable baseline encoding, commit messages, policy merge,
-security scanning, publication preflight, and lifecycle reduction. The
+100,000 paths, actual 100,000-path baseline capture, durable baseline encoding,
+commit messages, policy merge, security scanning, publication preflight, and
+lifecycle reduction. The
 benchmark suite runs with `go test -run '^$' -bench '^Benchmark' ./...`.
 This satisfies the local benchmark-suite artifact requirement, but the p95
 latency thresholds and native OS measurements remain release gates.
+`scripts/performance-gate.sh` runs 20 samples and enforces the documented
+150-ms no-candidate-hook and 1-second 100,000-path baseline p95 limits. The
+native CI matrix now emits five benchmark samples and runs those p95 gates per
+supported runner; local Linux evidence passes, but hosted native evidence is
+still required for release.
 
 `TestMustLevelRequirementsHaveTraceabilityRows` parses the product
 requirements and fails when a functional or non-functional requirement is
 missing from the test-strategy traceability matrix or appears more than once.
 It validates matrix maintenance locally without treating planned external
 canary, native-platform, or phase-promotion evidence as complete.
+
+### 10.17 Disposable provider-canary harness (2026-09-05)
+
+The opt-in `github_canary` provider test and
+[`scripts/github-canary.sh`](../scripts/github-canary.sh) now exercise a real
+GitHub repository only when manually dispatched with a dedicated owner and
+token. The run creates the exact `autogit-v1-test-<run-id>` identity, verifies
+owner, full name, visibility, branch, and commit SHA, and deletes only that
+validated repository in an exit trap. Public visibility additionally requires
+the explicit `PUBLIC` dispatch confirmation. The workflow is
+[`github-canary.yml`](../.github/workflows/github-canary.yml); live canary
+execution and cleanup evidence remain release gates.

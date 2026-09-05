@@ -54,6 +54,12 @@ jobs:
       - name: build
         shell: bash
         run: go build ./...
+      - name: performance benchmark sample
+        shell: bash
+        run: go test -run '^$' -bench '^Benchmark' -benchmem -benchtime=1s -count=5 ./...
+      - name: p95 performance gates
+        shell: bash
+        run: bash scripts/performance-gate.sh
 
   cross-build:
     name: cross-build / ${{ matrix.goos }}-${{ matrix.goarch }}

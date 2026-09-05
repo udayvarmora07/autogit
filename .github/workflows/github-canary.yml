@@ -1,0 +1,51 @@
+name: AutoGit disposable GitHub canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner:
+        description: Dedicated GitHub user that owns the disposable canary
+        required: true
+        type: string
+      visibility:
+        description: Repository visibility; private is the default safety mode
+        required: true
+        default: private
+        type: choice
+        options:
+          - private
+          - public
+      public_consent:
+        description: Type PUBLIC to authorize a public canary
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: disposable provider canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.AUTOGIT_CANARY_TOKEN }}
+      AUTOGIT_CANARY_OWNER: ${{ inputs.owner }}
+      AUTOGIT_CANARY_VISIBILITY: ${{ inputs.visibility }}
+      AUTOGIT_CANARY_PUBLIC_CONSENT: ${{ inputs.public_consent == 'PUBLIC' && '1' || '0' }}
+      AUTOGIT_CANARY_RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: validate authentication
+        shell: bash
+        run: gh auth status
+      - name: run exact-identity canary
+        shell: bash
+        run: bash scripts/github-canary.sh
