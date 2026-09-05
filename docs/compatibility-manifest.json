@@ -1,0 +1,114 @@
+{
+  "schema_version": "autogit.compatibility/1",
+  "event_schema_majors": [
+    "autogit.event/1"
+  ],
+  "result_schema_majors": [
+    "autogit.result/1"
+  ],
+  "state_schema": {
+    "current_version": 7,
+    "upgrade": "forward-only",
+    "future_version": "reject"
+  },
+  "adapters": [
+    {
+      "adapter": "codex",
+      "schema_majors": ["autogit.event/1"],
+      "client_versions": ["unknown", "0.x", "1.x", "2.x"],
+      "event_mappings": {
+        "hook_event_name": "event",
+        "session_id": "scope.session_id",
+        "task_id": "scope.task_id"
+      },
+      "install_supported": true,
+      "contract": "official-hook",
+      "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+      "queue_state": "unknown",
+      "task_boundaries": "native",
+      "changed_paths": "reported",
+      "monotonic_sequence": true
+    },
+    {
+      "adapter": "claude-code",
+      "schema_majors": ["autogit.event/1"],
+      "client_versions": ["unknown", "1.x", "2.x"],
+      "event_mappings": {
+        "hook_event_name": "event",
+        "session_id": "scope.session_id",
+        "cwd": "project.candidate_root"
+      },
+      "install_supported": true,
+      "contract": "official-hook",
+      "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+      "queue_state": "unknown",
+      "task_boundaries": "native",
+      "changed_paths": "reported",
+      "monotonic_sequence": true
+    },
+    {
+      "adapter": "cursor",
+      "schema_majors": ["autogit.event/1"],
+      "client_versions": ["observation"],
+      "event_mappings": {
+        "observation": "event",
+        "sessionId": "scope.session_id"
+      },
+      "install_supported": false,
+      "contract": "synthetic-observation",
+      "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+      "queue_state": "none",
+      "task_boundaries": "synthetic",
+      "changed_paths": "none",
+      "monotonic_sequence": false
+    },
+    {
+      "adapter": "gemini-cli",
+      "schema_majors": ["autogit.event/1"],
+      "client_versions": ["unknown", "0.x", "1.x", "2.x"],
+      "event_mappings": {
+        "hook_event_name": "event",
+        "session_id": "scope.session_id"
+      },
+      "install_supported": true,
+      "contract": "official-hook",
+      "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+      "queue_state": "unknown",
+      "task_boundaries": "native",
+      "changed_paths": "reported",
+      "monotonic_sequence": true
+    },
+    {
+      "adapter": "opencode",
+      "schema_majors": ["autogit.event/1"],
+      "client_versions": ["observation"],
+      "event_mappings": {
+        "observation": "event",
+        "session": "scope.session_id"
+      },
+      "install_supported": false,
+      "contract": "synthetic-observation",
+      "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+      "queue_state": "none",
+      "task_boundaries": "synthetic",
+      "changed_paths": "derived",
+      "monotonic_sequence": false
+    },
+    {
+      "adapter": "commandcode",
+      "schema_majors": ["autogit.event/1"],
+      "client_versions": ["observation"],
+      "event_mappings": {
+        "signal": "event",
+        "session_id": "scope.session_id"
+      },
+      "install_supported": false,
+      "contract": "synthetic-observation",
+      "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+      "queue_state": "unknown",
+      "task_boundaries": "synthetic",
+      "changed_paths": "derived",
+      "monotonic_sequence": false
+    }
+  ]
+}

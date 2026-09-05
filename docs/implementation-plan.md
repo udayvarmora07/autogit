@@ -43,7 +43,7 @@ passed the relevant gates; it is not the v1 security boundary.
 | Phase 1 — foundation | Implementation in progress; exit not claimed | Buildable Go core with durable state and validated ingress |
 | Phase 2 — safe local workflow | Implementation in progress; exit not claimed | Consent through verified local commit with session ownership |
 | Phase 3 — integrations and recovery | Implementation in progress; exit not claimed | Adapters, provider jobs, retries, concurrency, and crash reconciliation |
-| Phase 4 — private alpha | Native OS CI gate passed; private-alpha/release gates open | Dogfoodable local/private release on supported OSes |
+| Phase 4 — private alpha | Native OS CI gate passed; reproducible packaging implemented; private-alpha/release gates open | Dogfoodable local/private release on supported OSes |
 | Phase 5 — public beta | Local public-preflight implementation; canary/beta gates open | Explicit-public, portfolio-quality, supportable beta release |
 
 No phase is complete because its code exists. The phase exit gate requires the
@@ -708,3 +708,36 @@ promotion.
 - **Public beta — open.** Public preflight and the release runbook exist, but
   beta depends on the unresolved Phase 0 and private-alpha decisions and the
   live canary/public release evidence. No beta promotion is claimed.
+
+### 10.21 Deterministic release-build artifact (2026-09-05)
+
+[`scripts/release-build.sh`](../scripts/release-build.sh) builds supported
+Linux, macOS, and Windows amd64/arm64 binaries with `-trimpath`, disabled VCS
+stamping, and a fixed linker build ID. The script validates requested targets,
+does not publish or remove anything, names Windows artifacts with `.exe`, and
+writes a sorted `SHA256SUMS` file for only the binaries built in that run. Its
+integration test proves identical Linux amd64 bytes from two builds, no
+embedded local source path, correct Windows arm64 output architecture,
+checksums, and rejection of unsupported targets. CI now runs all six supported
+targets twice and byte-compares every matching artifact. Signing remains a
+release-owner gate: the repository contains no signing key and this artifact
+does not claim a signed release.
+
+### 10.22 Compatibility manifest (2026-09-05)
+
+[`compatibility-manifest.json`](compatibility-manifest.json) is the release
+artifact for the v1 event/result majors, current durable schema behavior, and
+all six adapter contracts/capabilities. Its regression test compares every
+entry to the actual adapter manifest and opens a new state database to verify
+the durable schema version. It is an unsigned, unreleased compatibility record
+and does not approve a migration or beta release.
+
+### 10.23 Release-support artifacts (2026-09-05)
+
+[`release-notes.md`](release-notes.md) provides an unreleased, redacted
+release-notes template tied to the compatibility manifest and release evidence.
+The release runbook now defines security/support triage categories, a
+publication stop-and-preserve procedure, redacted incident metadata, and the
+release-owner decisions that cannot be automated. These artifacts implement
+the P5-03 documentation surface without claiming a release note, incident
+response authority, or beta promotion.

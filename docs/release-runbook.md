@@ -23,20 +23,24 @@ command output, and redacted artifact links for each item:
 
 1. Run `go test -count=1 ./...`, `go test -race ./...`, `go vet ./...`, and
    `go build ./...`.
-2. Run the deterministic test-floor command from
+2. Run `bash scripts/release-build.sh --output dist/first` twice with separate
+   output directories and byte-compare matching binaries plus `SHA256SUMS`.
+   CI performs this check for all six supported release targets; signing
+   remains a separate release-owner step using an approved key.
+3. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
-3. [Recorded] The native Linux, macOS, and Windows matrix passed in
+4. [Recorded] The native Linux, macOS, and Windows matrix passed in
    [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362),
    including benchmark, p95-gate, and build steps. Cross-build output alone is
    not native evidence.
-4. The same run passed the native p95 gates. Retain the run logs with the
+5. The same run passed the native p95 gates. Retain the run logs with the
    release record; this evidence does not by itself approve alpha or beta.
-5. Run the manually dispatched
+6. Run the manually dispatched
    [GitHub canary](../.github/workflows/github-canary.yml) with the dedicated
    `AUTOGIT_CANARY_TOKEN` secret and owner. Confirm generated name, owner,
    visibility, `main` ref, exact commit SHA, and successful cleanup. A personal
    token or ambient `GH_TOKEN` is not acceptable.
-6. Obtain product acceptance of the Phase 0 contract, threat invariants, test
+7. Obtain product acceptance of the Phase 0 contract, threat invariants, test
    traceability, compatibility boundary, and release decision. Record the
    approver and date in the release record.
 
@@ -84,7 +88,8 @@ local test does not authorize public publication.
 
 ## Upgrade and compatibility procedure
 
-- Verify the release binary and compatibility manifest before installation.
+- Verify the release binary and [compatibility manifest](compatibility-manifest.json)
+  before installation.
 - Keep wire major `autogit.event/1` and result major `autogit.result/1` stable;
   unknown future majors fail closed.
 - Migrate the state store only through the bounded schema migration and back
@@ -101,3 +106,22 @@ repository identity, job/event and correlation IDs, stable reason code,
 whether local work remains intact, the next safe command or human decision,
 and cleanup status for any disposable provider resource. Support artifacts are
 metadata-only and remain redacted.
+
+## Security response and support triage
+
+1. Classify reports as consent/ownership, verification/security scan, provider
+   destination, durability/recovery, privacy/redaction, or release artifact.
+   Treat an alleged secret disclosure, unconsented mutation, wrong destination,
+   force/ref deletion, or cleanup mismatch as security-critical.
+2. Stop further publication by selecting `disable` or a local-only policy.
+   Preserve durable state and local commits; do not erase logs, reset history,
+   delete a repository, or retry into an ambiguous destination.
+3. Record only redacted metadata: release commit/platform, repository identity,
+   correlation/job ID, reason code, observed outcome category, and whether
+   local work remains intact. Never collect a token, prompt, source, diff, or
+   raw remote URL in the incident record.
+4. The release owner selects the private reporting channel and decides whether
+   to pause a cohort, revoke a release artifact, or publish a security notice.
+   The repository has no default public disclosure deadline or key authority.
+5. Use [the release-notes template](release-notes.md) only after the response,
+   compatibility, migration, and rollback outcomes are reviewed.
