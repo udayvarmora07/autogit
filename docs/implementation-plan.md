@@ -556,3 +556,23 @@ the same immutable request and asserts exactly one Git/provider effect. This
 strengthens deterministic intent recovery evidence but does not satisfy the
 remaining randomized concurrent process schedules, native-OS, canary, or
 phase-promotion gates.
+
+### 10.12 Subprocess recovery evidence (2026-09-05)
+
+`internal/coordinator/process_recovery_test.go` now runs real child-process
+crash schedules after durable commit and push intent, after the Git/provider
+effect, and after result persistence, then reopens SQLite and proves one exact
+recovered effect. It also runs two independent child processes through the
+same durable writer lease and proves one commit effect. This is stronger
+process-boundary evidence for commit and push, but it does not close the
+required 1,000 randomized schedules across every durable intent boundary.
+
+`internal/gittransaction/process_recovery_test.go` adds real child-process
+crash coverage after the local Git ref update and after commit-result
+persistence, plus the pre-effect intent case, and proves restart recovery or
+fail-closed reconciliation without creating a second commit object.
+`internal/provider/process_recovery_test.go` does the same for hosted
+repository creation and local attachment, proving that a lost hosted-create
+or attach result is recovered from the exact durable identity. These tests
+strengthen the process-boundary evidence, but do not close the required 1,000
+randomized schedules across every durable intent boundary.

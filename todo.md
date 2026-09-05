@@ -123,11 +123,15 @@ tests:
   duplicate effects; broader randomized process schedules remain release gates.
 - [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
   and reach the >=609 deterministic release-suite target; the local Go suite
-  currently emits 635 passing named test cases/subtests under `go test -json`.
+  currently emits 660 passing named test cases/subtests under `go test -json`.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
   scenarios pass; Go v1 coverage is enforced separately by the >=609 CI floor.
 - [x] Add deterministic fault-injection coverage for the implemented commit,
   push, Git-transaction, and hosted-create intent boundaries.
+- [x] Add real subprocess crash/restart and concurrent multi-process commit
+  and push recovery schedules, plus Git-transaction and hosted-create restart
+  schedules; the required 1,000 randomized schedules across every durable
+  boundary remain a release gate.
 - [ ] Complete the required randomized crash/concurrency schedules across every
   durable intent boundary.
 - [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
