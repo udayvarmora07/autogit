@@ -45,7 +45,7 @@ fuzz executions are counted separately.
 | Resilience/concurrency/crash suite | Not present | >=50 | Leases, duplicate/out-of-order events, kill/restart at every intent |
 | Portfolio/publication suite | Partial prototype | >=15 | Public consent, readiness report, README/license/destination quality |
 | Performance/compatibility suite | Not present | >=12 benchmarks | p95 latency, scale, binary/OS behavior |
-| **Deterministic total** | **623 Go cases** | **>=609** | All must-level acceptance paths |
+| **Deterministic total** | **625 Go cases** | **>=609** | All must-level acceptance paths |
 
 The 177 prototype scenarios are a regression floor. A v1 release cannot claim
 coverage merely because those shell scripts pass: they do not prove session
@@ -114,7 +114,7 @@ is evidence that the legacy regression floor is runnable, but it does not
 replace Go v1 coverage because those scripts exercise the Bash compatibility
 hook rather than the new core.
 
-The Go v1 suite emits 623 passing named test cases/subtests in the same audit
+The Go v1 suite emits 625 passing named test cases/subtests in the same audit
 environment when run with `go test -count=1 -json ./...`. CI enforces the
 documented >=609 deterministic floor from that stream. This count is a release
 floor, not evidence for the separate native-OS, randomized crash/concurrency,

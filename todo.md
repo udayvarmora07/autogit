@@ -110,6 +110,10 @@ tests:
 
 ## Required validation and release gates
 
+- [x] Added seeded 1,000-schedule commit and 1,000-schedule push-coordinator
+  fault matrices covering intent/result failures, transient recovery, and
+  idempotence without duplicate effects; randomized process schedules remain
+  release gates.
 - [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
   and reach the >=609 deterministic release-suite target; the local Go suite
   currently emits 623 passing named test cases/subtests under `go test -json`.

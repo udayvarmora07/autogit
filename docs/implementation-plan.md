@@ -543,3 +543,13 @@ The four legacy compatibility suites were rerun from the installed reference
 checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,
 and 3). They remain regression-floor evidence only; they exercise the Bash
 hook and do not replace the Go v1 suite or its enforced `>=609` floor.
+
+### 10.11 Deterministic commit fault schedule evidence (2026-09-05)
+
+`internal/coordinator` now runs seeded 1,000-schedule commit and 1,000-schedule
+push matrices covering clean operation, durable intent/result-write failure,
+transient retry, and idempotent recovery. Each schedule retries or reconciles
+the same immutable request and asserts exactly one Git/provider effect. This
+strengthens deterministic intent recovery evidence but does not satisfy the
+remaining randomized concurrent process schedules, native-OS, canary, or
+phase-promotion gates.

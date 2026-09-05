@@ -3,6 +3,8 @@ package coordinator
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math/rand"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -79,6 +81,114 @@ func TestCommitResultPersistenceFailureRemainsRecoverable(t *testing.T) {
 	}
 	if g.calls != 1 || s.status[req.ID] != "CREATED" {
 		t.Fatalf("git calls=%d status=%q after recovery", g.calls, s.status[req.ID])
+	}
+}
+
+func TestDeterministicCommitIntentFaultSchedulesRecoverWithoutDuplicateEffects(t *testing.T) {
+	const schedules = 1000
+	rng := rand.New(rand.NewSource(0xA017))
+	sha := strings.Repeat("a", 40)
+
+	for schedule := 0; schedule < schedules; schedule++ {
+		s := newMemoryStore()
+		g := &fakeGit{sha: sha, inspect: sha}
+		req := validCommitRequest(fmt.Sprintf("fault-schedule-%04d", schedule))
+		failureMode := rng.Intn(3)
+		switch failureMode {
+		case 1:
+			s.putCommitErr = errors.New("scheduled intent persistence failure")
+		case 2:
+			s.recordCommitErr = errors.New("scheduled result persistence failure")
+		}
+
+		firstErr := (Coordinator{Store: s, Git: g}).Commit(context.Background(), req)
+		s.putCommitErr = nil
+		s.recordCommitErr = nil
+		if failureMode == 1 && firstErr == nil {
+			t.Fatalf("schedule %d: intent failure was hidden", schedule)
+		}
+		if failureMode == 2 && firstErr == nil {
+			t.Fatalf("schedule %d: result failure was hidden", schedule)
+		}
+		if failureMode == 1 && g.calls != 0 {
+			t.Fatalf("schedule %d: Git effect escaped intent failure: %d", schedule, g.calls)
+		}
+		if failureMode == 2 && g.calls != 1 {
+			t.Fatalf("schedule %d: result failure changed Git effect count: %d", schedule, g.calls)
+		}
+		coordinator := Coordinator{Store: s, Git: g}
+		if failureMode == 1 {
+			if err := coordinator.Commit(context.Background(), req); err != nil {
+				t.Fatalf("schedule %d: retry after intent failure failed: %v", schedule, err)
+			}
+		} else if err := coordinator.RecoverCommit(context.Background(), req); err != nil {
+			t.Fatalf("schedule %d: recovery failed: %v", schedule, err)
+		}
+		if g.calls != 1 || s.status[req.ID] != "CREATED" {
+			t.Fatalf("schedule %d: effects=%d status=%q, want one CREATED result", schedule, g.calls, s.status[req.ID])
+		}
+	}
+}
+
+func TestDeterministicPushIntentFaultSchedulesRetainOneProviderEffect(t *testing.T) {
+	const schedules = 1000
+	rng := rand.New(rand.NewSource(0xB017))
+	request := PushRequest{Owner: "owner", Name: "repo", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+
+	for schedule := 0; schedule < schedules; schedule++ {
+		s := newMemoryStore()
+		request.ID = fmt.Sprintf("push-fault-schedule-%04d", schedule)
+		p := &fakeProvider{confirmed: true, confirmErrors: []error{nil}}
+		failureMode := rng.Intn(4)
+		switch failureMode {
+		case 1:
+			s.putPushErr = errors.New("scheduled push intent persistence failure")
+		case 2:
+			s.markSucceededErr = errors.New("scheduled push result persistence failure")
+		case 3:
+			p.confirmed = false
+			p.pushErr = provider.ErrOffline
+		}
+
+		firstErr := (Coordinator{Store: s, Provider: p}).Push(context.Background(), request)
+		s.putPushErr = nil
+		s.markSucceededErr = nil
+		if failureMode == 0 && firstErr != nil {
+			t.Fatalf("schedule %d: clean push failed: %v", schedule, firstErr)
+		}
+		if failureMode == 1 && firstErr == nil {
+			t.Fatalf("schedule %d: push intent failure was hidden", schedule)
+		}
+		if failureMode == 2 && firstErr == nil {
+			t.Fatalf("schedule %d: push result failure was hidden", schedule)
+		}
+		if failureMode == 3 && !errors.Is(firstErr, provider.ErrOffline) {
+			t.Fatalf("schedule %d: error=%v, want offline push failure", schedule, firstErr)
+		}
+		if failureMode == 1 && p.calls != 0 {
+			t.Fatalf("schedule %d: provider effect escaped intent failure: %d", schedule, p.calls)
+		}
+
+		coordinator := Coordinator{Store: s, Provider: p}
+		switch failureMode {
+		case 1, 2:
+			if err := coordinator.Push(context.Background(), request); err != nil {
+				t.Fatalf("schedule %d: retry failed: %v", schedule, err)
+			}
+		case 3:
+			p.pushErr = nil
+			p.confirmed = true
+			if err := coordinator.RetryPush(context.Background(), request.ID); err != nil {
+				t.Fatalf("schedule %d: transient retry failed: %v", schedule, err)
+			}
+		case 0:
+			if err := coordinator.Push(context.Background(), request); err != nil {
+				t.Fatalf("schedule %d: idempotent retry failed: %v", schedule, err)
+			}
+		}
+		if p.calls != 1 || s.status[request.ID] != "SUCCEEDED" {
+			t.Fatalf("schedule %d: provider effects=%d status=%q, want one SUCCEEDED result", schedule, p.calls, s.status[request.ID])
+		}
 	}
 }
 
