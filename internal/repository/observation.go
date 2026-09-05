@@ -506,9 +506,21 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 		}
 	}
 	sort.Strings(paths)
-	files, err := captureBaselineFiles(abs, paths, maxFileSize, options.BeforeRead)
+	var parentStates map[string]parentState
+	if options.BeforeRead == nil && len(paths) >= 64 {
+		parentStates, err = snapshotParentStates(abs, paths)
+		if err != nil {
+			return Baseline{}, err
+		}
+	}
+	files, err := captureBaselineFiles(abs, paths, maxFileSize, options.BeforeRead, parentStates)
 	if err != nil {
 		return Baseline{}, err
+	}
+	if len(parentStates) > 0 {
+		if err := validateParentStates(parentStates); err != nil {
+			return Baseline{}, err
+		}
 	}
 	finalHead, err := readHead()
 	if err != nil {
@@ -560,7 +572,69 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 // capture waiting on serial metadata calls, especially on Windows. The
 // deterministic fault-injection hook intentionally keeps the serial path so
 // replacement-race tests retain their ordering and semantics.
-func captureBaselineFiles(root string, paths []string, maxFileSize int64, beforeRead func(string)) (map[string]FileObservation, error) {
+type parentState struct {
+	info   os.FileInfo
+	exists bool
+}
+
+func snapshotParentStates(root string, paths []string) (map[string]parentState, error) {
+	states := make(map[string]parentState)
+	for _, name := range paths {
+		absolute, err := safeJoin(root, name)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(root, absolute)
+		if err != nil {
+			return nil, err
+		}
+		current := root
+		parts := strings.Split(rel, string(filepath.Separator))
+		for _, part := range parts[:len(parts)-1] {
+			current = filepath.Join(current, part)
+			state, ok := states[current]
+			if !ok {
+				info, statErr := os.Lstat(current)
+				if os.IsNotExist(statErr) {
+					state = parentState{}
+				} else if statErr != nil {
+					return nil, statErr
+				} else {
+					if info.Mode()&os.ModeSymlink != 0 {
+						return nil, errors.New("status path contains a symlink component")
+					}
+					state = parentState{info: info, exists: true}
+				}
+				states[current] = state
+			}
+			if !state.exists {
+				break
+			}
+		}
+	}
+	return states, nil
+}
+
+func validateParentStates(states map[string]parentState) error {
+	for path, expected := range states {
+		actual, err := os.Lstat(path)
+		if !expected.exists {
+			if err == nil {
+				return errors.New("status path parent changed during baseline capture")
+			}
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("revalidate baseline path parent: %w", err)
+			}
+			continue
+		}
+		if err != nil || !sameFileObservation(expected.info, actual) || actual.Mode()&os.ModeSymlink != 0 {
+			return errors.New("status path parent changed during baseline capture")
+		}
+	}
+	return nil
+}
+
+func captureBaselineFiles(root string, paths []string, maxFileSize int64, beforeRead func(string), parentStates map[string]parentState) (map[string]FileObservation, error) {
 	files := make(map[string]FileObservation, len(paths))
 	if len(paths) < 64 || beforeRead != nil {
 		for _, name := range paths {
@@ -593,7 +667,12 @@ func captureBaselineFiles(root string, paths []string, maxFileSize int64, before
 		go func() {
 			defer workers.Done()
 			for index := range jobs {
-				results[index], errorsByPath[index] = captureBaselineFile(root, paths[index], maxFileSize, nil)
+				name := paths[index]
+				if len(parentStates) > 0 && baselinePathHasMissingParent(root, name, parentStates) {
+					results[index] = FileObservation{}
+					continue
+				}
+				results[index], errorsByPath[index] = captureBaselineFileInternal(root, name, maxFileSize, nil, len(parentStates) > 0)
 			}
 		}()
 	}
@@ -610,6 +689,26 @@ func captureBaselineFiles(root string, paths []string, maxFileSize int64, before
 		files[name] = results[index]
 	}
 	return files, nil
+}
+
+func baselinePathHasMissingParent(root, name string, states map[string]parentState) bool {
+	absolute, err := safeJoin(root, name)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, absolute)
+	if err != nil {
+		return false
+	}
+	current := root
+	parts := strings.Split(rel, string(filepath.Separator))
+	for _, part := range parts[:len(parts)-1] {
+		current = filepath.Join(current, part)
+		if state, ok := states[current]; ok && !state.exists {
+			return true
+		}
+	}
+	return false
 }
 
 func isUnbornHeadError(err error) bool {
@@ -666,12 +765,18 @@ func statusPaths(raw string) ([]string, error) {
 }
 
 func captureBaselineFile(root, name string, maxFileSize int64, beforeRead func(string)) (FileObservation, error) {
+	return captureBaselineFileInternal(root, name, maxFileSize, beforeRead, false)
+}
+
+func captureBaselineFileInternal(root, name string, maxFileSize int64, beforeRead func(string), parentsValidated bool) (FileObservation, error) {
 	absolute, err := safeJoin(root, name)
 	if err != nil {
 		return FileObservation{}, err
 	}
-	if err := rejectSymlinkParents(root, absolute); err != nil {
-		return FileObservation{}, err
+	if !parentsValidated {
+		if err := rejectSymlinkParents(root, absolute); err != nil {
+			return FileObservation{}, err
+		}
 	}
 	info, err := os.Lstat(absolute)
 	if os.IsNotExist(err) {
