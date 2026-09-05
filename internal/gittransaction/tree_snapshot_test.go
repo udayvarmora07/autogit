@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -35,7 +36,11 @@ func TestSnapshotAtCommitReadsExactTreeFilesAndModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0].Path != "README.md" || string(files[0].Content) != "# Snapshot\n" || files[1].Path != "run.sh" || files[1].Mode.Perm() != 0755 {
+	wantExecutableMode := os.FileMode(0755)
+	if runtime.GOOS == "windows" {
+		wantExecutableMode = 0644
+	}
+	if len(files) != 2 || files[0].Path != "README.md" || string(files[0].Content) != "# Snapshot\n" || files[1].Path != "run.sh" || files[1].Mode.Perm() != wantExecutableMode.Perm() {
 		t.Fatalf("snapshot=%+v", files)
 	}
 }

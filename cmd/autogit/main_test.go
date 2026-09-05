@@ -951,11 +951,20 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 	fakeBin := t.TempDir()
 	ghState := filepath.Join(fakeBin, "gh-state")
 	ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else : > '" + ghState + "'; printf '%s\\n' 'Not Found' >&2; exit 1; fi\n"
-	if err := os.WriteFile(filepath.Join(fakeBin, "gh"), []byte(ghScript), 0700); err != nil {
+	gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
+	ghName, gitName := "gh", "git"
+	if runtime.GOOS == "windows" {
+		ghName, gitName = "gh.cmd", "git.cmd"
+		t.Setenv("AUTOGIT_TEST_GH_STATE", ghState)
+		t.Setenv("AUTOGIT_TEST_GH_SHA", sha)
+		t.Setenv("AUTOGIT_TEST_REAL_GIT", gitPath)
+		ghScript = "@echo off\r\nif exist \"%AUTOGIT_TEST_GH_STATE%\" (echo %AUTOGIT_TEST_GH_SHA%\r\nexit /b 0)\r\ntype nul > \"%AUTOGIT_TEST_GH_STATE%\"\r\necho Not Found 1>&2\r\nexit /b 1\r\n"
+		gitScript = "@echo off\r\necho %* | findstr /c:\"remote get-url --push -- origin\" >nul\r\nif not errorlevel 1 (echo https://github.com/owner/repo\r\nexit /b 0)\r\necho %* | findstr /c:\"push -- origin\" >nul\r\nif not errorlevel 1 exit /b 0\r\n\"%AUTOGIT_TEST_REAL_GIT%\" %*\r\nexit /b %ERRORLEVEL%\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(fakeBin, ghName), []byte(ghScript), 0700); err != nil {
 		t.Fatal(err)
 	}
-	gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
-	if err := os.WriteFile(filepath.Join(fakeBin, "git"), []byte(gitScript), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(fakeBin, gitName), []byte(gitScript), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))

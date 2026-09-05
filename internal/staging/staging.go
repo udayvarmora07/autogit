@@ -273,7 +273,10 @@ func finalizePlan(p Plan) Plan {
 
 func normalizedMode(mode os.FileMode) os.FileMode {
 	if runtime.GOOS == "windows" {
-		return 0666
+		if mode.Perm()&0111 == 0 {
+			return 0666
+		}
+		return 0755
 	}
 	if mode == 0 || mode.Perm()&0111 == 0 {
 		return 0644
