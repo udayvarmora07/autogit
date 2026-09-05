@@ -243,10 +243,11 @@ Delivered where section 10 provides direct evidence:
 
 Open gates and next priorities:
 
-- [ ] Freeze Phase 0 terminology, IDs, schema, lifecycle, threat invariants,
-      and the [test traceability matrix](test-strategy.md); resolve remaining
-      document status/link consistency and record the approved compatibility
-      window.
+- [ ] Complete acceptance review of the Phase 0 terminology, IDs, schema,
+      lifecycle, threat invariants, and test traceability matrix recorded in
+      [`contract-freeze.md`](contract-freeze.md); the v1 compatibility boundary
+      is now explicit, while approval and the future-major migration window
+      remain policy gates.
 - [x] Bridge durable session/repository observations into owned candidate
       derivation and the verified local-commit workflow for both explicit clean
       session completion and the trusted hook completion profile; automatic

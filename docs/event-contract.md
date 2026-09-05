@@ -223,7 +223,8 @@ Ordering is causal, not wall-clock based. Within a stream, `producer_seq` is a
 useful hint; the durable core orders by causal references and local receipt
 revision. Events with gaps remain pending. Late events are recorded and cause
 fresh repository reconciliation; they cannot silently resurrect stale
-verification.
+verification. The v1 terminology and wire-compatibility boundary are recorded
+in [`contract-freeze.md`](contract-freeze.md).
 
 `idempotency.key` identifies the logical operation, not an attempt. Retries
 increment `attempt` while retaining the same key and payload digest. Side
@@ -233,9 +234,10 @@ operation is safe.
 
 The schema identity is `namespace/major`. Compatible optional additions retain
 the major. New required fields, changed meanings, or removed enum values
-require a new major. The core supports the current and previous major during a
-documented migration window. Each adapter publishes a compatibility manifest
-with supported majors, client versions, capabilities, and event mappings.
+require a new major. v1 supports `autogit.event/1` and has no previous released
+major to migrate from; a future major must publish its migration window before
+v1 is retired. Each adapter publishes a compatibility manifest with supported
+majors, client versions, capabilities, and event mappings.
 
 ## Capability degradation
 

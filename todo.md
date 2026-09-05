@@ -59,7 +59,9 @@ claiming a phase exit:
 ## Next implementation order
 
 - [ ] Freeze Phase 0 terminology, requirement IDs, schema/lifecycle/threat
-  invariants, test-traceability matrix, and compatibility window.
+  invariants, test-traceability matrix, and compatibility window; the
+  implementation baseline is recorded in `docs/contract-freeze.md`, pending
+  acceptance review.
 - [x] Capture durable session/task baselines from real repository observations
   (HEAD, index, status, modes, and owned paths), then feed them into staging;
   explicit lifecycle-driven completion is now available through the trusted
