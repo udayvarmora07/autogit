@@ -6,6 +6,16 @@ Last updated: 2026-09-05
 This runbook covers the bounded private-alpha and public-beta gates. It does
 not authorize a live provider run or replace explicit release-owner approval.
 
+## Current evidence snapshot
+
+[CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
+completed successfully for commit `ad0e05d79c6eda3b602ca5f98e55841683e1b3e6`.
+Its native Linux, macOS, and Windows jobs passed tests, builds, deterministic
+test-floor checks, benchmark sampling, and p95 gates; security analysis and
+all three cross-build jobs also passed. This closes the native-OS gate only.
+Phase 0 acceptance, the live disposable-provider canary, and alpha/beta
+promotion remain pending.
+
 ## Release evidence checklist
 
 Before promotion, record the commit, Go version, runner OS/architecture,
@@ -15,20 +25,35 @@ command output, and redacted artifact links for each item:
    `go build ./...`.
 2. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
-3. Run the native Linux, macOS, and Windows matrix and retain benchmark,
-   p95-gate, and build logs. Cross-build output alone is not native evidence.
-4. Run `bash scripts/performance-gate.sh` on each supported native runner and
-   retain the no-candidate-hook and 100,000-path p95 values.
+3. [Recorded] The native Linux, macOS, and Windows matrix passed in
+   [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362),
+   including benchmark, p95-gate, and build steps. Cross-build output alone is
+   not native evidence.
+4. The same run passed the native p95 gates. Retain the run logs with the
+   release record; this evidence does not by itself approve alpha or beta.
 5. Run the manually dispatched
-   [GitHub canary](../.github/workflows/github-canary.yml) with a dedicated
-   token and owner. Confirm generated name, owner, visibility, `main` ref,
-   exact commit SHA, and successful cleanup.
+   [GitHub canary](../.github/workflows/github-canary.yml) with the dedicated
+   `AUTOGIT_CANARY_TOKEN` secret and owner. Confirm generated name, owner,
+   visibility, `main` ref, exact commit SHA, and successful cleanup. A personal
+   token or ambient `GH_TOKEN` is not acceptable.
 6. Obtain product acceptance of the Phase 0 contract, threat invariants, test
    traceability, compatibility boundary, and release decision. Record the
    approver and date in the release record.
 
 A missing, stale, or environment-only artifact leaves its gate open. A green
 local test does not authorize public publication.
+
+### Gate audit
+
+- Phase 0 remains open: the contract-freeze record and normative documents are
+  awaiting product acceptance, despite passing traceability checks.
+- The disposable canary remains open: its local token-boundary test passes and
+  cleanup safeguards are implemented, but there is no live run or cleanup
+  artifact. It requires only the dedicated `AUTOGIT_CANARY_TOKEN`.
+- Private alpha remains open: native CI and local reliability evidence pass,
+  but the bounded cohort and release-owner approval are not recorded.
+- Public beta remains open: it depends on those unresolved gates and has no
+  live provider/public-release evidence.
 
 ## Private-alpha rollout
 

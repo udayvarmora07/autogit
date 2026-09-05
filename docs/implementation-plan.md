@@ -43,7 +43,7 @@ passed the relevant gates; it is not the v1 security boundary.
 | Phase 1 — foundation | Implementation in progress; exit not claimed | Buildable Go core with durable state and validated ingress |
 | Phase 2 — safe local workflow | Implementation in progress; exit not claimed | Consent through verified local commit with session ownership |
 | Phase 3 — integrations and recovery | Implementation in progress; exit not claimed | Adapters, provider jobs, retries, concurrency, and crash reconciliation |
-| Phase 4 — private alpha | CI/cross-build definition evidence; native/release gates open | Dogfoodable local/private release on supported OSes |
+| Phase 4 — private alpha | Native OS CI gate passed; private-alpha/release gates open | Dogfoodable local/private release on supported OSes |
 | Phase 5 — public beta | Local public-preflight implementation; canary/beta gates open | Explicit-public, portfolio-quality, supportable beta release |
 
 No phase is complete because its code exists. The phase exit gate requires the
@@ -256,15 +256,17 @@ Open gates and next priorities:
 - [x] Complete local public preflight/provider CLI publication, including
       readiness evidence and exact remote visibility postconditions; live
       canary evidence remains a separate release gate.
-- [ ] Run native hosted macOS and Windows coverage.
+- [x] Observe hosted native Linux, macOS, and Windows coverage in
+      [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
+      at `ad0e05d`; all native tests, builds, and p95 gates passed.
 - [ ] Run an opt-in disposable GitHub canary with exact postconditions and
       allowlisted cleanup.
 - [x] Recover and rerun the installed 177-case prototype regression floor.
 - [x] Replace that compatibility floor with Go v1 coverage and reach the
       >=609 deterministic release-test target. CI enforces the floor by
       counting passing named Go test cases/subtests from `go test -json`.
-- [ ] Complete all Phase 0 freeze, phase-exit, external-provider, native-OS,
-      release, canary, and beta gates before claiming promotion.
+- [ ] Complete all Phase 0 freeze, phase-exit, external-provider, release,
+      canary, and beta gates before claiming promotion.
 
 ## 10. Local implementation evidence (2026-09-01)
 
@@ -334,8 +336,8 @@ be exercised without a user repository or network credentials:
   process boundary for trusted verifier argv.
 
 The following review/release gates remain open and are not represented as
-completed: acceptance of the Phase 0 contract, native macOS/Windows execution,
-the opt-in disposable-provider canary, and alpha/beta promotion. Implicit
+completed: acceptance of the Phase 0 contract, the opt-in disposable-provider
+canary, and alpha/beta promotion. Implicit
 message/verifier inference remains intentionally unavailable without an
 explicit trusted profile; the protected
 `enable --auto-complete --verifiers FILE` profile, source-free durable
@@ -350,17 +352,17 @@ are implemented, but local evidence does not satisfy those external release
 gates.
 The prototype shell test scripts are not part of this repository, but the
 installed reference checkout was rerun on 2026-09-05 and passed all 177
-disposable scenarios. Native macOS and Windows CI has not yet been observed;
-the workflow definition is evidence of planned coverage only. The local test
-suite does not make claims about those external or release-gate behaviors.
+disposable scenarios. Native OS execution is now covered by the hosted CI
+evidence recorded in section 10.19. The local test suite does not make claims
+about the remaining provider or phase-promotion gates.
 
 ### 10.1 Portability evidence (local, 2026-09-01)
 
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) now
-defines the intended native matrix and cross-build smoke jobs. Fresh `go test
-./...`, `go vet ./...`, `go build ./...`, and all three requested cross-build
-commands pass locally. These are cross-build smoke checks, not native OS
-execution evidence; native macOS and Windows CI has not been observed.
+defines the native matrix and cross-build smoke jobs. Fresh `go test ./...`,
+`go vet ./...`, `go build ./...`, and all three requested cross-build commands
+pass locally. Hosted native execution evidence is recorded in section 10.19;
+the CI run also passed the deterministic test floor and native p95 gates.
 Provider credentials, network publication, and user-project fixtures are not
 used.
 
@@ -396,8 +398,8 @@ tests:
 Fresh local evidence for this slice is `go test ./...`, `go test -race ./...`,
 `go vet ./...`, and `go build ./...`. The private publication test uses fake
 local `git`/`gh` executables and no network credentials. This evidence does
-not satisfy the live GitHub canary, native macOS/Windows, prototype-regression,
-or release-count gates.
+not satisfy the live GitHub canary, prototype-regression, or release-count
+gates; hosted native evidence is recorded in section 10.19.
 
 ### 10.3 Lifecycle facts and repository transaction evidence (2026-09-04)
 
@@ -555,7 +557,7 @@ clean operation, durable intent/result-write failure, transient retry, lease
 serialization, and idempotent recovery. Each schedule retries or reconciles
 the same immutable request and asserts exactly one Git/provider effect. This
 strengthens deterministic intent recovery evidence but does not satisfy the
-remaining randomized concurrent process schedules, native-OS, canary, or
+remaining randomized concurrent process schedules, canary, or
 phase-promotion gates.
 
 ### 10.12 Subprocess recovery evidence (2026-09-05)
@@ -634,26 +636,29 @@ and decode, adapter digesting/manifests, repository path digests at 1,000 and
 commit messages, policy merge, security scanning, publication preflight, and
 lifecycle reduction. The
 benchmark suite runs with `go test -run '^$' -bench '^Benchmark' ./...`.
-This satisfies the local benchmark-suite artifact requirement, but the p95
-latency thresholds and native OS measurements remain release gates.
+This satisfies the local benchmark-suite artifact requirement. Hosted p95
+latency evidence is recorded in section 10.19; performance and phase
+promotion remain release gates.
 `scripts/performance-gate.sh` runs 20 samples and enforces the documented
 150-ms no-candidate-hook and 1-second 100,000-path baseline p95 limits. The
 native CI matrix now emits five benchmark samples and runs those p95 gates per
-supported runner; local Linux evidence passes, but hosted native evidence is
-still required for release.
+supported runner; the hosted evidence in run 33972129362 passed them on Linux,
+macOS, and Windows. This closes the native-OS gate only; it does not promote a
+release phase.
 
 `TestMustLevelRequirementsHaveTraceabilityRows` parses the product
 requirements and fails when a functional or non-functional requirement is
 missing from the test-strategy traceability matrix or appears more than once.
 It validates matrix maintenance locally without treating planned external
-canary, native-platform, or phase-promotion evidence as complete.
+canary or phase-promotion evidence as complete.
 
 ### 10.17 Disposable provider-canary harness (2026-09-05)
 
 The opt-in `github_canary` provider test and
 [`scripts/github-canary.sh`](../scripts/github-canary.sh) now exercise a real
-GitHub repository only when manually dispatched with a dedicated owner and
-token. The run creates the exact `autogit-v1-test-<run-id>` identity, verifies
+GitHub repository only when manually dispatched with a dedicated owner and the
+`AUTOGIT_CANARY_TOKEN` secret. The run creates the exact
+`autogit-v1-test-<run-id>` identity, verifies
 owner, full name, visibility, branch, and commit SHA, and deletes only that
 validated repository in an exit trap. Public visibility additionally requires
 the explicit `PUBLIC` dispatch confirmation. The workflow is
@@ -665,5 +670,41 @@ execution and cleanup evidence remain release gates.
 [`release-runbook.md`](release-runbook.md) records the private-alpha/public-beta
 evidence checklist, private-first rollout, incident metadata, adapter rollback,
 durable-intent reconciliation, compatibility migration, and disposable-resource
-cleanup procedure. It intentionally leaves approval, native execution, live
-canary, and phase-promotion decisions with the release owner.
+cleanup procedure. It intentionally leaves approval, the live canary, and
+phase-promotion decisions with the release owner.
+
+### 10.19 Hosted native CI evidence (2026-09-05)
+
+[CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
+completed successfully for commit `ad0e05d79c6eda3b602ca5f98e55841683e1b3e6`.
+All seven jobs passed: native Ubuntu, macOS, and Windows; Linux arm64,
+Darwin arm64, and Windows amd64 cross-builds; and security analysis. Each
+native runner passed formatting, tests, the `>=609` deterministic test floor,
+build, benchmark sampling, and the p95 performance gates; Linux and macOS also
+passed race tests. This closes the native-OS gate. It does not close Phase 0
+acceptance, the disposable provider canary, or private-alpha/public-beta
+promotion.
+
+### 10.20 Gate audit (2026-09-05)
+
+- **Phase 0 acceptance — open.** The contract-freeze record says
+  `product acceptance review pending`; the product requirements, threat model,
+  event contract, lifecycle, architecture, and test strategy still carry
+  draft/proposed acceptance status. The requirements-to-test traceability test
+  passes, and the frozen terminology/invariants are recorded, but no product
+  approver and acceptance date are recorded. This is evidence for review, not
+  a Phase 0 exit.
+- **Disposable GitHub canary — open.** The tagged harness and allowlisted
+  cleanup path are implemented, and the local tagged token-boundary test
+  passes. The shell entrypoint requires `AUTOGIT_CANARY_TOKEN` and overwrites
+  `GH_TOKEN` from that dedicated value. No live run or cleanup artifact exists;
+  no canary was attempted because the dedicated token is not present in this
+  environment.
+- **Private alpha — open.** The native OS CI gate, deterministic floor,
+  security analysis, cross-builds, p95 gates, local regression floor, and
+  documented local recovery evidence are present. The bounded private cohort,
+  release-owner review, and remaining acceptance/provider evidence are not
+  recorded, so alpha is not promoted.
+- **Public beta — open.** Public preflight and the release runbook exist, but
+  beta depends on the unresolved Phase 0 and private-alpha decisions and the
+  live canary/public release evidence. No beta promotion is claimed.

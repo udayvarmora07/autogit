@@ -33,6 +33,7 @@ jobs:
       contents: read
     env:
       GH_TOKEN: ${{ secrets.AUTOGIT_CANARY_TOKEN }}
+      AUTOGIT_CANARY_TOKEN: ${{ secrets.AUTOGIT_CANARY_TOKEN }}
       AUTOGIT_CANARY_OWNER: ${{ inputs.owner }}
       AUTOGIT_CANARY_VISIBILITY: ${{ inputs.visibility }}
       AUTOGIT_CANARY_PUBLIC_CONSENT: ${{ inputs.public_consent == 'PUBLIC' && '1' || '0' }}

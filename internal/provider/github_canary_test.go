@@ -40,13 +40,17 @@ func TestGitHubCanary(t *testing.T) {
 	if visibility == "public" && os.Getenv("AUTOGIT_CANARY_PUBLIC_CONSENT") != "1" {
 		t.Fatal("public canary requires explicit public consent")
 	}
+	token := os.Getenv("AUTOGIT_CANARY_TOKEN")
+	if token == "" {
+		t.Fatal("AUTOGIT_CANARY_TOKEN is required")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	ghPath := trustedCanaryExecutable(t, "AUTOGIT_GH_PATH", "gh")
 	gitPath := trustedCanaryExecutable(t, "AUTOGIT_GIT_PATH", "git")
 	root := t.TempDir()
-	gh := canaryGHRunner{Executable: ghPath, WorkingDir: root, Token: os.Getenv("GH_TOKEN")}
+	gh := canaryGHRunner{Executable: ghPath, WorkingDir: root, Token: token}
 	git := SystemRunner{Executable: gitPath, WorkingDir: root}
 
 	canaryGit(t, ctx, git, root, "init", "--initial-branch", "main")

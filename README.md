@@ -99,12 +99,15 @@ creates a commit intent or AutoGit ref.
 
 Fresh repository-wide `go test ./...`, `go vet ./...`, `go build ./...`, and
 Linux arm64, Darwin arm64, and Windows amd64 cross-build smoke checks pass
-locally. Native macOS and Windows CI has not yet been observed. The repository
-does not contain the prototype shell scripts used for the documented 177-case
-baseline. Native macOS/Windows execution, live execution of the disposable
-provider canary, hosted p95 performance threshold evidence, and
-publication/alpha/beta release gates remain open. The canary is available only
-through the manually dispatched workflow and requires a dedicated token.
+locally. Hosted native Linux, macOS, and Windows execution, including the
+native p95 gates, passed in [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
+for commit `ad0e05d`. This closes the native-OS gate only. The repository does
+not contain the prototype shell scripts used for the documented 177-case
+baseline. Phase 0 acceptance, live execution of the disposable provider
+canary, and publication/alpha/beta release gates remain open. The canary is
+available only through the manually dispatched workflow and requires the
+dedicated `AUTOGIT_CANARY_TOKEN`; an ambient or personal GitHub token is not a
+valid substitute.
 Operational rollout, incident, upgrade, and rollback procedures are documented
 in [`docs/release-runbook.md`](docs/release-runbook.md).
 The CI workflow enforces the `>=609` deterministic Go test-case floor and the

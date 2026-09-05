@@ -2,7 +2,11 @@
 set -euo pipefail
 
 : "${AUTOGIT_CANARY_OWNER:?AUTOGIT_CANARY_OWNER is required}"
-: "${GH_TOKEN:?GH_TOKEN is required}"
+: "${AUTOGIT_CANARY_TOKEN:?AUTOGIT_CANARY_TOKEN is required}"
+
+# The canary must use the dedicated disposable-resource credential. Do not
+# accept an ambient gh login or a caller-supplied personal GH_TOKEN.
+export GH_TOKEN="$AUTOGIT_CANARY_TOKEN"
 
 visibility="${AUTOGIT_CANARY_VISIBILITY:-private}"
 public_consent="${AUTOGIT_CANARY_PUBLIC_CONSENT:-0}"

@@ -153,8 +153,9 @@ tests:
 - [x] Add the private-alpha/public-beta release runbook covering evidence,
   support, compatibility migration, incident handling, and rollback; approval
   and phase promotion remain release gates.
-- [ ] Observe native hosted macOS and Windows coverage; cross-build checks are
-  not native execution evidence.
+- [x] Observe hosted native Linux, macOS, and Windows coverage in
+  [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
+  at `ad0e05d`; cross-build checks remain separate evidence.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/
   ref/SHA postconditions and allowlisted cleanup.
 - [ ] Complete private-alpha and public-beta gates; do not claim a phase exit
