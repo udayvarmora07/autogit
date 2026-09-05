@@ -124,6 +124,13 @@ func (s Service) ResumeFromDurable(ctx context.Context, req Request, durable Dur
 // verified local workflow. No workflow call occurs when ownership is
 // ambiguous or the candidate is empty.
 func (s Service) Complete(ctx context.Context, started Started, runner Workflow, id, message string, p policy.Policy, verifiers *verification.VerifierRegistry) (localworkflow.Result, error) {
+	return s.CompleteWithIntent(ctx, started, runner, id, message, "", p, verifiers)
+}
+
+// CompleteWithIntent is the lifecycle variant used by an explicit automatic
+// completion profile. The intent is only a candidate message hint; workflow
+// validates or deterministically composes it before any Git intent is stored.
+func (s Service) CompleteWithIntent(ctx context.Context, started Started, runner Workflow, id, message, intent string, p policy.Policy, verifiers *verification.VerifierRegistry) (localworkflow.Result, error) {
 	if runner == nil {
 		return localworkflow.Result{}, errors.New("session workflow is required")
 	}
@@ -137,7 +144,7 @@ func (s Service) Complete(ctx context.Context, started Started, runner Workflow,
 	if len(plan.CandidateSnapshot()) == 0 {
 		return localworkflow.Result{}, errors.New("session has no owned changes")
 	}
-	return runner.RunPlan(ctx, localworkflow.Request{ID: id, RepositoryDir: started.Request.Root, Message: message, Policy: p, Verifiers: verifiers}, plan)
+	return runner.RunPlan(ctx, localworkflow.Request{ID: id, RepositoryDir: started.Request.Root, Message: message, Intent: intent, Policy: p, Verifiers: verifiers}, plan)
 }
 
 // BuildOwnedPlanAtCurrent captures the current repository observation before

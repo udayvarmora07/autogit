@@ -35,3 +35,35 @@ func TestComposeBindsMessageEvidenceToCandidateAndPolicy(t *testing.T) {
 		t.Fatalf("message evidence=%+v", m)
 	}
 }
+
+func TestGenerateBuildsConventionalMessageFromMeaningfulIntent(t *testing.T) {
+	message, err := Generate("fix parser accepts quoted paths", []Change{
+		{Path: "internal/parser.go", Operation: "modified"},
+		{Path: "internal/parser_test.go", Operation: "added"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message != "fix: fix parser accepts quoted paths" {
+		t.Fatalf("message=%q", message)
+	}
+	if err := Validate(message); err != nil {
+		t.Fatalf("generated message is invalid: %v", err)
+	}
+}
+
+func TestGeneratePreservesExplicitConventionalMessageAndRejectsWeakIntent(t *testing.T) {
+	explicit := "feat(parser): accept quoted paths"
+	got, err := Generate(explicit, nil)
+	if err != nil || got != explicit {
+		t.Fatalf("got=%q err=%v", got, err)
+	}
+	for _, intent := range []string{"", "update stuff", "done", "task complete", "feat: secret password"} {
+		if _, err := Generate(intent, nil); err == nil {
+			t.Fatalf("weak intent %q accepted", intent)
+		}
+	}
+	if _, err := Generate("fix parser accepts paths", nil); err == nil {
+		t.Fatal("generated message accepted without an owned change")
+	}
+}

@@ -62,8 +62,9 @@ cross-process restart handoff into the verified local workflow, while the CLI
 hook captures trusted session-start baselines without exposing their contents.
 The CLI private
 publication path is explicit and exact-SHA based; public publication returns a
-bounded preflight report until all evidence is available. Fully automatic
-lifecycle-driven commit orchestration remains open. No command contacts GitHub or modifies a user
+bounded preflight report until all evidence is available. Fully implicit
+lifecycle-driven inference remains open; installed-hook completion is
+available only through the explicit trusted profile described below. No command contacts GitHub or modifies a user
 repository implicitly; provider tests/canaries are not live.
 
 Initialization is explicit. For a local project use
@@ -75,6 +76,10 @@ changes without creating state or Git metadata.
 For a hook-captured session, `sync --complete --all-owned` resumes ownership
 from the source-free baseline manifest; explicit `--path` remains available
 when the caller wants to limit the candidate.
+To opt into installed-hook completion, add
+`--auto-complete --verifiers FILE` to `enable`. AutoGit validates and copies
+the verifier file into its protected state directory; a task-completion event
+must still provide meaningful intent, and generic stop text is blocked.
 After initialization, `autogit remote create` is the separate resumable step
 that creates and binds the hosted destination.
 
@@ -83,6 +88,9 @@ index/status/path digests, changed-path count, and consent/provider checks. It
 does not stage, commit, move refs, or alter the shared index.
 `autogit config explain` is also state-free and can inspect a verifier file
 without initializing AutoGit storage.
+When a trusted profile is configured, `sync --complete` and `verify` may omit
+`--verifiers` and use `--intent` instead of a finished message; the same
+fail-closed composer is used.
 `autogit verify --all-owned` uses the same source-free session evidence as
 `sync --complete --all-owned`, but only runs trusted verification and never
 creates a commit intent or AutoGit ref.

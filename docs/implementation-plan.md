@@ -250,8 +250,9 @@ Open gates and next priorities:
       remain policy gates.
 - [x] Bridge durable session/repository observations into owned candidate
       derivation and the verified local-commit workflow for both explicit clean
-      session completion and the trusted hook completion profile; automatic
-      message/verifier inference remains a separate policy gate.
+      session completion and the trusted hook completion profile; implicit
+      inference without an explicit trusted profile remains a separate policy
+      gate.
 - [x] Complete local public preflight/provider CLI publication, including
       readiness evidence and exact remote visibility postconditions; live
       canary evidence remains a separate release gate.
@@ -333,12 +334,13 @@ be exercised without a user repository or network credentials:
   process boundary for trusted verifier argv.
 
 The following planned gates remain open and are not represented as completed:
-automatic message/verifier selection for installed hooks (the observation,
-staging, source-free durable evidence, session start/complete coordinator,
-session-start hook wiring, explicit `sync --complete --all-owned` resume path,
-and explicit trusted hook completion profile are implemented), complete
-trusted verification policy configuration for all workflow modes, complete
-adapter discovery/installation and
+implicit message/verifier inference without an explicit trusted profile (the
+protected `enable --auto-complete --verifiers FILE` profile, source-free
+durable evidence, session start/complete coordinator, session-start hook
+wiring, explicit `sync --complete --all-owned` resume path, deterministic
+task-intent message composer, and trusted hook completion path are now
+implemented), complete trusted verification policy configuration for all
+publication/readiness profiles, complete adapter discovery/installation and
 workflow orchestration in the CLI and the
 opt-in disposable-provider canary. The user-facing consent-gated repository-
 initialization command is implemented. Explicit private and evidence-gated

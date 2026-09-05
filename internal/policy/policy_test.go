@@ -9,6 +9,19 @@ func TestEffectivePolicyProjectOverridesOnlyExplicitFields(t *testing.T) {
 	}
 }
 
+func TestMergePreservesExplicitTrustedCompletionProfile(t *testing.T) {
+	got := Merge(Policy{Tracking: "local"}, Policy{AutoComplete: true, VerifierConfig: "verifiers/project.json"})
+	if !got.AutoComplete || got.VerifierConfig != "verifiers/project.json" {
+		t.Fatalf("completion profile was not merged: %+v", got)
+	}
+}
+
+func TestValidateRequiresTrustedVerifierConfigForAutomaticCompletion(t *testing.T) {
+	if err := Validate(Policy{Tracking: "local", AutoComplete: true}); err == nil {
+		t.Fatal("automatic completion without a verifier config was accepted")
+	}
+}
+
 func TestLocalOnlyForbidsProviderRegardlessOfRemote(t *testing.T) {
 	p := Policy{Tracking: "local", LocalOnly: true, Visibility: "public"}
 	if p.ProviderAllowed() {

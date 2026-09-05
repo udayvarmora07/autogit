@@ -79,6 +79,47 @@ func TestRunCreatesVerifiedOwnedCommitWithoutChangingSharedState(t *testing.T) {
 	}
 }
 
+func TestRunGeneratesMessageFromExplicitIntentWhenMessageIsOmitted(t *testing.T) {
+	repo := newRepository(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	write(t, filepath.Join(repo, "owned.txt"), "base\n")
+	git(t, repo, "add", "--", "owned.txt")
+	git(t, repo, "commit", "-m", "chore: baseline")
+
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := verification.NewVerifierRegistry([]verification.TrustedVerifierSpec{{Name: "test", Version: "1", Argv: []string{exe}, Applicable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Service{
+		Git:            gittransaction.SystemRunner{},
+		Intents:        gittransaction.NewStateIntentPort(db),
+		VerifierRunner: verifierRunner{},
+	}).Run(context.Background(), Request{
+		ID:            "generated-message",
+		RepositoryDir: repo,
+		Snapshot:      []gittransaction.SnapshotEntry{{Path: "owned.txt", Content: []byte("candidate\n"), Mode: 0644}},
+		Intent:        "fix parser accepts paths",
+		Policy:        policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe"},
+		Verifiers:     registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subject := git(t, repo, "show", "-s", "--format=%s", result.Commit.SHA); subject != "fix: fix parser accepts paths" {
+		t.Fatalf("subject=%q", subject)
+	}
+}
+
 type recordingWorkflowLease struct {
 	acquired, released, owner string
 }

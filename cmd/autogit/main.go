@@ -177,6 +177,13 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			p = policy.Policy{Tracking: "no", Version: p.Version + 1}
 		} else {
 			p = enabledPolicy(args[1:], p.Version+1)
+			if source := flag(args[1:], "--verifiers"); source != "" {
+				relative, copyErr := installTrustedVerifierConfig(dir, info.RepoID, source)
+				if copyErr != nil {
+					return cliError{"E_VERIFIER_CONFIG", safeMessage(copyErr.Error())}
+				}
+				p.VerifierConfig = relative
+			}
 		}
 		if err = savePolicy(dir, info.RepoID, p); err != nil {
 			return err
@@ -423,15 +430,15 @@ type retryOptions struct {
 }
 
 type syncOptions struct {
-	ID, Repo, Session, Client, Message, Verifiers string
-	Paths                                         []string
-	Complete, AllOwned                            bool
+	ID, Repo, Session, Client, Message, Intent, Verifiers string
+	Paths                                                 []string
+	Complete, AllOwned                                    bool
 }
 
 type verifyOptions struct {
-	ID, Repo, Session, Client, Message, Verifiers string
-	Paths                                         []string
-	AllOwned                                      bool
+	ID, Repo, Session, Client, Message, Intent, Verifiers string
+	Paths                                                 []string
+	AllOwned                                              bool
 }
 
 type publishOptions struct {
@@ -455,7 +462,7 @@ func validateEnableArgs(args []string, enabling bool) error {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		name := args[i]
-		if name == "--local" || name == "--public-consent" {
+		if name == "--local" || name == "--public-consent" || name == "--auto-complete" {
 			if !enabling {
 				return cliError{"E_USAGE", name + " is not valid with disable"}
 			}
@@ -466,7 +473,7 @@ func validateEnableArgs(args []string, enabling bool) error {
 			continue
 		}
 		switch name {
-		case "--repo", "--provider", "--owner", "--destination", "--visibility":
+		case "--repo", "--provider", "--owner", "--destination", "--visibility", "--verifiers":
 		default:
 			return cliError{"E_USAGE", "unknown enable argument"}
 		}
@@ -480,7 +487,7 @@ func validateEnableArgs(args []string, enabling bool) error {
 		return cliError{"E_SCOPE", "--repo is required"}
 	}
 	if !enabling {
-		for _, name := range []string{"--provider", "--owner", "--destination", "--visibility"} {
+		for _, name := range []string{"--provider", "--owner", "--destination", "--visibility", "--verifiers", "--auto-complete"} {
 			if seen[name] {
 				return cliError{"E_USAGE", name + " is not valid with disable"}
 			}
@@ -503,13 +510,16 @@ func validateEnableArgs(args []string, enabling bool) error {
 	if flag(args, "--provider") != "" && flag(args, "--provider") != "github" {
 		return cliError{"E_PROVIDER", "only github is supported"}
 	}
+	if hasFlag(args, "--auto-complete") && flag(args, "--verifiers") == "" {
+		return cliError{"E_SCOPE", "--verifiers is required with --auto-complete"}
+	}
 	return nil
 }
 
 func enabledPolicy(args []string, version int) policy.Policy {
 	remote := flag(args, "--provider") != "" || flag(args, "--owner") != "" || flag(args, "--destination") != "" || flag(args, "--visibility") != ""
 	if !remote || hasFlag(args, "--local") {
-		return policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: version}
+		return policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", AutoComplete: hasFlag(args, "--auto-complete"), Version: version}
 	}
 	visibility := flag(args, "--visibility")
 	if visibility == "" {
@@ -518,7 +528,7 @@ func enabledPolicy(args []string, version int) policy.Policy {
 	return policy.Policy{
 		Tracking: "yes", Visibility: visibility, Provider: flag(args, "--provider"),
 		Owner: flag(args, "--owner"), Destination: flag(args, "--destination"),
-		Workflow: "safe", PublicConsent: hasFlag(args, "--public-consent"), Version: version,
+		Workflow: "safe", PublicConsent: hasFlag(args, "--public-consent"), AutoComplete: hasFlag(args, "--auto-complete"), Version: version,
 	}
 }
 
@@ -1053,8 +1063,12 @@ func buildPublicPreflight(ctx context.Context, trustedDir, root string, intent s
 	if historyErr == nil {
 		request.HistoryScan = publication.ScanEvidence{Scope: publication.ScanHistory, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: history.Safe(), Findings: len(history.Findings), ReasonCodes: append([]string(nil), history.ReasonCodes...), Digest: digestValue(history)}
 	}
-	if options.Verifiers != "" {
-		if registry, loadErr := verification.LoadTrustedRegistryFile(options.Verifiers, trustedDir, 0); loadErr == nil {
+	verifierPath := options.Verifiers
+	if verifierPath == "" && p.VerifierConfig != "" {
+		verifierPath, _ = trustedVerifierPath(trustedDir, p)
+	}
+	if verifierPath != "" {
+		if registry, loadErr := verification.LoadTrustedRegistryFile(verifierPath, trustedDir, 0); loadErr == nil {
 			if verifyRoot, rootErr := writePreflightSnapshot(entries); rootErr == nil {
 				defer os.RemoveAll(verifyRoot)
 				verificationPolicy := verification.VerificationPolicy{Visibility: publication.VisibilityPublic}
@@ -1152,8 +1166,8 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 			seen[name] = true
 			continue
 		}
-		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--verifiers" && name != "--path" {
-			return syncOptions{}, cliError{"E_USAGE", "sync supports baseline fields plus --complete, --all-owned, --id, --message, and --verifiers"}
+		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--intent" && name != "--verifiers" && name != "--path" {
+			return syncOptions{}, cliError{"E_USAGE", "sync supports baseline fields plus --complete, --all-owned, --id, --message, --intent, and --verifiers"}
 		}
 		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
 			return syncOptions{}, cliError{"E_USAGE", name + " requires a value"}
@@ -1172,6 +1186,8 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 			options.Client = args[i+1]
 		case "--message":
 			options.Message = args[i+1]
+		case "--intent":
+			options.Intent = args[i+1]
 		case "--verifiers":
 			options.Verifiers = args[i+1]
 		case "--path":
@@ -1189,11 +1205,11 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 	if options.AllOwned && !options.Complete {
 		return syncOptions{}, cliError{"E_USAGE", "--all-owned requires --complete"}
 	}
-	if !options.Complete && (options.ID != "" || options.Message != "" || options.Verifiers != "") {
-		return syncOptions{}, cliError{"E_USAGE", "--id, --message, and --verifiers require --complete"}
+	if !options.Complete && (options.ID != "" || options.Message != "" || options.Intent != "" || options.Verifiers != "") {
+		return syncOptions{}, cliError{"E_USAGE", "--id, --message, --intent, and --verifiers require --complete"}
 	}
-	if options.Complete && (options.ID == "" || options.Message == "" || options.Verifiers == "") {
-		return syncOptions{}, cliError{"E_SCOPE", "--id, --message, and --verifiers are required with --complete"}
+	if options.Complete && (options.ID == "" || options.Message != "" && options.Intent != "" || options.Message == "" && options.Intent == "") {
+		return syncOptions{}, cliError{"E_SCOPE", "--id and either --message or --intent are required with --complete"}
 	}
 	return options, nil
 }
@@ -1248,7 +1264,8 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
 		return cliError{"E_SCOPE", "sync session does not match repository or client"}
 	}
-	registry, err := verification.LoadTrustedRegistryFile(options.Verifiers, dir, 0)
+	effectivePolicy := loadPolicy(dir, info.RepoID)
+	registry, err := loadWorkflowRegistry(dir, effectivePolicy, options.Verifiers)
 	if err != nil {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}
@@ -1264,7 +1281,7 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 		return cliError{"E_SCOPE", safeMessage(err.Error())}
 	}
 	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, Lease: coordinator.StateLease{DB: db}, TrustedVerifierDir: dir, IdentityKey: identityKey}
-	result, err := workflowService.RunPlan(ctx, localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Policy: loadPolicy(dir, info.RepoID), Verifiers: registry}, plan)
+	result, err := workflowService.RunPlan(ctx, localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Intent: options.Intent, Policy: effectivePolicy, Verifiers: registry}, plan)
 	if err != nil {
 		return cliError{"E_COMMIT", safeMessage(err.Error())}
 	}
@@ -1272,7 +1289,7 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 	if err != nil {
 		return cliError{"E_STATE", "cannot read committed intent facts"}
 	}
-	if err := emitSyncDomainFacts(ctx, filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, options, result, intent); err != nil {
+	if err := emitSyncDomainFacts(ctx, filepath.Join(dir, "state.db"), effectivePolicy, info, options, result, intent); err != nil {
 		return cliError{"E_STATE", safeMessage(err.Error())}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{
@@ -1452,8 +1469,8 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 			seen[name] = true
 			continue
 		}
-		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--verifiers" && name != "--path" {
-			return verifyOptions{}, cliError{"E_USAGE", "verify supports --id, --repo, --session, --client, --message, --verifiers, --all-owned, and repeated --path"}
+		if name != "--id" && name != "--repo" && name != "--session" && name != "--client" && name != "--message" && name != "--intent" && name != "--verifiers" && name != "--path" {
+			return verifyOptions{}, cliError{"E_USAGE", "verify supports --id, --repo, --session, --client, --message, --intent, --verifiers, --all-owned, and repeated --path"}
 		}
 		if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
 			return verifyOptions{}, cliError{"E_USAGE", name + " requires a value"}
@@ -1472,6 +1489,8 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 			options.Client = args[i+1]
 		case "--message":
 			options.Message = args[i+1]
+		case "--intent":
+			options.Intent = args[i+1]
 		case "--verifiers":
 			options.Verifiers = args[i+1]
 		case "--path":
@@ -1480,8 +1499,8 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 		seen[name] = true
 		i++
 	}
-	if options.ID == "" || options.Repo == "" || options.Session == "" || options.Client == "" || options.Message == "" || options.Verifiers == "" || (!options.AllOwned && len(options.Paths) == 0) {
-		return verifyOptions{}, cliError{"E_SCOPE", "--id, --repo, --session, --client, --message, --verifiers, and at least one --path are required for verify unless --all-owned is used"}
+	if options.ID == "" || options.Repo == "" || options.Session == "" || options.Client == "" || (options.Message == "" && options.Intent == "") || (options.Message != "" && options.Intent != "") || (!options.AllOwned && len(options.Paths) == 0) {
+		return verifyOptions{}, cliError{"E_SCOPE", "--id, --repo, --session, and either --message or --intent are required for verify unless --all-owned is used"}
 	}
 	if options.AllOwned && len(options.Paths) > 0 {
 		return verifyOptions{}, cliError{"E_USAGE", "--all-owned cannot be combined with --path"}
@@ -1521,7 +1540,8 @@ func runVerify(args []string, dir string, out io.Writer) error {
 	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
 		return cliError{"E_SCOPE", "verify session does not match repository or client"}
 	}
-	registry, err := verification.LoadTrustedRegistryFile(options.Verifiers, dir, 0)
+	effectivePolicy := loadPolicy(dir, info.RepoID)
+	registry, err := loadWorkflowRegistry(dir, effectivePolicy, options.Verifiers)
 	if err != nil {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}
@@ -1537,7 +1557,7 @@ func runVerify(args []string, dir string, out io.Writer) error {
 		return cliError{"E_SCOPE", safeMessage(err.Error())}
 	}
 	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, TrustedVerifierDir: dir, IdentityKey: key}
-	result, err := workflowService.VerifyPlan(context.Background(), localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Policy: loadPolicy(dir, info.RepoID), Verifiers: registry}, plan)
+	result, err := workflowService.VerifyPlan(context.Background(), localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Intent: options.Intent, Policy: effectivePolicy, Verifiers: registry}, plan)
 	if err != nil {
 		return cliError{"E_VERIFY", safeMessage(err.Error())}
 	}
@@ -1773,6 +1793,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 	a.Resolver = func(root string) (repository.Info, error) { return repository.DiscoverWithKey(root, key) }
 	completionMessage := flag(args, "--message")
 	completionVerifierPath := flag(args, "--verifiers")
+	var completionRegistry *verification.VerifierRegistry
 	if completionMessage != "" || completionVerifierPath != "" {
 		if completionMessage == "" || completionVerifierPath == "" {
 			return cliError{"E_SCOPE", "--message and --verifiers must be provided together for lifecycle completion"}
@@ -1781,6 +1802,19 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 		if loadErr != nil {
 			return cliError{"E_VERIFIER_CONFIG", safeMessage(loadErr.Error())}
 		}
+		completionRegistry = registry
+	} else if a.Policy.AutoComplete {
+		path, pathErr := trustedVerifierPath(dir, a.Policy)
+		if pathErr != nil {
+			return cliError{"E_VERIFIER_CONFIG", safeMessage(pathErr.Error())}
+		}
+		registry, loadErr := verification.LoadTrustedRegistryFile(path, dir, 0)
+		if loadErr != nil {
+			return cliError{"E_VERIFIER_CONFIG", safeMessage(loadErr.Error())}
+		}
+		completionRegistry = registry
+	}
+	if completionRegistry != nil {
 		workflowService := &localworkflow.Service{
 			Git:                gittransaction.SystemRunner{},
 			Intents:            gittransaction.NewStateIntentPort(baselineStore),
@@ -1791,7 +1825,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 		}
 		a.Completion = &app.CompletionProfile{
 			Message:   completionMessage,
-			Verifiers: registry,
+			Verifiers: completionRegistry,
 			Workflow:  workflowService,
 			Baselines: a.Baselines,
 			Load: func(loadCtx context.Context, req session.Request) (session.Started, error) {
@@ -1943,6 +1977,83 @@ func validateLogsArgs(args []string) error {
 func policyPath(dir, id string) string {
 	return filepath.Join(dir, "policy-"+strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(id)+".json")
 }
+
+func trustedVerifierRelativePath(repositoryID string) string {
+	digest := sha256.Sum256([]byte(repositoryID))
+	return filepath.Join("verifiers", hex.EncodeToString(digest[:])+".json")
+}
+
+func trustedVerifierPath(dir string, p policy.Policy) (string, error) {
+	if p.VerifierConfig == "" || filepath.IsAbs(p.VerifierConfig) {
+		return "", errors.New("trusted verifier configuration is not configured")
+	}
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(root, filepath.Clean(p.VerifierConfig))
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errors.New("trusted verifier configuration path escapes state directory")
+	}
+	return candidate, nil
+}
+
+func loadWorkflowRegistry(dir string, p policy.Policy, explicit string) (*verification.VerifierRegistry, error) {
+	path := explicit
+	if path == "" {
+		var err error
+		path, err = trustedVerifierPath(dir, p)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return verification.LoadTrustedRegistryFile(path, dir, 0)
+}
+
+func installTrustedVerifierConfig(dir, repositoryID, source string) (string, error) {
+	registry, err := verification.LoadRegistryFile(source, 1<<20)
+	if err != nil {
+		return "", err
+	}
+	if registry == nil {
+		return "", errors.New("trusted verifier configuration is empty")
+	}
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		return "", err
+	}
+	if _, err := verification.LoadRegistry(raw, 1<<20); err != nil {
+		return "", err
+	}
+	relative := trustedVerifierRelativePath(repositoryID)
+	destination := filepath.Join(dir, relative)
+	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+		return "", err
+	}
+	_ = os.Chmod(filepath.Dir(destination), 0700)
+	tmp, err := os.CreateTemp(filepath.Dir(destination), ".verifiers-*")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0600); err == nil {
+		_, err = tmp.Write(raw)
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpName, destination); err != nil {
+		return "", err
+	}
+	_ = os.Chmod(destination, 0600)
+	return relative, nil
+}
+
 func loadPolicy(dir, id string) policy.Policy {
 	if id == "" {
 		return policy.Policy{}

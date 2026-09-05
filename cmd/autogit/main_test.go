@@ -242,6 +242,17 @@ func TestVerifyAllOwnedAcceptsSourceFreeSessionEvidence(t *testing.T) {
 	}
 }
 
+func TestVerifyAndSyncCanUseTrustedPolicyProfileWithTaskIntent(t *testing.T) {
+	verify, err := parseVerifyArgs([]string{"--id", "verify-intent", "--repo", "/tmp/project", "--session", "session", "--client", "codex", "--intent", "fix parser accepts paths", "--all-owned"})
+	if err != nil || verify.Intent == "" || verify.Message != "" || verify.Verifiers != "" {
+		t.Fatalf("verify profile options=%+v err=%v", verify, err)
+	}
+	sync, err := parseSyncArgs([]string{"--complete", "--all-owned", "--id", "sync-intent", "--repo", "/tmp/project", "--session", "session", "--client", "codex", "--intent", "fix parser accepts paths"})
+	if err != nil || sync.Intent == "" || sync.Message != "" || sync.Verifiers != "" {
+		t.Fatalf("sync profile options=%+v err=%v", sync, err)
+	}
+}
+
 func TestSyncAllOwnedRequiresCompletionAndNoExplicitPaths(t *testing.T) {
 	base := []string{"--repo", "/tmp/project", "--session", "session", "--client", "codex"}
 	if _, err := parseSyncArgs(append(append([]string{}, base...), "--all-owned")); err == nil || !strings.Contains(err.Error(), "requires --complete") {
@@ -533,6 +544,44 @@ func TestSyncCompleteCreatesVerifiedAutoGitCommitFromCleanSession(t *testing.T) 
 	}
 }
 
+func TestSyncCompleteResolvesTrustedPolicyProfileForGeneratedIntent(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "chore: baseline").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
+	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"enable", "--repo", root, "--local", "--auto-complete", "--verifiers", verifierConfig}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"sync", "--repo", root, "--session", "profile-sync", "--client", "codex", "--path", "new.txt"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"sync", "--complete", "--all-owned", "--id", "profile-commit", "--repo", root, "--session", "profile-sync", "--client", "codex", "--intent", "fix parser accepts paths"}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("sync complete: %v output=%s", err, out.String())
+	}
+	if subject := strings.TrimSpace(gitOutput(t, root, "show", "-s", "--format=%s", "refs/autogit/commits/profile-commit")); subject != "fix: fix parser accepts paths" {
+		t.Fatalf("generated subject=%q output=%s", subject, out.String())
+	}
+}
+
 func TestSyncAllOwnedResumesHookBaselineAndExcludesPreexistingWork(t *testing.T) {
 	stateDir := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
@@ -793,6 +842,15 @@ func TestEnableLocalFlagRemainsLocalWithFollowingRepositoryFlag(t *testing.T) {
 	p := enabledPolicy([]string{"--local", "--repo", "/tmp/project"}, 3)
 	if p.Tracking != "local" || !p.LocalOnly || p.Provider != "" {
 		t.Fatalf("local policy was changed by following value flag: %+v", p)
+	}
+}
+
+func TestValidateEnableAutomaticCompletionRequiresTrustedVerifierConfig(t *testing.T) {
+	if err := validateEnableArgs([]string{"--repo", "/tmp/project", "--auto-complete"}, true); err == nil || !strings.HasPrefix(err.Error(), "E_SCOPE:") {
+		t.Fatalf("missing verifier config accepted: %v", err)
+	}
+	if err := validateEnableArgs([]string{"--repo", "/tmp/project", "--auto-complete", "--verifiers", "/tmp/verifiers.json"}, true); err != nil {
+		t.Fatalf("valid automatic completion options rejected: %v", err)
 	}
 }
 
@@ -1484,6 +1542,83 @@ func TestHookCompletionProfileCommitsDurableSessionCandidate(t *testing.T) {
 	refs := strings.TrimSpace(gitOutput(t, root, "for-each-ref", "--format=%(refname)", "refs/autogit/commits"))
 	if refs == "" || strings.Count(refs, "refs/autogit/commits/") != 1 {
 		t.Fatalf("autogit refs=%q", refs)
+	}
+}
+
+func TestHookAutomaticCompletionUsesTrustedPolicyAndTaskIntent(t *testing.T) {
+	stateRoot := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	verifierConfig := filepath.Join(t.TempDir(), "verifiers.json")
+	if err := os.WriteFile(verifierConfig, []byte(`{"version":"1","verifiers":[{"name":"true","version":"1","argv":["/usr/bin/true"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"enable", "--repo", root, "--local", "--auto-complete", "--verifiers", verifierConfig}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := os.ReadFile(filepath.Join(stateRoot, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.DiscoverWithKey(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withScope := func(input string, task bool) []byte {
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(input), &raw); err != nil {
+			t.Fatal(err)
+		}
+		scope := raw["scope"].(map[string]any)
+		scope["repo_id"], scope["worktree_id"] = info.RepoID, info.WorktreeID
+		if task {
+			scope["task_id"] = "auto-task"
+		}
+		raw["project"] = map[string]any{"candidate_root": root}
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	started := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDP", "session.started", "auto-start", `,"session_id":"auto-session"`, `{"queue_state":"none","task_boundaries":"native"}`), false)
+	if err := runHook(nil, bytes.NewReader(started), &bytes.Buffer{}); err != nil {
+		t.Fatalf("session.started: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "candidate.txt"), []byte("candidate\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	taskStarted := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDQ", "task.started", "auto-task-start", `,"session_id":"auto-session","task_id":"auto-task"`, `{"queue_state":"none","task_boundaries":"native"}`), true)
+	if err := runHook(nil, bytes.NewReader(taskStarted), &bytes.Buffer{}); err != nil {
+		t.Fatalf("task.started: %v", err)
+	}
+	completed := withScope(hookEventWithCapabilities("01J7N6X8P5K2V4W6NQ8M9ABCDR", "task.completed", "auto-task-complete", `,"session_id":"auto-session","task_id":"auto-task"`, `{"queue_state":"none","task_boundaries":"native"}`), true)
+	var completion map[string]any
+	if err := json.Unmarshal(completed, &completion); err != nil {
+		t.Fatal(err)
+	}
+	completion["payload"] = map[string]any{"reason": "fix parser accepts paths"}
+	completed, err = json.Marshal(completion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runHook(nil, bytes.NewReader(completed), &out); err != nil {
+		t.Fatalf("task.completed: %v output=%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"action":"commit"`) || !strings.Contains(out.String(), `"reason_code":"SESSION_COMMITTED"`) {
+		t.Fatalf("completion output=%s", out.String())
+	}
+	ref := strings.TrimSpace(gitOutput(t, root, "for-each-ref", "--format=%(refname)", "refs/autogit/commits"))
+	if ref == "" {
+		t.Fatal("automatic completion did not create an AutoGit ref")
+	}
+	message := strings.TrimSpace(gitOutput(t, root, "show", "-s", "--format=%s", ref))
+	if message != "fix: fix parser accepts paths" {
+		t.Fatalf("generated commit subject=%q", message)
 	}
 }
 

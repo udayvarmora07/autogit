@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"autogit/internal/commit"
 	"autogit/internal/gittransaction"
 	"autogit/internal/policy"
 	"autogit/internal/repository"
@@ -22,10 +23,14 @@ import (
 // callers supply captured bytes rather than paths for the transaction to read
 // from a mutable worktree.
 type Request struct {
-	ID              string
-	RepositoryDir   string
-	Snapshot        []gittransaction.SnapshotEntry
-	Message         string
+	ID            string
+	RepositoryDir string
+	Snapshot      []gittransaction.SnapshotEntry
+	Message       string
+	// Intent is used only when Message is omitted. It is an untrusted
+	// semantic hint; Generate validates it and the resulting message remains
+	// bound to the immutable candidate and verification evidence.
+	Intent          string
 	Policy          policy.Policy
 	Verifiers       *verification.VerifierRegistry
 	ownershipDigest string
@@ -152,6 +157,23 @@ func (s Service) prepareAndVerify(ctx context.Context, req Request) (Result, *gi
 	// Detach from caller-owned slices before any injected scanner or verifier
 	// can run. The same captured bytes must be scanned, verified, and prepared.
 	req.Snapshot = cloneSnapshot(req.Snapshot)
+	if req.Message == "" {
+		changes := make([]commit.Change, 0, len(req.Snapshot))
+		for _, entry := range req.Snapshot {
+			op := "modified"
+			if entry.Delete {
+				op = "deleted"
+			} else if entry.Mode != 0 {
+				op = "modified"
+			}
+			changes = append(changes, commit.Change{Path: entry.Path, Operation: op})
+		}
+		message, generateErr := commit.Generate(req.Intent, changes)
+		if generateErr != nil {
+			return Result{}, nil, nil, verification.VerificationPolicy{}, generateErr
+		}
+		req.Message = message
+	}
 	if err := policy.Validate(req.Policy); err != nil {
 		return Result{}, nil, nil, verification.VerificationPolicy{}, fmt.Errorf("invalid effective policy: %w", err)
 	}
@@ -220,6 +242,18 @@ func (s Service) prepareAndVerify(ctx context.Context, req Request) (Result, *gi
 	}
 	if !verificationResult.ValidFor(verificationRequest, verificationPolicy, req.Verifiers) {
 		return result, tx, prepared, verificationPolicy, errors.New("verification did not pass for candidate")
+	}
+	intent := req.Intent
+	if intent == "" {
+		intent = req.Message
+	}
+	if _, err := commit.Compose(intent, req.Message, commit.Evidence{
+		CandidateDigest: prepared.CandidateDigest(),
+		BaseDigest:      verificationRequest.BaseDigest,
+		PolicyDigest:    policyDigest,
+		VerifierDigest:  req.Verifiers.VerifierSetDigest,
+	}); err != nil {
+		return result, tx, prepared, verificationPolicy, fmt.Errorf("compose commit message evidence: %w", err)
 	}
 	return result, tx, prepared, verificationPolicy, nil
 }

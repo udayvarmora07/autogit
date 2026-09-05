@@ -217,7 +217,7 @@ func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool
 	if profile == nil {
 		return false, nil
 	}
-	if profile.Workflow == nil || profile.Load == nil || profile.Message == "" || profile.Verifiers == nil {
+	if profile.Workflow == nil || profile.Load == nil || profile.Verifiers == nil {
 		return false, errors.New("lifecycle completion profile is incomplete")
 	}
 	repoID := stringValue(ingress.Scope["repo_id"])
@@ -256,7 +256,14 @@ func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool
 		return false, errors.New("lifecycle session baseline service is missing")
 	}
 	jobID := lifecycleCompletionID(repoID, stringValue(ingress.Scope["worktree_id"]), sessionID, taskID)
-	if _, err := baselines.Complete(ctx, started, profile.Workflow, jobID, profile.Message, a.Policy, profile.Verifiers); err != nil {
+	intent := ""
+	if profile.Message == "" {
+		intent = completionIntent(ingress)
+		if intent == "" {
+			return false, errors.New("completion message or task intent is required")
+		}
+	}
+	if _, err := baselines.CompleteWithIntent(ctx, started, profile.Workflow, jobID, profile.Message, intent, a.Policy, profile.Verifiers); err != nil {
 		return false, err
 	}
 	completed, err := events.NewDomainEvent(events.DomainEventRequest{
@@ -276,6 +283,15 @@ func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool
 		return false, fmt.Errorf("session completion fact was %s", result.Disposition)
 	}
 	return true, nil
+}
+
+func completionIntent(ingress events.Event) string {
+	for _, key := range []string{"intent", "task_intent", "summary", "title", "reason"} {
+		if value, ok := ingress.Payload[key].(string); ok && value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func completionScopeMatches(ingress events.Event, started session.Started) bool {

@@ -65,13 +65,20 @@ claiming a phase exit:
 - [x] Capture durable session/task baselines from real repository observations
   (HEAD, index, status, modes, and owned paths), then feed them into staging;
   explicit lifecycle-driven completion is now available through the trusted
-  hook completion profile; automatic message/verifier inference remains open.
+  hook completion profile; implicit inference without an explicit profile
+  remains open.
 - [x] Extend real filesystem snapshot capture to detect race substitutions and
   preserve rename/delete, ignore, linked-worktree, Unicode/control-path, and
   concurrent-writer rules; explicit regular-file content/mode capture and
   component-symlink rejection are covered.
 - [x] Load frozen trusted verifier configuration from policy/configuration and
   wire it into `verify` plus the explicit local workflow boundary.
+- [x] Add an explicit protected verifier profile for installed hooks and a
+  fail-closed task-intent-to-Conventional-Commit composer; automatic
+  completion still requires `--auto-complete` consent and an owned candidate.
+- [x] Let `sync --complete` and read-only `verify` resolve that protected
+  verifier profile and generated message intent when explicit overrides are
+  omitted.
 - [x] Wire explicit `sync --complete` to derive an owned candidate, invoke the
   verified local workflow, and record resulting lifecycle facts.
 - [x] Add cross-process source-free baseline evidence and explicit
@@ -116,7 +123,7 @@ tests:
   duplicate effects; broader randomized process schedules remain release gates.
 - [x] Replace the recovered 177-case compatibility floor with Go v1 coverage
   and reach the >=609 deterministic release-suite target; the local Go suite
-  currently emits 626 passing named test cases/subtests under `go test -json`.
+  currently emits 635 passing named test cases/subtests under `go test -json`.
 - [x] Recover and rerun the installed legacy reference suites: 177 disposable
   scenarios pass; Go v1 coverage is enforced separately by the >=609 CI floor.
 - [x] Add deterministic fault-injection coverage for the implemented commit,

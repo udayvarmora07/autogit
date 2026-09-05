@@ -3,14 +3,18 @@ package policy
 import "fmt"
 
 type Policy struct {
-	Tracking         string `json:"tracking,omitempty"`
-	Visibility       string `json:"visibility,omitempty"`
-	Provider         string `json:"provider,omitempty"`
-	Owner            string `json:"owner,omitempty"`
-	Destination      string `json:"destination,omitempty"`
-	Workflow         string `json:"workflow,omitempty"`
-	LocalOnly        bool   `json:"local_only,omitempty"`
-	PublicConsent    bool   `json:"public_consent,omitempty"`
+	Tracking      string `json:"tracking,omitempty"`
+	Visibility    string `json:"visibility,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	Owner         string `json:"owner,omitempty"`
+	Destination   string `json:"destination,omitempty"`
+	Workflow      string `json:"workflow,omitempty"`
+	LocalOnly     bool   `json:"local_only,omitempty"`
+	PublicConsent bool   `json:"public_consent,omitempty"`
+	// AutoComplete enables the installed-hook completion profile only when a
+	// trusted verifier configuration has been copied into AutoGit state.
+	AutoComplete     bool   `json:"auto_complete,omitempty"`
+	VerifierConfig   string `json:"verifier_config,omitempty"`
 	LocalOnlySet     bool   `json:"-"`
 	PublicConsentSet bool   `json:"-"`
 	Version          int    `json:"version,omitempty"`
@@ -44,6 +48,12 @@ func Merge(base, project Policy) Policy {
 	if project.Version != 0 {
 		base.Version = project.Version
 	}
+	if project.AutoComplete {
+		base.AutoComplete = true
+	}
+	if project.VerifierConfig != "" {
+		base.VerifierConfig = project.VerifierConfig
+	}
 	return base
 }
 func (p Policy) ProviderAllowed() bool { return p.Tracking != "no" && !p.LocalOnly && p.Provider != "" }
@@ -72,6 +82,9 @@ func Validate(p Policy) error {
 	}
 	if p.Visibility == "public" && p.PublicConsent && p.LocalOnly {
 		return fmt.Errorf("public and local-only policies conflict")
+	}
+	if p.AutoComplete && p.VerifierConfig == "" {
+		return fmt.Errorf("automatic completion requires a trusted verifier configuration")
 	}
 	return nil
 }

@@ -84,6 +84,9 @@ The implementation evidence is distributed as follows:
 
 The remaining review/release gates are recorded in
 [`docs/implementation-plan.md`](implementation-plan.md) and are not silently
-closed by this contract record: automatic message/verifier selection for
-installed hooks, randomized crash schedules, native macOS/Windows execution,
-the disposable provider canary, and alpha/beta promotion.
+closed by this contract record: implicit message/verifier inference without an
+explicit trusted profile, randomized crash schedules, native macOS/Windows
+execution, the disposable provider canary, and alpha/beta promotion. The
+protected `enable --auto-complete --verifiers FILE` profile, deterministic
+task-intent message composition, and trusted hook completion path are covered
+by the implementation evidence in the plan.

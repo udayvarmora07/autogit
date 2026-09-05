@@ -11,6 +11,102 @@ import (
 type Evidence struct{ CandidateDigest, BaseDigest, PolicyDigest, VerifierDigest string }
 type Message struct{ Subject, Body, MessageDigest, CandidateDigest, BaseDigest, PolicyDigest, VerifierDigest string }
 
+// Change is the bounded, core-owned summary used when a caller supplies task
+// intent instead of a finished commit message. Content is deliberately not
+// required: intent remains the semantic source and the owned candidate has
+// already been independently captured and scanned by workflow.
+type Change struct {
+	Path      string
+	Operation string
+}
+
+// Generate turns explicit task intent into a Conventional Commit subject. A
+// complete Conventional Commit is preserved verbatim; otherwise a small,
+// deterministic classifier supplies the type. It refuses generic stop-event
+// text so a hook cannot manufacture a misleading commit from filenames alone.
+func Generate(intent string, changes []Change) (string, error) {
+	intent = strings.TrimSpace(intent)
+	if intent == "" {
+		return "", fmt.Errorf("task intent is required")
+	}
+	if err := Validate(intent); err == nil {
+		return intent, nil
+	}
+	if len(changes) == 0 {
+		return "", fmt.Errorf("owned change is required for generated intent")
+	}
+	for _, change := range changes {
+		if strings.TrimSpace(change.Path) == "" || strings.TrimSpace(change.Operation) == "" {
+			return "", fmt.Errorf("owned change summary is incomplete")
+		}
+	}
+	if strings.ContainsAny(intent, "\r\n") {
+		return "", fmt.Errorf("task intent must be one line")
+	}
+	intent = strings.Join(strings.Fields(intent), " ")
+	lower := strings.ToLower(intent)
+	for _, weak := range []string{"done", "complete", "task complete", "update", "update stuff", "changes", "work", "fix stuff", "implement changes"} {
+		if lower == weak {
+			return "", fmt.Errorf("task intent is too generic")
+		}
+	}
+	if len([]rune(intent)) < 8 {
+		return "", fmt.Errorf("task intent is too short")
+	}
+	typeName := "chore"
+	for _, candidate := range []struct {
+		name  string
+		words []string
+	}{
+		{"fix", []string{"fix", "bug", "broken", "regression", "error"}},
+		{"test", []string{"test", "verify", "coverage"}},
+		{"docs", []string{"doc", "readme", "documentation"}},
+		{"refactor", []string{"refactor", "rename", "restructure"}},
+		{"build", []string{"build", "compile", "dependency", "dependencies"}},
+		{"ci", []string{"ci", "pipeline", "workflow"}},
+		{"perf", []string{"performance", "faster", "latency", "optimize"}},
+		{"style", []string{"style", "format", "formatting"}},
+		{"feat", []string{"add", "create", "support", "allow", "introduce"}},
+	} {
+		for _, word := range candidate.words {
+			if containsWord(lower, word) {
+				typeName = candidate.name
+				break
+			}
+		}
+		if typeName == candidate.name {
+			break
+		}
+	}
+	message := typeName + ": " + lowerFirst(intent)
+	if err := Validate(message); err != nil {
+		return "", fmt.Errorf("generated commit message: %w", err)
+	}
+	return message, nil
+}
+
+func containsWord(text, word string) bool {
+	for _, token := range strings.FieldsFunc(text, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	}) {
+		if token == word {
+			return true
+		}
+	}
+	return false
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	if runes[0] >= 'A' && runes[0] <= 'Z' {
+		runes[0] += 'a' - 'A'
+	}
+	return string(runes)
+}
+
 func Compose(intent, message string, e Evidence) (Message, error) {
 	if strings.TrimSpace(intent) == "" {
 		return Message{}, fmt.Errorf("task intent is required")
