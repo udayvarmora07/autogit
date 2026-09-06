@@ -86,6 +86,16 @@ func TestCaptureBaselineRecordsHeadIndexStatusAndOwnedFileFingerprints(t *testin
 	}
 }
 
+func TestBaselinePathHasMissingParentRejectsUnvalidatedPath(t *testing.T) {
+	root := t.TempDir()
+	states := map[string]parentState{
+		filepath.Join(root, "missing"): {},
+	}
+	if baselinePathHasMissingParent(root, "missing/../outside.txt", states) {
+		t.Fatal("invalid repository-relative path was treated as having a missing parent")
+	}
+}
+
 func TestObservationEnvironmentDoesNotInheritCredentials(t *testing.T) {
 	t.Setenv("GH_TOKEN", "secret")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")

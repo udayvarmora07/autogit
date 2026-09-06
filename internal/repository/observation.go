@@ -668,7 +668,7 @@ func captureBaselineFiles(root string, paths []string, maxFileSize int64, before
 			defer workers.Done()
 			for index := range jobs {
 				name := paths[index]
-				if len(parentStates) > 0 && baselinePathHasMissingParent(root, name, parentStates) {
+				if len(parentStates) > 0 && baselinePathHasMissingParentValidated(root, name, parentStates) {
 					results[index] = FileObservation{}
 					continue
 				}
@@ -692,16 +692,22 @@ func captureBaselineFiles(root string, paths []string, maxFileSize int64, before
 }
 
 func baselinePathHasMissingParent(root, name string, states map[string]parentState) bool {
-	absolute, err := safeJoin(root, name)
-	if err != nil {
+	if err := validateRelativePath(name); err != nil {
 		return false
 	}
-	rel, err := filepath.Rel(root, absolute)
-	if err != nil {
+	return baselinePathHasMissingParentValidated(root, name, states)
+}
+
+func baselinePathHasMissingParentValidated(root, name string, states map[string]parentState) bool {
+	// CaptureBaselineWithOptions has already validated every path through
+	// statusPaths or validateRelativePath before this helper is called. Keep
+	// this hot path on the canonical slash-separated name so large deleted
+	// path sets do not repeat full validation and filepath.Rel work.
+	parts := strings.Split(name, "/")
+	if len(parts) < 2 {
 		return false
 	}
 	current := root
-	parts := strings.Split(rel, string(filepath.Separator))
 	for _, part := range parts[:len(parts)-1] {
 		current = filepath.Join(current, part)
 		if state, ok := states[current]; ok && !state.exists {
