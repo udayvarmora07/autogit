@@ -17,6 +17,8 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"autogit/internal/process"
 )
 
 // CommandResult is the small read-only command result needed by repository
@@ -51,16 +53,11 @@ func (r SystemRunner) runBounded(ctx context.Context, dir string, env map[string
 	if max <= 0 {
 		max = 1 << 20
 	}
-	command := exec.CommandContext(ctx, executable, observationArgs(executable, args...)...)
-	command.Dir = dir
-	command.Env = observationEnvironment(env)
-	output := &boundedObservationOutput{max: max}
-	command.Stdout, command.Stderr = output, output
-	err = command.Run()
-	if output.truncated && err == nil {
-		err = io.ErrShortBuffer
+	result, runErr := process.Run(ctx, process.Options{Executable: executable, Dir: dir, Env: observationEnvironment(env), Args: observationArgs(executable, args...), MaxOutput: max})
+	if errors.Is(runErr, process.ErrOutputLimit) {
+		runErr = io.ErrShortBuffer
 	}
-	return CommandResult{Output: string(output.bytes)}, err
+	return CommandResult{Output: result.Output}, runErr
 }
 
 func canonicalExecutable(path string) (string, error) {
@@ -87,25 +84,6 @@ func canonicalExecutable(path string) (string, error) {
 		return "", errors.New("invalid Git executable")
 	}
 	return canon, nil
-}
-
-type boundedObservationOutput struct {
-	bytes     []byte
-	max       int
-	truncated bool
-}
-
-func (b *boundedObservationOutput) Write(value []byte) (int, error) {
-	if len(b.bytes)+len(value) > b.max {
-		remaining := b.max - len(b.bytes)
-		if remaining > 0 {
-			b.bytes = append(b.bytes, value[:remaining]...)
-		}
-		b.truncated = true
-		return len(value), io.ErrShortBuffer
-	}
-	b.bytes = append(b.bytes, value...)
-	return len(value), nil
 }
 
 func observationEnvironment(extra map[string]string) []string {
@@ -173,18 +151,14 @@ func (r SystemRunner) IsIgnored(ctx context.Context, root, name string) (bool, e
 	if err != nil {
 		return false, err
 	}
-	command := exec.CommandContext(ctx, executable, observationArgs(executable, "check-ignore", "--quiet", "--", name)...)
-	command.Dir = root
-	command.Env = observationEnvironment(nil)
-	err = command.Run()
-	if err == nil {
+	result, runErr := process.Run(ctx, process.Options{Executable: executable, Dir: root, Env: observationEnvironment(nil), Args: observationArgs(executable, "check-ignore", "--quiet", "--", name), MaxOutput: 64 << 10})
+	if runErr == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if result.ExitCode == 1 {
 		return false, nil
 	}
-	return false, fmt.Errorf("check ignore policy: %w", err)
+	return false, fmt.Errorf("check ignore policy: %w", runErr)
 }
 
 // FileObservation is a bounded baseline observation. Content is retained only

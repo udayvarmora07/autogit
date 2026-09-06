@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"autogit/internal/gitport"
 )
 
 type Info struct{ Root, CommonDir, RepoID, WorktreeID string }
@@ -122,25 +126,17 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 }
 
 func verifyLinkedWorktree(root, expectedGitDir string) error {
-	git, err := exec.LookPath("git")
+	git, err := gitExecutable()
 	if err != nil {
-		return errors.New("Git executable is unavailable")
+		return errors.New("git executable is unavailable")
 	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(git))
-	if err != nil {
-		return errors.New("Git executable is invalid")
-	}
-	git = filepath.Join(parent, filepath.Base(git))
-	if info, statErr := os.Lstat(git); statErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return errors.New("Git executable is invalid")
-	}
-	cmd := exec.Command(git, "-C", root, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir")
-	cmd.Env = []string{"PATH=" + filepath.Dir(git), "HOME=" + os.TempDir(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_SYSTEM=" + os.DevNull, "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_TERMINAL_PROMPT=0"}
-	out, err := cmd.Output()
-	if err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	result, runErr := (gitport.Runner{Executable: git}).Run(ctx, root, "-C", root, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir")
+	if runErr != nil || result.Err != nil {
 		return errors.New("invalid linked worktree metadata")
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	lines := strings.Split(strings.TrimSpace(result.Output), "\n")
 	if len(lines) != 2 {
 		return errors.New("invalid linked worktree metadata")
 	}
@@ -153,6 +149,14 @@ func verifyLinkedWorktree(root, expectedGitDir string) error {
 		return errors.New("linked worktree gitdir mismatch")
 	}
 	return nil
+}
+
+func gitExecutable() (string, error) {
+	path, err := exec.LookPath("git")
+	if err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func samePath(left, right string) bool {

@@ -7,3 +7,6 @@
 - [ADR-0005: SQLite durable local state](0005-sqlite-state.md)
 - [ADR-0006: Separate adapter ingress from durable domain events](0006-ingress-domain-event-boundary.md)
 - [ADR-0007: Durable idempotency, causal replay, and intent-before-effect](0007-idempotent-causal-side-effects.md)
+- [ADR-0008: One shared SQLite gateway](0008-shared-sqlite-gateway.md)
+- [ADR-0009: Protected state filesystem boundary](0009-protected-state-filesystem.md)
+- [ADR-0010: Bounded external process lifecycle](0010-bounded-process-lifecycle.md)

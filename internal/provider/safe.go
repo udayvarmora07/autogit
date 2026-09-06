@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+
+	"autogit/internal/process"
 )
 
 // Sentinel errors are stable machine-readable categories. Callers should use
@@ -184,15 +185,9 @@ func (r SystemRunner) Run(ctx context.Context, dir string, args ...string) (Resu
 	if max <= 0 {
 		max = maxOutput
 	}
-	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Dir = workingDir
-	cmd.Env = controlledCommandEnv()
-	out := &boundedOutput{max: max}
-	cmd.Stdout = out
-	cmd.Stderr = out
-	runErr := cmd.Run()
-	result := Result{Output: out.buf.String()}
-	if out.truncated {
+	processResult, runErr := process.Run(ctx, process.Options{Executable: executable, Dir: workingDir, Env: controlledCommandEnv(), Args: args, MaxOutput: max})
+	result := Result{Output: processResult.Output}
+	if processResult.Truncated || errors.Is(runErr, process.ErrOutputLimit) {
 		result.Err = ErrOutputLimit
 		return result, ErrOutputLimit
 	}
@@ -278,6 +273,9 @@ func controlledCommandEnvFrom(environ []string) []string {
 	return out
 }
 
+// boundedOutput remains a small testable compatibility helper for callers
+// that need a writer-level assertion; production command execution uses the
+// shared process boundary above.
 type boundedOutput struct {
 	buf       bytes.Buffer
 	max       int
@@ -897,9 +895,7 @@ func remoteBindingError() error {
 // complete string comparison intentionally rejects credentials, query and
 // fragment data, alternate hosts/schemes, scp variants, and extra lines.
 func canonicalGitHubRemoteMatches(output, identity string) bool {
-	if strings.HasSuffix(output, "\n") {
-		output = strings.TrimSuffix(output, "\n")
-	}
+	output = strings.TrimSuffix(output, "\n")
 	if output == "" || strings.ContainsAny(output, "\r\n") {
 		return false
 	}

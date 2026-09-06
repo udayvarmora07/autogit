@@ -17,7 +17,7 @@ import (
 	"autogit/internal/workflow"
 )
 
-type fakeRunner struct{ baseline repository.Baseline }
+type fakeRunner struct{}
 
 func (r fakeRunner) Run(context.Context, string, map[string]string, ...string) (repository.CommandResult, error) {
 	return repository.CommandResult{}, errors.New("unexpected command")

@@ -10,16 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"autogit"
+	sharedDB "autogit/internal/db"
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	_ "modernc.org/sqlite"
 )
 
 type Error struct{ Code, Message string }
@@ -535,28 +533,10 @@ func OpenStore(path string) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("state path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	_ = os.Chmod(filepath.Dir(path), 0700)
-	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(5000)")
+	db, err := sharedDB.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(`PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS event_receipts (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL, disposition TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS event_revision_sequence (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO event_revision_sequence(id,revision) VALUES(1,COALESCE((SELECT MAX(revision) FROM event_receipts),0)); CREATE TABLE IF NOT EXISTS pending_events (event_id TEXT PRIMARY KEY, causation_id TEXT NOT NULL, payload BLOB NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (revision INTEGER PRIMARY KEY AUTOINCREMENT, repository_id TEXT NOT NULL DEFAULT '', disposition TEXT NOT NULL DEFAULT '', reason_code TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lifecycle_projections (repository_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, state BLOB NOT NULL, updated_at TEXT NOT NULL);`); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := ensureAuditRepositoryColumn(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := ensureAuditColumns(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	_ = os.Chmod(path, 0600)
 	return &Store{db: db}, nil
 }
 
@@ -571,63 +551,6 @@ func nextReceiptRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
 	return revision, nil
 }
 
-func ensureAuditRepositoryColumn(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(audit_events)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	present := false
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			return err
-		}
-		if name == "repository_id" {
-			present = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if present {
-		return nil
-	}
-	_, err = db.Exec(`ALTER TABLE audit_events ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`)
-	return err
-}
-
-func ensureAuditColumns(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(audit_events)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	present := map[string]bool{}
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			return err
-		}
-		present[name] = true
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, column := range []string{"disposition", "reason_code"} {
-		if present[column] {
-			continue
-		}
-		if _, err := db.Exec(`ALTER TABLE audit_events ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 func (s *Store) Close() error { return s.db.Close() }
 
 // AcceptAndProject validates receipt identity and invokes projector while the

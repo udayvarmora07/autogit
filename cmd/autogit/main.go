@@ -31,6 +31,7 @@ import (
 	"autogit/internal/provider"
 	"autogit/internal/publication"
 	"autogit/internal/repository"
+	"autogit/internal/securefs"
 	"autogit/internal/security"
 	"autogit/internal/session"
 	"autogit/internal/state"
@@ -39,6 +40,8 @@ import (
 )
 
 type cliError struct{ Code, Message string }
+
+const defaultOperationTimeout = 5 * time.Minute
 
 func (e cliError) Error() string { return e.Code + ": " + e.Message }
 func stateDir() (string, error) {
@@ -70,12 +73,18 @@ func safeMessage(s string) string {
 	return s
 }
 func run(args []string, in io.Reader, out io.Writer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	defer cancel()
+	return runWithContext(ctx, args, in, out)
+}
+
+func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable init status plan hook verify sync publish remote retry logs uninstall config explain\n")
 		return nil
 	}
 	if args[0] == "hook" {
-		return runHook(args[1:], in, out)
+		return runHookContext(ctx, args[1:], in, out)
 	}
 	cmd := args[0]
 	if cmd == "install" && hasFlag(args[1:], "--list") {
@@ -92,17 +101,17 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if err := validateRetryArgs(args[1:]); err != nil {
 			return err
 		}
-		return runRetry(args[1:], dir, out)
+		return runRetryContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "init" {
 		options, parseErr := parseInitArgs(args[1:])
 		if parseErr != nil {
 			return parseErr
 		}
-		return runInit(options, dir, out)
+		return runInitContext(ctx, options, dir, out)
 	}
 	if cmd == "plan" {
-		return runPlan(args[1:], dir, out)
+		return runPlanContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "config" {
 		return runConfig(args[1:], dir, out)
@@ -111,25 +120,25 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if err := validateSyncArgs(args[1:]); err != nil {
 			return err
 		}
-		return runSync(args[1:], dir, out)
+		return runSyncContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "verify" {
 		if err := validateVerifyArgs(args[1:]); err != nil {
 			return err
 		}
-		return runVerify(args[1:], dir, out)
+		return runVerifyContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "publish" {
-		return runPublish(args[1:], dir, out)
+		return runPublishContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "remote" {
-		return runRemote(args[1:], dir, out)
+		return runRemoteContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "doctor" {
 		if len(args) != 1 {
 			return cliError{"E_USAGE", "doctor does not accept arguments"}
 		}
-		return runDoctor(dir, out)
+		return runDoctorContext(ctx, dir, out)
 	}
 	if cmd == "logs" {
 		root := flag(args[1:], "--repo")
@@ -219,7 +228,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 				return projectionErr
 			}
 			result["lifecycle"] = projection
-			summary, summaryErr := captureRepositorySummary(context.Background(), info.Root)
+			summary, summaryErr := captureRepositorySummary(ctx, info.Root)
 			if summaryErr != nil {
 				return cliError{"E_REPOSITORY", safeMessage(summaryErr.Error())}
 			}
@@ -266,7 +275,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if raw, provided := flagValue(args[1:], "--limit"); provided {
 			limit, _ = strconv.Atoi(raw)
 		}
-		logs, logsErr := s.Logs(context.Background(), info.RepoID, limit)
+		logs, logsErr := s.Logs(ctx, info.RepoID, limit)
 		if logsErr != nil {
 			if code := events.CodeOf(logsErr); code != "" {
 				return cliError{code, logsErr.Error()}
@@ -279,7 +288,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	}
 }
 
-func runPlan(args []string, dir string, out io.Writer) error {
+func runPlanContext(ctx context.Context, args []string, dir string, out io.Writer) error {
 	root := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] != "--repo" {
@@ -303,7 +312,7 @@ func runPlan(args []string, dir string, out io.Writer) error {
 		return cliError{"E_SCOPE", err.Error()}
 	}
 	p := loadPolicy(dir, info.RepoID)
-	summary, err := captureRepositorySummary(context.Background(), info.Root)
+	summary, err := captureRepositorySummary(ctx, info.Root)
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
 	}
@@ -354,7 +363,7 @@ func runConfig(args []string, _ string, out io.Writer) error {
 	return json.NewEncoder(out).Encode(result)
 }
 
-func runDoctor(dir string, out io.Writer) error {
+func runDoctorContext(ctx context.Context, dir string, out io.Writer) error {
 	_, gitErr := trustedExecutable("git")
 	_, ghErr := trustedExecutable("gh")
 	installations := install.ClientInstallations()
@@ -364,7 +373,7 @@ func runDoctor(dir string, out io.Writer) error {
 			installable++
 		}
 	}
-	stateDatabase, lockStore := inspectDoctorState(dir)
+	stateDatabase, lockStore := inspectDoctorState(ctx, dir)
 	result := map[string]any{
 		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "DOCTOR_OK",
 		"git_available": gitErr == nil, "gh_available": ghErr == nil, "provider_auth": "not_checked",
@@ -381,7 +390,7 @@ func runDoctor(dir string, out io.Writer) error {
 	return json.NewEncoder(out).Encode(result)
 }
 
-func inspectDoctorState(dir string) (string, string) {
+func inspectDoctorState(ctx context.Context, dir string) (string, string) {
 	info, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return "not_initialized", "not_initialized"
@@ -396,7 +405,7 @@ func inspectDoctorState(dir string) (string, string) {
 	if err != nil || dbInfo.Mode()&os.ModeSymlink != 0 || !dbInfo.Mode().IsRegular() || (runtime.GOOS != "windows" && dbInfo.Mode().Perm()&0077 != 0) {
 		return "unavailable", "unavailable"
 	}
-	databaseReady, leaseReady, healthErr := state.ReadOnlyHealth(context.Background(), filepath.Join(dir, "state.db"))
+	databaseReady, leaseReady, healthErr := state.ReadOnlyHealth(ctx, filepath.Join(dir, "state.db"))
 	if healthErr != nil || !databaseReady {
 		return "unavailable", "unavailable"
 	}
@@ -539,11 +548,6 @@ func hasFlag(args []string, name string) bool {
 		}
 	}
 	return false
-}
-
-func validatePublishArgs(args []string) error {
-	_, err := parsePublishArgs(args)
-	return err
 }
 
 func parsePublishArgs(args []string) (publishOptions, error) {
@@ -767,7 +771,7 @@ func parseInitArgs(args []string) (initOptions, error) {
 	return options, nil
 }
 
-func runInit(options initOptions, dir string, out io.Writer) error {
+func runInitContext(ctx context.Context, options initOptions, dir string, out io.Writer) error {
 	preview, err := repository.PlanInitialization(options.Repo, options.Branch)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
@@ -798,7 +802,7 @@ func runInit(options initOptions, dir string, out io.Writer) error {
 	if err := savePolicy(dir, repoID, p); err != nil {
 		return err
 	}
-	if _, err := repository.Initialize(context.Background(), gitport.Runner{Executable: gitPath}, root, options.Branch); err != nil {
+	if _, err := repository.Initialize(ctx, gitport.Runner{Executable: gitPath}, root, options.Branch); err != nil {
 		return cliError{"E_GIT", safeMessage(err.Error())}
 	}
 	info, err := repository.DiscoverWithKey(root, key)
@@ -822,7 +826,7 @@ func initPolicy(options initOptions) policy.Policy {
 	return policy.Policy{Tracking: "yes", Visibility: options.Visibility, Provider: options.Provider, Owner: options.Owner, Destination: options.Owner + "/" + options.Name, Workflow: "safe", PublicConsent: options.PublicConsent, Version: 1}
 }
 
-func runRemote(args []string, dir string, out io.Writer) error {
+func runRemoteContext(ctx context.Context, args []string, dir string, out io.Writer) error {
 	options, err := parseRemoteArgs(args)
 	if err != nil {
 		return err
@@ -877,14 +881,14 @@ func runRemote(args []string, dir string, out io.Writer) error {
 		Lease:  coordinator.StateLease{DB: db},
 		Owner:  options.ID,
 	}
-	identity, err := tx.Create(context.Background(), provider.RemoteCreateRequest{ID: options.ID, RepositoryID: info.RepoID, Alias: options.Alias, Owner: options.Owner, Name: options.Name, Visibility: options.Visibility})
+	identity, err := tx.Create(ctx, provider.RemoteCreateRequest{ID: options.ID, RepositoryID: info.RepoID, Alias: options.Alias, Owner: options.Owner, Name: options.Name, Visibility: options.Visibility})
 	if err != nil {
 		return cliError{"E_PROVIDER", safeMessage(err.Error())}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "REMOTE_ATTACHED", "remote": identity, "alias": options.Alias, "visibility": options.Visibility})
 }
 
-func runPublish(args []string, dir string, out io.Writer) error {
+func runPublishContext(ctx context.Context, args []string, dir string, out io.Writer) error {
 	options, err := parsePublishArgs(args)
 	if err != nil {
 		return err
@@ -906,7 +910,7 @@ func runPublish(args []string, dir string, out io.Writer) error {
 		return err
 	}
 	defer db.Close()
-	intent, err := db.GitCommitIntentRecord(context.Background(), options.ID)
+	intent, err := db.GitCommitIntentRecord(ctx, options.ID)
 	if errors.Is(err, os.ErrNotExist) {
 		return cliError{"E_NOT_FOUND", "commit intent was not found"}
 	}
@@ -916,7 +920,7 @@ func runPublish(args []string, dir string, out io.Writer) error {
 	if intent.Intent.RepoDir != info.Root || intent.State != state.CommitCreated || intent.SHA == "" {
 		return cliError{"E_STATE", "commit intent is not a completed local commit for this repository"}
 	}
-	if err := verifyStoredCommit(context.Background(), info.Root, intent); err != nil {
+	if err := verifyStoredCommit(ctx, info.Root, intent); err != nil {
 		return cliError{"E_STATE", safeMessage(err.Error())}
 	}
 	p := loadPolicy(dir, info.RepoID)
@@ -942,7 +946,7 @@ func runPublish(args []string, dir string, out io.Writer) error {
 		return cliError{"E_CONSENT", "public publication requires separate policy and command consent"}
 	}
 	if options.Mode == "public" {
-		report := buildPublicPreflight(context.Background(), dir, info.Root, intent, options, p)
+		report := buildPublicPreflight(ctx, dir, info.Root, intent, options, p)
 		if !report.CanPublishPublic() {
 			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "rejected", "action": "blocked", "reason_code": "PUBLIC_PREFLIGHT_REQUIRED", "job_id": options.ID, "preflight": report})
 		}
@@ -959,18 +963,18 @@ func runPublish(args []string, dir string, out io.Writer) error {
 	gitRunner := provider.SystemRunner{Executable: gitPath, WorkingDir: info.Root}
 	publication := provider.GH{Runner: ghRunner, Pusher: provider.GitPusher{Runner: gitRunner, Dir: info.Root, AllowedRemotes: map[string]string{options.Owner + "/" + options.Name: options.Remote}}}
 	if options.Mode == "public" {
-		if err := publication.ConfirmRepository(context.Background(), provider.RemoteRequest{Owner: options.Owner, Name: options.Name, Visibility: options.Visibility}); err != nil {
+		if err := publication.ConfirmRepository(ctx, provider.RemoteRequest{Owner: options.Owner, Name: options.Name, Visibility: options.Visibility}); err != nil {
 			return cliError{"E_PROVIDER", safeMessage(err.Error())}
 		}
 	}
 	coord := retryCoordinator(db, publication, options.ID)
 	remoteDigest := digestDestination(options.Owner, options.Name, options.Visibility, options.Ref)
-	publishErr := coord.Push(context.Background(), coordinator.PushRequest{ID: options.ID, Owner: options.Owner, Name: options.Name, Ref: options.Ref, CommitSHA: intent.SHA, RemoteDigest: remoteDigest})
-	if factErr := emitStoredPushDomainFacts(context.Background(), db, filepath.Join(dir, "state.db"), p, info, options.ID, publishErr); factErr != nil {
+	publishErr := coord.Push(ctx, coordinator.PushRequest{ID: options.ID, Owner: options.Owner, Name: options.Name, Ref: options.Ref, CommitSHA: intent.SHA, RemoteDigest: remoteDigest})
+	if factErr := emitStoredPushDomainFacts(ctx, db, filepath.Join(dir, "state.db"), p, info, options.ID, publishErr); factErr != nil {
 		return cliError{"E_STATE", safeMessage(factErr.Error())}
 	}
 	if publishErr != nil {
-		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
+		status, _, statusErr := coord.Store.PushStatus(ctx, options.ID)
 		if statusErr == nil && status == state.PushRetryWait {
 			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "pending", "action": "retry", "reason_code": "PUSH_RETRY_WAIT", "retryable": true, "job_id": options.ID, "commit_sha": intent.SHA})
 		}
@@ -1212,7 +1216,7 @@ func parseSyncArgs(args []string) (syncOptions, error) {
 	return options, nil
 }
 
-func runSync(args []string, dir string, out io.Writer) error {
+func runSyncContext(ctx context.Context, args []string, dir string, out io.Writer) error {
 	options, err := parseSyncArgs(args)
 	if err != nil {
 		return err
@@ -1235,9 +1239,9 @@ func runSync(args []string, dir string, out io.Writer) error {
 	}
 	defer db.Close()
 	if options.Complete {
-		return runSyncComplete(context.Background(), options, dir, info, key, db, out)
+		return runSyncComplete(ctx, options, dir, info, key, db, out)
 	}
-	baseline, err := session.New(db).CaptureAndRecord(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: key})
+	baseline, err := session.New(db).CaptureAndRecord(ctx, session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: key})
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
 	}
@@ -1517,7 +1521,7 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 	return options, nil
 }
 
-func runVerify(args []string, dir string, out io.Writer) error {
+func runVerifyContext(ctx context.Context, args []string, dir string, out io.Writer) error {
 	options, err := parseVerifyArgs(args)
 	if err != nil {
 		return err
@@ -1539,7 +1543,7 @@ func runVerify(args []string, dir string, out io.Writer) error {
 		return err
 	}
 	defer db.Close()
-	durable, err := db.Session(context.Background(), options.Session)
+	durable, err := db.Session(ctx, options.Session)
 	if errors.Is(err, sql.ErrNoRows) {
 		return cliError{"E_NOT_FOUND", "verify session was not found"}
 	}
@@ -1555,18 +1559,18 @@ func runVerify(args []string, dir string, out io.Writer) error {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
 	}
 	service := session.New(db)
-	started, err := service.ResumeFromDurable(context.Background(), session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: key}, session.DurableBaseline{
+	started, err := service.ResumeFromDurable(ctx, session.Request{SessionID: options.Session, RepositoryID: info.RepoID, ClientID: options.Client, Root: info.Root, Paths: options.Paths, IdentityKey: key}, session.DurableBaseline{
 		Head: durable.BaselineHead, IndexDigest: durable.BaselineIndex, StatusDigest: durable.StatusDigest, PathsDigest: durable.BaselinePathsDigest, Evidence: durable.BaselineEvidence,
 	})
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
 	}
-	plan, err := service.BuildOwnedPlanAtCurrent(context.Background(), started.Request, started.Baseline)
+	plan, err := service.BuildOwnedPlanAtCurrent(ctx, started.Request, started.Baseline)
 	if err != nil {
 		return cliError{"E_SCOPE", safeMessage(err.Error())}
 	}
 	workflowService := localworkflow.Service{Git: gittransaction.SystemRunner{}, Intents: gittransaction.NewStateIntentPort(db), VerifierRunner: verification.ExecRunner{}, TrustedVerifierDir: dir, IdentityKey: key}
-	result, err := workflowService.VerifyPlan(context.Background(), localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Intent: options.Intent, Policy: effectivePolicy, Verifiers: registry}, plan)
+	result, err := workflowService.VerifyPlan(ctx, localworkflow.Request{ID: options.ID, RepositoryDir: info.Root, Message: options.Message, Intent: options.Intent, Policy: effectivePolicy, Verifiers: registry}, plan)
 	if err != nil {
 		return cliError{"E_VERIFY", safeMessage(err.Error())}
 	}
@@ -1613,7 +1617,7 @@ func parseRetryArgs(args []string) (retryOptions, error) {
 	return options, nil
 }
 
-func runRetry(args []string, dir string, out io.Writer) error {
+func runRetryContext(ctx context.Context, args []string, dir string, out io.Writer) error {
 	options, err := parseRetryArgs(args)
 	if err != nil {
 		return err
@@ -1658,12 +1662,12 @@ func runRetry(args []string, dir string, out io.Writer) error {
 	pusher := provider.GitPusher{Runner: gitRunner, Dir: info.Root, AllowedRemotes: map[string]string{job.Owner + "/" + job.Name: options.Remote}}
 	publication := provider.GH{Runner: ghRunner, Pusher: pusher}
 	coord := retryCoordinator(db, publication, options.ID)
-	retryErr := coord.RetryPush(context.Background(), options.ID)
-	if factErr := emitStoredPushDomainFacts(context.Background(), db, filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, options.ID, retryErr); factErr != nil {
+	retryErr := coord.RetryPush(ctx, options.ID)
+	if factErr := emitStoredPushDomainFacts(ctx, db, filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, options.ID, retryErr); factErr != nil {
 		return cliError{"E_STATE", safeMessage(factErr.Error())}
 	}
 	if retryErr != nil {
-		status, _, statusErr := coord.Store.PushStatus(context.Background(), options.ID)
+		status, _, statusErr := coord.Store.PushStatus(ctx, options.ID)
 		if statusErr == nil && status == state.PushRetryWait {
 			return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "pending", "action": "retry", "reason_code": "PUSH_RETRY_WAIT", "retryable": true, "job_id": options.ID})
 		}
@@ -1722,6 +1726,12 @@ func trustedExecutable(name string) (string, error) {
 }
 
 func runHook(args []string, in io.Reader, out io.Writer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	defer cancel()
+	return runHookContext(ctx, args, in, out)
+}
+
+func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Writer) error {
 	b, err := io.ReadAll(io.LimitReader(in, (64<<10)+1))
 	if err != nil {
 		return cliError{"E_SCHEMA", "cannot read event"}
@@ -1753,8 +1763,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 		if resolveErr != nil {
 			return cliError{"E_SCOPE", "cannot resolve approved repository"}
 		}
-		roots := []string{}
-		roots = []string{root}
+		roots := []string{root}
 		ce, translateErr := a.Translate(b, adapters.TranslateOptions{ApprovedRoots: roots, ResolvedScope: map[string]string{"repo_id": trusted.RepoID, "worktree_id": trusted.WorktreeID}, InstallationID: flag(args, "--installation"), InstanceID: flag(args, "--instance"), EventHint: flag(args, "--event")})
 		if translateErr != nil {
 			return cliError{"E_SCHEMA", translateErr.Error()}
@@ -1781,7 +1790,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 		return err
 	}
 	if !keyOnDisk && len(pendingKey) > 0 {
-		if err := os.WriteFile(filepath.Join(dir, "identity.key"), pendingKey, 0600); err != nil {
+		if err := securefs.WriteExclusiveWithin(dir, "identity.key", pendingKey, 0600); err != nil {
 			return err
 		}
 	}
@@ -1865,7 +1874,7 @@ func runHook(args []string, in io.Reader, out io.Writer) error {
 			},
 		}
 	}
-	r, err := a.Hook(context.Background(), b)
+	r, err := a.Hook(ctx, b)
 	if err != nil {
 		return err
 	}
@@ -2041,7 +2050,7 @@ func installTrustedVerifierConfig(dir, repositoryID, source string) (string, err
 	if registry == nil {
 		return "", errors.New("trusted verifier configuration is empty")
 	}
-	raw, err := os.ReadFile(source)
+	raw, err := securefs.ReadPath(source, 1<<20)
 	if err != nil {
 		return "", err
 	}
@@ -2049,30 +2058,9 @@ func installTrustedVerifierConfig(dir, repositoryID, source string) (string, err
 		return "", err
 	}
 	relative := trustedVerifierRelativePath(repositoryID)
-	destination := filepath.Join(dir, relative)
-	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+	if err := securefs.AtomicWriteWithin(dir, relative, raw, 0600); err != nil {
 		return "", err
 	}
-	_ = os.Chmod(filepath.Dir(destination), 0700)
-	tmp, err := os.CreateTemp(filepath.Dir(destination), ".verifiers-*")
-	if err != nil {
-		return "", err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(raw)
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmpName, destination); err != nil {
-		return "", err
-	}
-	_ = os.Chmod(destination, 0600)
 	return relative, nil
 }
 
@@ -2080,7 +2068,7 @@ func loadPolicy(dir, id string) policy.Policy {
 	if id == "" {
 		return policy.Policy{}
 	}
-	b, err := os.ReadFile(policyPath(dir, id))
+	b, err := securefs.ReadWithin(dir, filepath.Base(policyPath(dir, id)), 1<<20)
 	if err != nil {
 		return policy.Policy{}
 	}
@@ -2094,38 +2082,36 @@ func savePolicy(dir, id string, p policy.Policy) error {
 	if err != nil {
 		return err
 	}
-	tmp := policyPath(dir, id) + ".tmp"
-	if err = os.WriteFile(tmp, b, 0600); err != nil {
-		return err
-	}
-	if err = os.Rename(tmp, policyPath(dir, id)); err != nil {
+	if err := securefs.AtomicWriteWithin(dir, filepath.Base(policyPath(dir, id)), b, 0600); err != nil {
 		return fmt.Errorf("save policy: %w", err)
 	}
 	return nil
 }
 
 func loadIdentityKey(dir string) ([]byte, error) {
-	path := filepath.Join(dir, "identity.key")
-	if key, err := os.ReadFile(path); err == nil {
+	if key, err := securefs.ReadWithin(dir, "identity.key", 64); err == nil {
 		if len(key) >= 32 {
-			_ = os.Chmod(path, 0600)
 			return key, nil
 		}
 		return nil, cliError{"E_STATE", "identity key is invalid"}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, key, 0600); err != nil {
+	if err := securefs.WriteExclusiveWithin(dir, "identity.key", key, 0600); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return loadIdentityKey(dir)
+		}
 		return nil, err
 	}
 	return key, nil
 }
 
 func identityKeyForRead(dir string) ([]byte, bool, error) {
-	path := filepath.Join(dir, "identity.key")
-	key, err := os.ReadFile(path)
+	key, err := securefs.ReadWithin(dir, "identity.key", 64)
 	if err == nil {
 		if len(key) < 32 {
 			return nil, false, cliError{"E_STATE", "identity key is invalid"}

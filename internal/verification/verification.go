@@ -6,12 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"autogit/internal/process"
 )
 
 type Result struct {
@@ -148,48 +149,18 @@ func (ExecRunner) run(ctx context.Context, dir string, env map[string]string, ma
 	if !filepath.IsAbs(args[0]) {
 		return Result{}, errors.New("verifier executable must be an absolute trusted path")
 	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Dir = dir
-	cmd.Env = []string{}
+	commandEnv := []string{}
 	keys := make([]string, 0, len(env))
 	for k := range env {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		cmd.Env = append(cmd.Env, k+"="+env[k])
+		commandEnv = append(commandEnv, k+"="+env[k])
 	}
-	out := &capBuffer{max: max}
-	errout := &capBuffer{max: max}
-	cmd.Stdout = out
-	cmd.Stderr = errout
-	err := cmd.Run()
-	code := 0
-	if cmd.ProcessState != nil {
-		code = cmd.ProcessState.ExitCode()
+	processResult, err := process.Run(ctx, process.Options{Executable: args[0], Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true})
+	if processResult.Truncated || errors.Is(err, process.ErrOutputLimit) {
+		return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode}, fmt.Errorf("verification output exceeded limit")
 	}
-	if out.limited || errout.limited {
-		return Result{Stdout: out.String(), Stderr: errout.String(), ExitCode: code}, fmt.Errorf("verification output exceeded limit")
-	}
-	return Result{Stdout: out.String(), Stderr: errout.String(), ExitCode: code}, err
+	return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode}, err
 }
-
-type capBuffer struct {
-	b       []byte
-	max     int
-	limited bool
-}
-
-func (b *capBuffer) Write(p []byte) (int, error) {
-	if len(b.b)+len(p) > b.max {
-		n := b.max - len(b.b)
-		if n > 0 {
-			b.b = append(b.b, p[:n]...)
-		}
-		b.limited = true
-		return len(p), errors.New("output limit")
-	}
-	b.b = append(b.b, p...)
-	return len(p), nil
-}
-func (b *capBuffer) String() string { return strings.Clone(string(b.b)) }

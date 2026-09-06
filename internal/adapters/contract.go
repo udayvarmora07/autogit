@@ -740,9 +740,7 @@ func changes(m map[string]any) []map[string]any {
 			}
 		}
 	case []map[string]any:
-		for _, x := range values {
-			out = append(out, x)
-		}
+		out = append(out, values...)
 	}
 	return out
 }

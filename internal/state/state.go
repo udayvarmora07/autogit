@@ -13,20 +13,18 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"autogit/internal/commit"
+	sharedDB "autogit/internal/db"
 	"autogit/internal/repository"
-
-	_ "modernc.org/sqlite"
 )
 
 const (
-	currentSchemaVersion  = 7
+	currentSchemaVersion  = sharedDB.CurrentSchemaVersion
 	CommitRequested       = "COMMIT_REQUESTED"
 	CommitQueued          = "QUEUED"
 	CommitRunning         = "RUNNING"
@@ -136,14 +134,11 @@ func ReadOnlyHealth(ctx context.Context, path string) (databaseReady, leaseReady
 	if path == "" {
 		return false, false, errors.New("state path is empty")
 	}
-	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_query_only=true&_pragma=busy_timeout(5000)")
+	db, err := sharedDB.OpenReadOnly(ctx, path)
 	if err != nil {
 		return false, false, err
 	}
 	defer db.Close()
-	if err := db.PingContext(ctx); err != nil {
-		return false, false, err
-	}
 	var integrity string
 	if err := db.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil || integrity != "ok" {
 		if err == nil {
@@ -173,99 +168,67 @@ func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("state path is empty")
 	}
-	parent := filepath.Dir(path)
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return nil, fmt.Errorf("state directory: %w", err)
-	}
-	// Establish a new database file with its restrictive mode before SQLite can
-	// open it. A concurrent opener must observe either this 0600 file or an
-	// existing file whose permissions can be checked; it must never observe
-	// SQLite's platform-default creation mode during migration.
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
-	if err == nil {
-		if closeErr := file.Close(); closeErr != nil {
-			return nil, closeErr
-		}
-	} else if !errors.Is(err, os.ErrExist) {
-		return nil, err
-	}
-	if info, err := os.Stat(path); err == nil {
-		if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
-			return nil, errors.New("state database permissions are too broad")
-		}
-	} else {
-		return nil, err
-	}
-	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)")
+	db, err := sharedDB.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	s := &Store{db: db, path: path}
-	if err := s.migrateWithRetry(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := os.Chmod(path, 0600); err != nil {
-		db.Close()
-		return nil, err
-	}
-	for _, suffix := range []string{"-wal", "-shm"} {
-		if err := os.Chmod(path+suffix, 0600); err != nil && !os.IsNotExist(err) {
-			db.Close()
-			return nil, err
-		}
-	}
 	return s, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) migrateWithRetry() error {
-	var err error
-	for attempt := 0; attempt < 8; attempt++ {
-		err = s.migrate()
-		if err == nil || !isSQLiteBusy(err) {
-			return err
+/*
+Legacy state-only migrations are retained here as historical context while
+the shared database gateway owns the live schema and migration path.
+
+	func (s *Store) migrateWithRetry() error {
+		var err error
+		for attempt := 0; attempt < 8; attempt++ {
+			err = s.migrate()
+			if err == nil || !isSQLiteBusy(err) {
+				return err
+			}
+			time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
 		}
-		time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
-	}
-	return err
-}
-
-func isSQLiteBusy(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "database is locked") || strings.Contains(message, "sqlite_busy")
-}
-
-func (s *Store) migrate() error {
-	// Read the version before changing any tables. A newer state database is
-	// intentionally rejected rather than partially mutated by an older binary.
-	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)`); err != nil {
 		return err
 	}
-	version := 0
-	var rawVersion string
-	versionErr := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&rawVersion)
-	if versionErr == nil {
-		version, versionErr = strconv.Atoi(rawVersion)
-		if versionErr != nil || version < 1 {
-			return fmt.Errorf("unsupported state schema version %q", rawVersion)
+
+	func isSQLiteBusy(err error) bool {
+		if err == nil {
+			return false
 		}
-	} else if !errors.Is(versionErr, sql.ErrNoRows) {
-		return versionErr
+		message := strings.ToLower(err.Error())
+		return strings.Contains(message, "database is locked") || strings.Contains(message, "sqlite_busy")
 	}
-	if version > currentSchemaVersion {
-		return fmt.Errorf("unsupported state schema version %d", version)
-	}
-	_, err := s.db.Exec(`PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS commits (id TEXT PRIMARY KEY,candidate_digest TEXT NOT NULL,base_sha TEXT,message_digest TEXT NOT NULL,policy_digest TEXT NOT NULL DEFAULT '',verifier_digest TEXT NOT NULL DEFAULT '',guard_digest TEXT NOT NULL DEFAULT '',commit_sha TEXT,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS git_commit_intents (id TEXT PRIMARY KEY,repo_dir TEXT NOT NULL,ref TEXT NOT NULL,parent_sha TEXT NOT NULL,tree_oid TEXT NOT NULL,message TEXT NOT NULL,candidate_digest TEXT NOT NULL,message_digest TEXT NOT NULL,snapshot_digest TEXT NOT NULL,policy_digest TEXT NOT NULL,verifier_digest TEXT NOT NULL,guard_digest TEXT NOT NULL,sha TEXT NOT NULL DEFAULT '',state TEXT NOT NULL,reason_code TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+
+	func (s *Store) migrate() error {
+		// Read the version before changing any tables. A newer state database is
+		// intentionally rejected rather than partially mutated by an older binary.
+		if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)`); err != nil {
+			return err
+		}
+		version := 0
+		var rawVersion string
+		versionErr := s.db.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&rawVersion)
+		if versionErr == nil {
+			version, versionErr = strconv.Atoi(rawVersion)
+			if versionErr != nil || version < 1 {
+				return fmt.Errorf("unsupported state schema version %q", rawVersion)
+			}
+		} else if !errors.Is(versionErr, sql.ErrNoRows) {
+			return versionErr
+		}
+		if version > currentSchemaVersion {
+			return fmt.Errorf("unsupported state schema version %d", version)
+		}
+		_, err := s.db.Exec(`PRAGMA journal_mode=WAL;
+
+CREATE TABLE IF NOT EXISTS commits (id TEXT PRIMARY KEY,candidate_digest TEXT NOT NULL,base_sha TEXT,message_digest TEXT NOT NULL,policy_digest TEXT NOT NULL DEFAULT ”,verifier_digest TEXT NOT NULL DEFAULT ”,guard_digest TEXT NOT NULL DEFAULT ”,commit_sha TEXT,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS git_commit_intents (id TEXT PRIMARY KEY,repo_dir TEXT NOT NULL,ref TEXT NOT NULL,parent_sha TEXT NOT NULL,tree_oid TEXT NOT NULL,message TEXT NOT NULL,candidate_digest TEXT NOT NULL,message_digest TEXT NOT NULL,snapshot_digest TEXT NOT NULL,policy_digest TEXT NOT NULL,verifier_digest TEXT NOT NULL,guard_digest TEXT NOT NULL,sha TEXT NOT NULL DEFAULT ”,state TEXT NOT NULL,reason_code TEXT NOT NULL DEFAULT ”,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pushes (id TEXT PRIMARY KEY,commit_job_id TEXT NOT NULL,remote_digest TEXT,owner TEXT,name TEXT,ref TEXT,commit_sha TEXT NOT NULL,state TEXT NOT NULL,local_only INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS remote_jobs (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,owner TEXT NOT NULL,name TEXT NOT NULL,alias TEXT NOT NULL,visibility TEXT NOT NULL,url TEXT NOT NULL,hosted_identity TEXT NOT NULL DEFAULT '',state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS remote_jobs (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,owner TEXT NOT NULL,name TEXT NOT NULL,alias TEXT NOT NULL,visibility TEXT NOT NULL,url TEXT NOT NULL,hosted_identity TEXT NOT NULL DEFAULT ”,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS policies (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,decision TEXT,visibility TEXT,workflow TEXT,local_only INTEGER NOT NULL,public_consent INTEGER NOT NULL,revision INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,status_digest TEXT,baseline_paths_digest TEXT,baseline_evidence TEXT NOT NULL DEFAULT '',client_id TEXT,revision INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY,repository_id TEXT NOT NULL,state TEXT,baseline_head TEXT,baseline_index TEXT,status_digest TEXT,baseline_paths_digest TEXT,baseline_evidence TEXT NOT NULL DEFAULT ”,client_id TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts (id TEXT PRIMARY KEY,task_id TEXT NOT NULL,kind TEXT,state TEXT,idempotency_key TEXT UNIQUE,blocking INTEGER NOT NULL,revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS changesets (id TEXT PRIMARY KEY,task_id TEXT NOT NULL,base_sha TEXT,tree_digest TEXT,index_digest TEXT,state TEXT,revision INTEGER NOT NULL);
@@ -274,125 +237,127 @@ CREATE TABLE IF NOT EXISTS leases (lease_key TEXT PRIMARY KEY,owner TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY,kind TEXT NOT NULL,aggregate_id TEXT NOT NULL,payload BLOB NOT NULL,created_at INTEGER NOT NULL,published_at INTEGER);
 CREATE TABLE IF NOT EXISTS audit (id TEXT PRIMARY KEY,repository_id TEXT,reason_code TEXT,metadata TEXT,prev_digest TEXT,digest TEXT,at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
-	CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);`)
-	if err != nil {
-		return err
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	if err := ensureCommitEvidenceColumns(tx); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if err := ensureSessionBaselineColumns(tx); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if err := ensureRemoteJobColumns(tx); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if version < currentSchemaVersion {
-		if version != 0 && version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 {
-			_ = tx.Rollback()
-			return fmt.Errorf("unsupported state schema version %d", version)
+
+		CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);`)
+		if err != nil {
+			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO state_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.Itoa(currentSchemaVersion)); err != nil {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		if err := ensureCommitEvidenceColumns(tx); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
-	}
-	return tx.Commit()
-}
-
-func ensureRemoteJobColumns(tx *sql.Tx) error {
-	rows, err := tx.Query(`PRAGMA table_info(remote_jobs)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	present := map[string]bool{}
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+		if err := ensureSessionBaselineColumns(tx); err != nil {
+			_ = tx.Rollback()
 			return err
 		}
-		present[name] = true
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if !present["repository_id"] {
-		if _, err := tx.Exec(`ALTER TABLE remote_jobs ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`); err != nil {
-			return fmt.Errorf("add remote_jobs.repository_id: %w", err)
-		}
-	}
-	return nil
-}
-
-func ensureSessionBaselineColumns(tx *sql.Tx) error {
-	rows, err := tx.Query(`PRAGMA table_info(sessions)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	present := map[string]bool{}
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+		if err := ensureRemoteJobColumns(tx); err != nil {
+			_ = tx.Rollback()
 			return err
 		}
-		present[name] = true
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, column := range []string{"status_digest", "baseline_paths_digest", "baseline_evidence"} {
-		if present[column] {
-			continue
+		if version < currentSchemaVersion {
+			if version != 0 && version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 {
+				_ = tx.Rollback()
+				return fmt.Errorf("unsupported state schema version %d", version)
+			}
+			if _, err := tx.Exec(`INSERT INTO state_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.Itoa(currentSchemaVersion)); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
 		}
-		if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
-			return fmt.Errorf("add sessions.%s: %w", column, err)
-		}
+		return tx.Commit()
 	}
-	return nil
-}
 
-func ensureCommitEvidenceColumns(tx *sql.Tx) error {
-	rows, err := tx.Query(`PRAGMA table_info(commits)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	present := map[string]bool{}
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+	func ensureRemoteJobColumns(tx *sql.Tx) error {
+		rows, err := tx.Query(`PRAGMA table_info(remote_jobs)`)
+		if err != nil {
 			return err
 		}
-		present[name] = true
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, col := range []string{"policy_digest", "verifier_digest", "guard_digest"} {
-		if present[col] {
-			continue
+		defer rows.Close()
+		present := map[string]bool{}
+		for rows.Next() {
+			var cid, notNull, pk int
+			var name, typ string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				return err
+			}
+			present[name] = true
 		}
-		if _, err := tx.Exec(`ALTER TABLE commits ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
-			return fmt.Errorf("add commits.%s: %w", col, err)
+		if err := rows.Err(); err != nil {
+			return err
 		}
+		if !present["repository_id"] {
+			if _, err := tx.Exec(`ALTER TABLE remote_jobs ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("add remote_jobs.repository_id: %w", err)
+			}
+		}
+		return nil
 	}
-	return nil
-}
+
+	func ensureSessionBaselineColumns(tx *sql.Tx) error {
+		rows, err := tx.Query(`PRAGMA table_info(sessions)`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		present := map[string]bool{}
+		for rows.Next() {
+			var cid, notNull, pk int
+			var name, typ string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				return err
+			}
+			present[name] = true
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, column := range []string{"status_digest", "baseline_paths_digest", "baseline_evidence"} {
+			if present[column] {
+				continue
+			}
+			if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("add sessions.%s: %w", column, err)
+			}
+		}
+		return nil
+	}
+
+	func ensureCommitEvidenceColumns(tx *sql.Tx) error {
+		rows, err := tx.Query(`PRAGMA table_info(commits)`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		present := map[string]bool{}
+		for rows.Next() {
+			var cid, notNull, pk int
+			var name, typ string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				return err
+			}
+			present[name] = true
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, col := range []string{"policy_digest", "verifier_digest", "guard_digest"} {
+			if present[col] {
+				continue
+			}
+			if _, err := tx.Exec(`ALTER TABLE commits ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("add commits.%s: %w", col, err)
+			}
+		}
+		return nil
+	}
+*/
 func (s *Store) IntegrityCheck() error {
 	var result string
 	if err := s.db.QueryRow(`PRAGMA integrity_check`).Scan(&result); err != nil {

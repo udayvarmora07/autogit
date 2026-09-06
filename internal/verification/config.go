@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"autogit/internal/securefs"
 )
 
 const (
@@ -172,14 +174,12 @@ func LoadRegistryFile(path string, max int64) (*VerifierRegistry, error) {
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return nil, errors.New("verifier configuration permissions are too broad")
 	}
-	file, err := os.Open(path)
+	raw, err := securefs.ReadPath(path, max)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, max+1))
-	if err != nil {
-		return nil, err
+	if int64(len(raw)) > max {
+		return nil, errors.New("verifier configuration exceeds input limit")
 	}
 	return LoadRegistry(raw, max)
 }

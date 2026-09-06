@@ -196,17 +196,6 @@ func canonicalProjectRoot(candidate string) (string, error) {
 	return root, nil
 }
 
-func mergeHygiene(root string) ([]string, error) {
-	plan, err := prepareHygiene(root)
-	if err != nil {
-		return nil, err
-	}
-	if err := applyHygiene(plan); err != nil {
-		return nil, err
-	}
-	return plan.Missing, nil
-}
-
 func prepareHygiene(root string) (hygienePlan, error) {
 	ignorePath := filepath.Join(root, ".gitignore")
 	ignore := hygieneFilePlan{FilePath: ignorePath, Mode: 0600}

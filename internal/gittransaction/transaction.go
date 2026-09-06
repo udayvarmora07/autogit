@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"autogit/internal/commit"
+	"autogit/internal/process"
 	"autogit/internal/verification"
 )
 
@@ -82,16 +83,11 @@ func (r SystemRunner) RunBounded(ctx context.Context, dir string, env map[string
 	if max <= 0 {
 		max = maxOutput
 	}
-	c := exec.CommandContext(ctx, executable, transactionArgs(executable, args...)...)
-	c.Dir = dir
-	c.Env = controlledEnv(env)
-	b := &boundedBuffer{max: max}
-	c.Stdout, c.Stderr = b, b
-	err = c.Run()
-	if b.truncated && err == nil {
-		err = io.ErrShortBuffer
+	result, runErr := process.Run(ctx, process.Options{Executable: executable, Dir: dir, Env: controlledEnv(env), Args: transactionArgs(executable, args...), MaxOutput: max})
+	if errors.Is(runErr, process.ErrOutputLimit) {
+		runErr = io.ErrShortBuffer
 	}
-	return Result{Output: string(b.buf), Err: err, Truncated: b.truncated}, err
+	return Result{Output: result.Output, Err: runErr, Truncated: result.Truncated}, runErr
 }
 
 func canonicalExecutable(path string) (string, error) {
@@ -161,25 +157,6 @@ func transactionArgs(executable string, args ...string) []string {
 		return safeGitArgs(args...)
 	}
 	return args
-}
-
-type boundedBuffer struct {
-	buf       []byte
-	max       int
-	truncated bool
-}
-
-func (b *boundedBuffer) Write(p []byte) (int, error) {
-	if len(b.buf)+len(p) > b.max {
-		n := b.max - len(b.buf)
-		if n > 0 {
-			b.buf = append(b.buf, p[:n]...)
-		}
-		b.truncated = true
-		return len(p), io.ErrShortBuffer
-	}
-	b.buf = append(b.buf, p...)
-	return len(p), nil
 }
 
 type Request struct {
@@ -460,10 +437,10 @@ func (t *Transaction) CommitPrepared(ctx context.Context, prepared *Prepared) (C
 	}
 	messagePath := messageFile.Name()
 	defer os.Remove(messagePath)
-	if err := messageFile.Chmod(0600); err == nil {
-		_, err = io.WriteString(messageFile, prepared.intent.Message)
-	} else {
-		err = fmt.Errorf("message permissions: %w", err)
+	if chmodErr := messageFile.Chmod(0600); chmodErr != nil {
+		err = fmt.Errorf("message permissions: %w", chmodErr)
+	} else if _, writeErr := io.WriteString(messageFile, prepared.intent.Message); writeErr != nil {
+		err = writeErr
 	}
 	if closeErr := messageFile.Close(); err == nil {
 		err = closeErr
@@ -482,12 +459,16 @@ func (t *Transaction) CommitPrepared(ctx context.Context, prepared *Prepared) (C
 	args = append(args, "-F", messagePath)
 	commitResult, err := t.git.Run(ctx, prepared.root, nil, args...)
 	if err != nil {
-		_ = t.intents.RecordReconcile(ctx, prepared.intent.ID, "commit-tree outcome unknown")
+		if reconcileErr := t.intents.RecordReconcile(ctx, prepared.intent.ID, "commit-tree outcome unknown"); reconcileErr != nil {
+			return Commit{}, fmt.Errorf("create commit object: %w; reconcile: %v", err, reconcileErr)
+		}
 		return Commit{}, fmt.Errorf("create commit object: %w", err)
 	}
 	sha := strings.TrimSpace(commitResult.Output)
 	if !oidRE.MatchString(sha) {
-		_ = t.intents.RecordReconcile(ctx, prepared.intent.ID, "invalid commit object identity")
+		if reconcileErr := t.intents.RecordReconcile(ctx, prepared.intent.ID, "invalid commit object identity"); reconcileErr != nil {
+			return Commit{}, fmt.Errorf("git returned invalid commit sha; reconcile: %v", reconcileErr)
+		}
 		return Commit{}, errors.New("git returned invalid commit sha")
 	}
 	if err := ensureUnchanged(ctx, t.git, prepared.root, prepared.intent.ParentSHA, prepared.indexPath, prepared.indexBytes); err != nil {

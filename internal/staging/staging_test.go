@@ -104,7 +104,7 @@ func TestPlanCandidateSnapshotIsolatedFromFilesystemObservations(t *testing.T) {
 		"new.txt":       "candidate",
 	}
 
-	plan, err := BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"})
+	_, err := BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"})
 	if err == nil {
 		t.Fatal("ambiguous pre-existing edit was accepted")
 	}
@@ -114,7 +114,7 @@ func TestPlanCandidateSnapshotIsolatedFromFilesystemObservations(t *testing.T) {
 		t.Fatal("deletion of a pre-existing path was accepted")
 	}
 	current["deleted.txt"] = "before"
-	plan, err = BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"})
+	plan, err := BuildPlan(baseline, current, []string{"unchanged.txt", "deleted.txt", "new.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
