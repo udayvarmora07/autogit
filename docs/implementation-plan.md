@@ -1,746 +1,552 @@
-# AutoGit v1 implementation plan
+# AutoGit world-class implementation plan
 
-Status: Execution in progress — local workflow and private publication slices implemented; phase exits not claimed
-Last updated: 2026-09-05
+Status: Active; release posture is NO-GO for private alpha
+Last updated: 2026-09-06
+Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
+Execution tracker: [todo.md](../todo.md)
 
-## 1. Objective and delivery shape
+## 1. Executive decision
 
-Build a local-first Go modular monolith that receives versioned, at-least-once
-events from supported agentic clients; independently reconciles the repository;
-constructs a session-owned candidate; verifies and scans that candidate; creates
-an attributable Conventional Commit; and optionally publishes an exact commit
-to an explicitly approved destination.
+AutoGit already has an unusually strong safety-oriented foundation: explicit
+consent, immutable candidate construction, fail-closed ownership attribution,
+durable intent records, exact-SHA publication, redacted state, deterministic
+recovery tests, and native CI. It is not yet ready for alpha distribution.
 
-The implementation follows the [architecture](architecture.md),
-[deterministic lifecycle](lifecycle.md), [product requirements](product-requirements.md),
-[threat model](threat-model.md), and [test strategy](test-strategy.md). The
-installed Bash hook remains a compatibility reference until the Go engine has
-passed the relevant gates; it is not the v1 security boundary.
+The release-blocking gaps are:
 
-## 2. Principles for execution
+1. The pinned SQLite engine predates a documented WAL corruption fix while
+   AutoGit uses WAL through more than one database connection and process.
+2. State and policy paths are not consistently protected from symlink and
+   replacement attacks.
+3. Verifiers are timeout-bounded but not sandboxed, resource-bounded, or
+   guaranteed to terminate their descendant process trees.
+4. Git initialization and linked-worktree checks do not use the hardened Git
+   execution boundary used elsewhere.
+5. Duplicate session-start events can repeat baseline work before receipt
+   deduplication, and a failed initialization can leave stale consent.
+6. CLI operations have no end-to-end deadlines and can hang on Git, SQLite, or
+   provider operations.
+7. Adapter knowledge has drifted from current client capabilities, especially
+   Cursor hooks, and provider identity relies on ambient gh CLI state.
+8. Static analysis is not clean: staticcheck reports correctness and dead-code
+   findings, and gosec reports three high-severity path-taint findings.
+9. There is no signed, attributable release pipeline, SBOM/provenance, package
+   channel, security policy, or live disposable-provider evidence.
 
-1. Prove read-only discovery and consent before any Git/provider mutation.
-2. Preserve user work: candidates are session-owned and ambiguous ownership
-   blocks rather than guessing.
-3. Treat adapters as untrusted reporters; only core reconciliation creates
-   durable facts or schedules side effects.
-4. Bind safety, verification, message, commit, and push evidence to immutable
-   candidate/policy/base digests.
-5. Use system Git through argument-safe ports and a provider port through `gh`
-   initially; keep fakes deterministic and make network optional in tests.
-6. Persist intent before side effects, reconcile after crashes, and retry only
-   the same idempotent job.
-7. Keep private/local operation safe and useful; public publication requires a
-   separate explicit choice and a visible pre-publication summary.
-8. Make the smallest safe release at each phase. A local checkpoint may be
-   retained when publication is blocked, but no unsafe path is an exception.
+The correct strategy is to harden the trusted local core first, productize
+integrations second, then earn alpha, beta, and GA through evidence. Feature
+breadth must not outrun the safety contract.
 
-## 3. Phase status and exit model
+## 2. What was reviewed
 
-| Phase | Status | Outcome |
+This plan replaces the previous chronological implementation log. Completed
+history remains available in Git; this document describes the current system,
+target architecture, remaining work, dependencies, and release gates.
+
+The 2026-09-06 review covered:
+
+- The complete repository structure, approximately 34,682 lines, all Go
+  packages, CLI entry points, scripts, workflows, product/security/architecture
+  documents, dependency graph, and release artifacts.
+- Fresh local validation: go test -count=1 ./... passed, go vet ./... passed,
+  go build ./... passed, go mod verify passed, actionlint passed, shell syntax
+  checks passed, and the performance gate passed.
+- The full test suite took roughly four minutes locally because 1,000-schedule
+  subprocess matrices run in the default test path.
+- govulncheck found no reachable vulnerability in application code. It noted
+  two module-level vulnerabilities that are not reached by current code.
+- staticcheck found unused code, overwritten/ignored error values, an ignored
+  Errorf result in the Git transaction path, and style/API findings.
+- gosec 2.29 found three high-confidence, high-severity G703 path-taint
+  findings while the CI configuration excludes seven broad rule classes.
+- 25 research waves and 92 focused searches across current primary sources.
+  About 50 unique official sources were inspected and 37 decision-relevant
+  sources retained. Research stopped when new waves repeated established
+  conclusions. The source set is intentionally deduplicated rather than padded
+  to an arbitrary citation count.
+
+Research is current as of 2026-09-06. Hosted behavior, commercial feature
+availability, and fast-moving client hook contracts must still be verified
+with pinned fixtures and live disposable tests.
+
+Key repository evidence is directly traceable:
+
+| Finding | Evidence |
+| --- | --- |
+| Old SQLite plus WAL and multiple openers | [go.mod](../go.mod#L7-L10), [state opener and WAL migration](../internal/state/state.go#L172-L218), [event-store opener and schema](../internal/events/events.go#L534-L560) |
+| Session baseline before receipt dedupe | [application ingress](../internal/app/app.go#L133-L163) |
+| Weaker Git runner | [Git runner](../internal/gitport/gitport.go#L24-L41) and the init call in [main](../cmd/autogit/main.go#L770-L802) |
+| Verifier timeout without an isolation boundary | [trusted verifier execution](../internal/verification/policy.go#L302-L361) |
+| Missing root operation deadlines | Repeated context.Background calls in [CLI composition](../cmd/autogit/main.go) |
+| Release output reuse and missing build identity | [release build](../scripts/release-build.sh#L51-L97) |
+| Cross-builds without native artifact smoke and no tag release | [CI workflow](../.github/workflows/ci.yml#L64-L113) |
+
+## 3. Product north star
+
+AutoGit should be the safest local control plane between coding agents and
+Git/provider side effects:
+
+- Local-first: useful without a server, account, network, or telemetry.
+- Consent-bound: every mutation is derived from explicit, durable, scoped
+  consent; public visibility is a separate decision.
+- Ownership-safe: no unrelated, ambiguous, or pre-existing user work is
+  committed.
+- Evidence-bound: scan, verification, message, commit, ref, and publication
+  all name the same immutable candidate, base, policy, and destination.
+- Crash-safe: every external effect is preceded by durable intent and can be
+  reconciled without duplicating or broadening the effect.
+- Hostile-input-safe: repositories, hook payloads, config, paths, Git config,
+  verifiers, provider responses, and environment variables are untrusted.
+- Explainable: users can see what AutoGit knows, why it blocked, and what exact
+  reversible action comes next.
+- Portable and honest: capabilities are reported per platform/client/version;
+  unavailable isolation is never described as sandboxed.
+- Supply-chain verifiable: every published binary has version identity,
+  checksums, SBOM, signed provenance, and a documented source-to-binary path.
+- Privacy-preserving: source, prompts, diffs, credentials, URLs, raw paths, and
+  stable repository/session identifiers do not leave the machine by default.
+
+## 4. Current-state scorecard
+
+| Area | Existing strength | Material gap | Release posture |
+| --- | --- | --- | --- |
+| Product contract | Detailed requirements, lifecycle, threat model, ADRs, and traceability test | Documents remain proposed and acceptance has no owner/date | Block alpha |
+| Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, HEAD/index rechecks | Init and linked-worktree paths use weaker runners; hostile attributes/filters and SHA-256 need broader differential tests | Block alpha |
+| Ownership | Source-free baseline evidence, race checks, rename/delete handling, fail-closed ambiguity | Duplicate start replay performs capture before dedupe | Block alpha |
+| Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules | Old SQLite, two schema owners on one DB, incomplete path hardening, no supported backup/restore or retention | Block alpha |
+| Verification | Frozen executable/config digests, timeout and output bounds | No filesystem/network sandbox, resource ceiling, or descendant cleanup | Block public use |
+| Security scanning | Candidate and bounded history checks; failures block | Regex/entropy engine is incomplete; broad gosec exclusions; scan coverage is not explicit | Block public use |
+| Adapters | Six manifests and canonical event translation | Static manifests are stale; three installers unsupported; no pinned real-payload fixture program or runtime capability negotiation | Block compatibility claim |
+| GitHub provider | Exact destination/SHA/ref checks and durable reconciliation | Ambient gh identity, no typed versioned REST transport, no App tokens, limited GHE/rate-limit coverage, no live canary | Block alpha |
+| CLI and operations | Read-only status/plan/doctor/log commands | Monolithic 2,143-line command file, sparse help, no version command, duplicated error code, stdout/stderr ambiguity, no root deadlines | Block supportability |
+| Tests and CI | Broad unit/recovery/race/native CI and strong performance results | Slow schedules run by default; no nightly split, shellcheck, release-binary vulnerability scan, scenario eval suite, or complete native artifact smoke matrix | Needs hardening |
+| Release and governance | Deterministic cross-build script and runbook | Stale artifacts can survive output reuse; no signing, SBOM, provenance, tag release, installers, LICENSE, SECURITY, CONTRIBUTING, CODEOWNERS, or changelog | Block any release |
+
+## 5. Non-negotiable invariants
+
+These remain true through every phase and cannot be waived by a later release
+decision:
+
+1. No Git or provider mutation without valid, scoped consent.
+2. No public operation without a separate, visible destination and visibility
+   confirmation.
+3. No unconditional whole-worktree staging and no inferred ownership of
+   ambiguous paths.
+4. Candidate, guards, scans, verification, message, commit, and publication
+   evidence must bind to the same immutable digests.
+5. Adapters report observations; they do not authorize or perform Git/provider
+   mutation.
+6. Durable immutable intent precedes every externally visible effect.
+7. Retry reconciles the same identity and effect; it never creates a broader
+   replacement operation.
+8. AutoGit does not force-push, delete user refs, delete arbitrary hosted
+   repositories, or silently repair destructive state.
+9. Untrusted input never reaches a shell interpreter. Process arguments,
+   environment, output, duration, descendants, filesystem, and network access
+   are bounded according to the declared capability tier.
+10. Default state and diagnostics contain no source, prompt, diff, secret,
+    credential, remote URL, raw path, or stable cross-repository tracking ID.
+11. A read-only command does not create, migrate, repair, or contact a provider
+    unless the user explicitly requests that separate action.
+12. A release claim is backed by reproducible evidence from the exact tagged
+    commit and published artifacts.
+
+## 6. Target architecture
+
+    Agent clients / CLI / optional MCP
+                |
+                v
+    Versioned capability adapters
+    - immutable input fixtures
+    - runtime version/capability probes
+    - observation only
+                |
+                v
+    Bounded ingress and receipt gate
+    - validate -> dedupe -> persist -> project
+                |
+                v
+    Lifecycle and consent domain
+                |
+                v
+    Repository observation and ownership
+    - one hardened Git boundary
+    - traversal-resistant filesystem root
+                |
+                v
+    Immutable candidate
+       |                    |
+       v                    v
+    Secret/history scan   Isolation-tiered verification
+       |                    |
+       +---------+----------+
+                 v
+    Durable state gateway and operation journal
+    - one connection policy
+    - one migration owner
+    - backup / integrity / retention
+                 |
+          +------+------+
+          v             v
+    Local Git txn    Provider txn
+    exact tree/ref   versioned REST / gh bootstrap
+          |             |
+          +------+------+
+                 v
+    Redacted result, explanation, and opt-in telemetry
+
+The CLI remains a modular monolith. A daemon, hosted service, microservices,
+and distributed queue are out of scope until measured workloads prove a local
+process cannot meet reliability or latency requirements.
+
+## 7. Architecture decisions to record
+
+| ADR | Decision |
+| --- | --- |
+| ADR-008 | One state gateway owns SQLite open options, migrations, connection policy, integrity checks, backup, and retention. Events and jobs use repositories over that gateway. |
+| ADR-009 | Trust-boundary filesystem access uses a canonical owned root plus traversal-resistant relative operations; path-string check-then-open is not sufficient. |
+| ADR-010 | Verification evidence records an achieved isolation tier: none, process-bounded, filesystem-isolated, filesystem-and-network-isolated, or remote-hermetic. |
+| ADR-011 | gh remains an optional local authentication/bootstrap adapter. A typed, version-pinned GitHub REST client is the production provider boundary; GitHub App installation tokens are preferred for automation. |
+| ADR-012 | Client compatibility is an independently versioned capability registry backed by immutable fixtures and runtime probes, not hard-coded marketing names. |
+| ADR-013 | MCP is an optional explicit control surface, read-only by default. MCP annotations and task state are untrusted and never replace AutoGit consent or durable truth. ACP remains an evaluated future adapter. |
+| ADR-014 | Observability is local-first and opt-in for export, with an allowlisted versioned AutoGit schema and cardinality/privacy budgets. |
+| ADR-015 | Releases target signed checksums, SBOM attestations, hosted build provenance, artifact verification, and independent reproducibility evidence. |
+
+## 8. Delivery strategy
+
+Priority definitions:
+
+- P0: exploitable integrity risk, data-loss risk, or prerequisite to trustworthy
+  alpha testing.
+- P1: required for private alpha quality and safe operation.
+- P2: required for public beta or a credible compatibility promise.
+- P3: valuable after the beta contract is stable.
+
+Effort is relative: S is a bounded change, M is a multi-package slice, L is a
+cross-platform or architecture change, and XL is a program requiring staged
+delivery. Estimates are planning aids, not calendar commitments.
+
+### Phase 0 — release safety reset
+
+Goal: eliminate known correctness and integrity hazards before any live canary
+or alpha cohort.
+
+| ID | Pri | Effort | Work | Dependencies | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- |
+| P0-01 | P0 | M | Upgrade modernc.org/sqlite and matching dependencies to a release containing SQLite 3.51.3 or later; prefer current stable | None | Exact embedded SQLite version asserted; full native migration, recovery, race, and WAL tests pass |
+| P0-02 | P0 | L | Consolidate events and job state behind one DB opener, migration coordinator, pragma contract, and connection policy | P0-01 | One schema owner; concurrent old/new-schema and interrupted-migration tests; no package opens the shared DB independently |
+| P0-03 | P0 | M | Harden state root, DB, WAL, SHM, identity-key, policy, and temp-file access against symlinks, traversal, replacement, wrong ownership, and permissive modes | None | os.Root or equivalent no-follow boundary; adversarial component/final symlink and swap tests pass on native OSes |
+| P0-04 | P0 | M | Route init and linked-worktree discovery through the hardened bounded Git runner | None | Hostile global/system/repository Git configuration cannot execute hooks, helpers, filters, SSH, or prompts |
+| P0-05 | P0 | M | Add root operation budgets, per-effect deadlines, cancellation, and process-tree termination | P0-04 | Hung Git/gh/verifier/database simulations return stable timeout errors and leave no descendants or partial unrecorded effect |
+| P0-06 | P0 | S | Dedupe session.started before baseline capture or make capture plus receipt acceptance atomic | P0-02 | Replay after repository mutation is an exact no-op and returns the original receipt result |
+| P0-07 | P0 | M | Make initialization consent transactional; make policy corruption visible and writes locked, no-follow, atomic, fsynced, and revision-aware | P0-03 | Failed init leaves no active consent; torn/corrupt/concurrent writes fail visibly and recover safely |
+| P0-08 | P0 | M | Resolve every staticcheck finding and triage all gosec rules; replace broad exclusions with local, documented suppressions | P0-03, P0-04 | staticcheck and full gosec pass; each suppression has owner, rationale, linked test, and expiry/review trigger |
+| P0-09 | P0 | S | Reconcile and accept requirements, lifecycle, event contract, threat model, compatibility policy, and release terminology | Findings above | Named approver and date; no document claims a phase the evidence has not earned |
+| P0-10 | P0 | M | Fix release artifact directory reuse and add version/commit/date identity to binaries, version, and doctor | None | Reused output cannot include stale artifacts; exact binary identity is reported without local paths or nondeterminism |
+
+Phase 0 exit:
+
+- P0-01 through P0-10 complete.
+- go test, race, vet, staticcheck, gosec, govulncheck, actionlint, shellcheck,
+  build, and performance gates pass on the required native matrix.
+- No unresolved critical/high correctness or security finding.
+- No live provider mutation is needed to complete this phase.
+
+### Phase 1 — trusted local core
+
+Goal: make local commit production-grade even when the repository, verifier,
+filesystem, and process environment are hostile.
+
+| ID | Pri | Effort | Work | Dependencies | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- |
+| P1-01 | P1 | M | Assert WAL, synchronous, foreign keys, busy timeout, checkpoint, and connection settings on every open; define local-filesystem support and safe fallback | P0-01, P0-02 | Runtime pragma audit; network/unreliable filesystem behavior is detected and fail-closed or uses documented safe mode |
+| P1-02 | P1 | L | Add SQLite online backup or VACUUM INTO, restore, integrity_check, foreign_key_check, migration rollback, and repair/export commands | P1-01 | Kill-during-backup/migration tests; restored state produces the same durable jobs and receipts |
+| P1-03 | P1 | M | Implement audit/event retention, pruning, compaction, and privacy-budget enforcement | P0-02 | Bounded state over simulated long use; active recovery evidence is never pruned; raw sensitive fields remain absent |
+| P1-04 | P1 | XL | Implement verifier isolation tiers and attest achieved capability | P0-05 | Linux Landlock plus namespace policy prototype; Windows AppContainer/job controls; explicit macOS fallback; filesystem/network/child/resource adversarial tests |
+| P1-05 | P1 | M | Replace regex-only secret checks with a scanner interface over exact candidate blobs and reachable history | None | Pinned offline scanner, redacted findings, coverage/limit evidence, hostile-config tests; online validation remains separately consented |
+| P1-06 | P1 | L | Differentially test candidate trees against Git for filters, attributes, LFS, sparse checkout/index, submodules, worktrees, unusual modes, Unicode, newline and option-like paths | P0-04 | Expected tree equivalence or explicit fail-closed policy for every matrix row |
+| P1-07 | P1 | M | Add SHA-1 and SHA-256 repository fixtures and remove algorithm-length assumptions | P1-06 | Local lifecycle and transaction suites pass for both object formats; provider limitations are reported as capabilities |
+| P1-08 | P1 | M | Close verifier/config executable TOCTOU windows with handle/identity binding where supported and explicit residual-risk reporting elsewhere | P0-03, P1-04 | Replacement between validation and execution cannot run an unapproved binary |
+| P1-09 | P1 | S | Normalize policy semantics and remove or define the dead public tracking value | P0-09 | Property/table tests cover every valid policy state and merge |
+| P1-10 | P1 | M | Split genuinely read-only commands from state creation/migration/repair paths | P0-02 | status, plan, config explain, and non-repair doctor produce zero filesystem/provider mutations |
+
+Phase 1 exit:
+
+- A consented local workflow preserves user branch, index, unrelated work, and
+  refs across every success, failure, cancellation, crash, and replay matrix.
+- Verification output truthfully names its isolation tier.
+- Backup/restore and corruption drills succeed on Linux, macOS, and Windows.
+- Security scan coverage and limitations are visible in machine and human
+  output.
+
+### Phase 2 — integrations and provider productization
+
+Goal: make external compatibility explicit, testable, least-privileged, and
+resilient to upstream change.
+
+| ID | Pri | Effort | Work | Dependencies | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- |
+| P2-01 | P1 | L | Build a versioned adapter capability registry with immutable sanitized payload fixtures and unknown-field/event behavior | P0-09 | Fixture corpus is pinned to client versions; compatibility report is generated from tests |
+| P2-02 | P1 | M | Add install-time and doctor-time client version/capability probes with degraded/unsupported states | P2-01 | Missing/changed hooks never imply completion or silently enable mutation |
+| P2-03 | P1 | L | Refresh Codex, Claude Code, Gemini CLI, and Cursor codecs/installers from current official contracts | P2-01, P2-02 | Native install/upgrade/uninstall and real-payload contract tests; Cursor no longer falsely reported as hookless |
+| P2-04 | P2 | M | Research and implement safe OpenCode and CommandCode integrations only where stable native contracts exist | P2-01 | Unsupported capabilities remain observation-only with a precise reason; no guessed lifecycle mapping |
+| P2-05 | P1 | M | Make adapter configuration edits ownership-aware, schema-specific, atomic, backed up, and reversible | P0-03, P2-03 | Preserve unrelated user settings/comments where format permits; rollback and concurrent-edit tests pass |
+| P2-06 | P1 | XL | Implement a typed GitHub REST transport with explicit API version, bounded/redacted responses, pagination, request IDs, rate-limit handling, and reconciliation | P0-05 | Contract tests plus disposable GitHub tests for create/read/push-related orchestration and error taxonomy |
+| P2-07 | P1 | M | Bind provider identity explicitly and neutralize ambient GH_TOKEN/GITHUB_TOKEN/account selection hazards | P2-06 | Multiple account, expired/revoked token, wrong host/owner, and enterprise-host tests fail closed |
+| P2-08 | P2 | L | Add GitHub App installation-token authentication with least repository and permission scope; retain gh as bootstrap/local-user mode | P2-06, P2-07 | One-hour refresh, revocation, narrowed repository/permission, and no-secret-at-rest tests |
+| P2-09 | P2 | M | Add GitHub Enterprise Server capability/version negotiation and documented support policy | P2-06 | Version matrix and disposable enterprise fixture or contract emulator evidence |
+| P2-10 | P2 | M | Optionally publish bounded verification evidence as a Check Run tied to head SHA and AutoGit evidence ID | P2-06 | Redacted bounded annotations; Check Run is a projection, never durable source of truth |
+| P2-11 | P2 | L | Offer an optional MCP server for explicit read-only status, plan, explain, and logs; gate verify/publish as separately consented tools | P0-09, P1-10 | Protocol revision pinned; annotations treated as untrusted; MCP cannot bypass domain policy or durable state |
+
+Phase 2 exit:
+
+- Each supported client has a tested version range, fixture provenance,
+  installer behavior, capability probe, downgrade story, and fail-safe unknown
+  behavior.
+- Provider effects use explicit identity, API version, least privilege,
+  rate-limit handling, durable reconciliation, and exact postconditions.
+- The disposable private GitHub canary has passed and cleanup evidence exists.
+
+### Phase 3 — product UX and operations
+
+Goal: make the safety model understandable and operable without reading source
+or internal documents.
+
+| ID | Pri | Effort | Work | Dependencies | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- |
+| P3-01 | P1 | L | Split cmd/autogit/main.go into command parsers, application services, presenters, and composition root without changing domain behavior | P0 complete | Golden/black-box CLI compatibility tests; package boundaries and dependency rules enforced |
+| P3-02 | P1 | M | Add version, structured per-command help, examples, shell completions, man pages, and an end-to-end quickstart | P0-10, P3-01 | First-use test from clean machine to safe local commit; help snapshot tests |
+| P3-03 | P1 | M | Define stdout/stderr, human/JSON, exit-code, error-cause, remediation, and stability contracts | P3-01 | No duplicate error codes; machine output is schema-tested; secrets and paths are redacted |
+| P3-04 | P1 | M | Expand doctor into a capability report with versions, state health, isolation, adapters, provider mode, and safe suggested actions | P1, P2-02 | Offline by default; --json schema; no state creation unless --repair is explicit |
+| P3-05 | P2 | M | Add operation status, explain, resume, cancel, runlog, and bounded undo for AutoGit-owned effects | P0-02 | Crash-restart UX tests; undo never rewrites/deletes user-owned history |
+| P3-06 | P2 | M | Add atomic config migration, diff/preview, backup, rollback, and provenance of each owned config fragment | P2-05 | Upgrade/downgrade across every supported manifest version |
+| P3-07 | P2 | L | Add local structured traces/logs/metrics and optional OpenTelemetry export with strict allowlists and cardinality budgets | P1-03 | Telemetry-off proves zero outbound traffic; no paths, URLs, prompts, source, session/repo IDs, or secrets in exported attributes/baggage |
+| P3-08 | P2 | M | Establish performance budgets for hook, 1k/100k paths, DB growth, startup, verifier overhead, and provider operations | All prior | Native p50/p95/p99 trend artifacts and regression thresholds; no test-count proxy for quality |
+| P3-09 | P2 | M | Rewrite README and operator docs for prerequisites, trust model, limitations, install, upgrade, uninstall, recovery, exit codes, and examples | P3-02..08 | Documentation tests and release-review checklist |
+
+### Phase 4 — verification, evals, and continuous quality
+
+Goal: turn safety claims into fast, reproducible, layered evidence.
+
+| ID | Pri | Effort | Work | Dependencies | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- |
+| P4-01 | P1 | M | Separate fast presubmit, race, integration, 1,000-schedule soak, fuzz, canary, and release suites | None | Presubmit target under five minutes; long matrices scheduled/nightly and manually reproducible |
+| P4-02 | P1 | M | Add shellcheck and direct tests for canary/performance/release scripts | None | Scripts pass syntax, static analysis, failure injection, and safe cleanup tests |
+| P4-03 | P1 | L | Add native artifact smoke tests for every claimed OS/arch and system Git range | P0-10 | Built artifact, not go run, executes version/doctor/local workflow on required native hosts |
+| P4-04 | P1 | L | Expand fuzz/property/differential testing at JSON, path, ref, Git status, policy, migration, and provider response boundaries | P1, P2 | Seed corpus retained; failures minimize and become deterministic regressions |
+| P4-05 | P1 | L | Add crash/chaos tests for disk full, permission loss, clock change, lock contention, signal/kill, network stall, rate limit, and partial provider responses | P0-05, P1-02, P2-06 | No duplicated effect, false success, lost local commit, or unrecoverable state |
+| P4-06 | P2 | L | Build scenario evals across clients and OSes that grade final Git/index/ref/provider state, not agent narration | P2 | Zero wrong-repo/ref/visibility effects in release corpus; diagnostic trace retained locally |
+| P4-07 | P2 | M | Add compatibility-contract tests and automated expiry issues for client, Git, Go, SQLite, GitHub API, MCP, and schema windows | P2 | Every advertised version is exercised or removed before release |
+| P4-08 | P2 | M | Publish machine-readable test evidence and requirement/risk/control traceability for the tagged commit | All prior | Release bundle maps requirement and threat IDs to exact test artifacts |
+
+### Phase 5 — supply chain, governance, and distribution
+
+Goal: let users verify what they install and know how the project is governed.
+
+| ID | Pri | Effort | Work | Dependencies | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- |
+| P5-01 | P1 | S | Decide and add LICENSE; add SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, CODEOWNERS, support policy, and CHANGELOG | Product owner | Repository and package metadata agree; security contact and supported versions are explicit |
+| P5-02 | P1 | M | Add dependency update policy, Dependabot/Renovate equivalent, license policy, dependency review, CodeQL, and Scorecard | P5-01 | Least CI permissions; pinned actions; reviewed automated update flow; justified exceptions |
+| P5-03 | P1 | L | Build a tag-gated release workflow in a clean environment | P0-10, P4-03 | Tag/commit/version match; dirty or reused output rejected; artifacts uploaded only after all gates |
+| P5-04 | P1 | L | Generate SPDX or CycloneDX SBOMs, binary govulncheck results, signed checksums, and hosted SLSA provenance/attestations | P5-03 | Consumers can verify artifact digest, signature/identity, SBOM, provenance, and source commit |
+| P5-05 | P1 | M | Verify reproducibility using independent build paths/runners and publish comparison evidence | P5-03 | Matching digests or documented normalized differences; same-run double build is not sole evidence |
+| P5-06 | P2 | L | Add GitHub Releases and maintained package channels such as Homebrew and winget/Scoop after platform demand is validated | P5-03..05 | Install/upgrade/downgrade/uninstall tests and checksums on native clean machines |
+| P5-07 | P2 | M | Define vulnerability disclosure, patch SLAs, keyless signing identity recovery, release rollback, and compromised-release drill | P5-01, P5-04 | Tabletop and technical rollback drill with redacted evidence |
+
+### Phase 6 — alpha, beta, and GA
+
+| Stage | Entry | Required evidence | Exit |
+| --- | --- | --- | --- |
+| Private alpha | Phases 0 and 1 complete; supported adapters/provider subset from Phase 2 complete; signed private artifacts | Bounded cohort, private repositories only, live private canary, support owner, recovery/backup drill, zero severity-1 safety incidents | Two consecutive release candidates meet all alpha SLOs and every issue has triage |
+| Public beta | Alpha exit; Phases 2 through 5 complete for advertised scope | Explicit public preflight, public disposable canary, signed provenance, package install tests, incident/rollback exercise | Defined beta observation window with no wrong-repo/ref/visibility or unrecoverable-state event |
+| GA | Beta exit; compatibility and support windows frozen | Independent security review, threat-model refresh, restore drill, release reproducibility, accessibility review for docs/CLI, support and deprecation policy | Named release owner signs the evidence manifest for the exact tag |
+
+## 9. First implementation sequence
+
+Keep the first changes small and independently reviewable:
+
+1. PR-001: SQLite dependency upgrade, embedded-version assertion, and focused
+   WAL/migration/native tests.
+2. PR-002: one SQLite open/pragma/migration gateway; migrate events and state
+   repositories without schema changes.
+3. PR-003: traversal-resistant state root and sensitive-file API with
+   adversarial symlink/replacement tests.
+4. PR-004: hardened Git runner for init and linked-worktree discovery.
+5. PR-005: command budgets, process groups/job objects, cancellation taxonomy,
+   and descendant-cleanup tests.
+6. PR-006: duplicate session.started idempotency and atomic/first-acceptance
+   baseline semantics.
+7. PR-007: transactional initialization consent and hardened policy storage.
+8. PR-008: staticcheck cleanup and full gosec triage with narrow suppressions.
+9. PR-009: binary build identity and clean release-output contract.
+10. PR-010: accepted contract/status refresh and ADR-008 through ADR-010.
+11. PR-011: DB backup/restore/integrity/retention operations.
+12. PR-012: verifier isolation capability model and process-bounded baseline.
+
+Do not combine the live canary with these hardening changes. Run it only after
+the exact artifact and provider boundary intended for alpha has passed the
+local and native gates.
+
+## 10. Release gates
+
+| Gate | Alpha | Public beta | GA |
+| --- | --- | --- | --- |
+| Accepted product/security contract | Required | Required | Required |
+| Known critical/high findings | Zero unresolved | Zero unresolved | Zero unresolved |
+| Staticcheck, gosec, govulncheck | Clean or narrowly documented false positive | Required | Required |
+| Native OS/artifact matrix | Advertised alpha subset | All advertised | All advertised plus supported upgrade paths |
+| SQLite migration/backup/restore/kill tests | Required | Required | Required |
+| Local ownership/Git adversarial matrix | Required | Required | Required |
+| Verification isolation | Process-bounded minimum, clearly reported | Required tier enforced by publication policy | Platform claim independently reviewed |
+| Adapter fixture/runtime compatibility | Advertised subset | All advertised clients | Supported-window automation |
+| Disposable provider canary | Private | Private and public | Per release candidate |
+| Signed checksums/SBOM/provenance | Required | Required | Required |
+| Reproducibility | Evidence collected | Published | Independently verified |
+| Incident and rollback drill | Tabletop plus local | Live disposable | Periodic |
+| Release approval | Named owner | Named owner | Evidence manifest signature |
+
+## 11. Quality objectives and service indicators
+
+Targets are measured over the release corpus and opt-in cohort; they are not
+claims about all possible failures.
+
+| Indicator | Target |
+| --- | --- |
+| Wrong repository, owner, ref, SHA, or visibility mutation | 0 |
+| Unconsented Git/provider mutation | 0 |
+| Unrelated user change included in a candidate | 0 |
+| Duplicate external effect after replay/crash | 0 |
+| Successful recovery of retained local commit after provider failure | 100% in release matrix |
+| Backup restore and schema migration integrity | 100% in release matrix |
+| Secret/path/prompt/source leakage in default state/logs/telemetry | 0 known cases; automated negative tests |
+| No-candidate hook latency | p95 below 150 ms on supported native baseline |
+| 100,000-path observation | p95 below 1 s on supported native baseline |
+| Presubmit feedback | below 5 minutes at p95; long schedules moved to explicit tiers |
+| Adapter advertised-version fixture pass rate | 100% |
+| Provider transient recovery convergence | 100% in deterministic and chaos matrices |
+| Accessibility of CLI output/docs | Color-independent, keyboard/screen-reader friendly text, plain fallback, stable JSON |
+
+## 12. Risk register
+
+| Risk | Probability | Impact | Treatment |
+| --- | --- | --- | --- |
+| SQLite concurrency corruption or partial migration | Medium until upgrade | Critical | P0-01/P0-02, native kill/concurrency tests, backups |
+| Symlink/TOCTOU redirect of trusted state or executable | Medium | Critical | P0-03/P1-08, traversal-resistant handles and identity binding |
+| Verifier escapes or leaves descendants | High in current design | High | P0-05/P1-04, capability tiers and publish policy |
+| Agent hook drift creates false completion evidence | High | High | P2-01..04, runtime probes and fail-safe degradation |
+| Ambient provider credential targets wrong identity | Medium | Critical | P2-06..08, explicit identity binding and App tokens |
+| Secret scanner false negative | Medium | High | Exact candidate/history layers, mature offline scanner, provider push protection |
+| Slow default suite reduces developer feedback and encourages bypass | High | Medium | P4-01 tiering and published evidence |
+| Platform sandbox claims exceed actual primitive | Medium | High | Achieved capability attestation and native adversarial tests |
+| Release artifact cannot be attributed or rolled back | High today | High | P0-10/P5, signed provenance and drills |
+| Scope expansion delays a trustworthy v1 | Medium | High | Phase exits, advertised-subset release, deferred list below |
+
+## 13. Explicitly deferred
+
+- A hosted AutoGit control plane, multi-tenant service, or central source
+  storage.
+- Automatic public publication or public-by-default policy.
+- Autonomous conflict resolution, force push, history rewrite, branch deletion,
+  or broad hosted cleanup.
+- Persisting prompts, transcripts, diffs, source, or line-level authorship.
+- Inferring authorship cryptographically from agent-reported events.
+- Building a daemon, microservices, Kafka, or distributed locks without
+  measured need.
+- Depending on MCP roots, sampling, protocol logging, or remote task state for
+  security decisions.
+- ACP as a required v1 integration while its remote/permission model evolves.
+- A GUI before the CLI contracts, telemetry privacy, and safety model are
+  stable.
+
+## 14. Research-derived technical decisions
+
+- SQLite documents a WAL-reset corruption bug affecting versions through
+  3.51.2 in concurrent multi-connection/process use; fixed versions include
+  3.51.3. AutoGit's WAL design makes the upgrade a release blocker.
+  [SQLite WAL](https://www.sqlite.org/wal.html),
+  [modernc SQLite changelog](https://gitlab.com/cznic/sqlite/-/blob/master/CHANGELOG.md)
+- Live database copies are unsafe. Backup/restore must use SQLite's supported
+  backup facilities and separate integrity and foreign-key checks.
+  [SQLite backup API](https://sqlite.org/backup.html),
+  [SQLite corruption guidance](https://www.sqlite.org/howtocorrupt.html),
+  [SQLite PRAGMA reference](https://www.sqlite.org/pragma.html)
+- Git plumbing supports isolated tree construction, but filters, attributes,
+  path formats, and object algorithms must be explicit and tested.
+  [git-write-tree](https://git-scm.com/docs/git-write-tree.html),
+  [git-update-index](https://git-scm.com/docs/git-update-index/2.38.0),
+  [git-hash-object](https://git-scm.com/docs/git-hash-object),
+  [Git hash transition](https://git-scm.com/docs/hash-function-transition/2.23.0.html)
+- Go's traversal-resistant root APIs are the preferred direction for
+  untrusted relative paths where platform support permits.
+  [Go os.Root](https://go.dev/blog/osroot)
+- GitHub Apps provide narrower repository permissions and short-lived
+  installation tokens. REST requests should pin the current API contract and
+  obey rate-limit/retry guidance.
+  [GitHub App differences](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/differences-between-github-apps-and-oauth-apps),
+  [GitHub REST API versions](https://docs.github.com/en/rest/about-the-rest-api/api-versions),
+  [GitHub REST best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api)
+- GH_TOKEN and GITHUB_TOKEN can override stored gh credentials; provider
+  identity must therefore be bound explicitly.
+  [GitHub CLI environment](https://cli.github.com/manual/gh_help_environment)
+- Client hooks are distinct, evolving contracts. Current official references
+  include materially different lifecycle and decision semantics.
+  [Claude Code hooks](https://code.claude.com/docs/en/hooks),
+  [Gemini CLI hooks](https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md),
+  [Cursor hooks](https://prod.cursor.com/docs/hooks),
+  [Codex configuration](https://github.com/openai/codex/blob/main/docs/config.md)
+- MCP security relies on user control and consent; tool annotations are not an
+  authorization boundary, and several earlier primitives have been deprecated.
+  [MCP tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools),
+  [MCP security principles](https://modelcontextprotocol.io/specification/2025-03-26/index),
+  [MCP deprecations](https://modelcontextprotocol.io/seps/2577-deprecate-roots-sampling-and-logging)
+- Local sandbox capabilities differ significantly by OS and must be reported,
+  not collapsed to a Boolean.
+  [Linux Landlock](https://www.kernel.org/doc/html/latest/userspace-api/landlock.html),
+  [bubblewrap](https://github.com/containers/bubblewrap),
+  [Windows AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/appcontainer-isolation),
+  [Apple App Sandbox](https://developer.apple.com/documentation/Security/app-sandbox)
+- Release provenance, SBOMs, pinned CI dependencies, and least privileges are
+  complementary controls.
+  [SLSA build track](https://slsa.dev/spec/v1.2/build-track-basics),
+  [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations),
+  [GitHub Actions secure use](https://docs.github.com/en/actions/reference/security/secure-use),
+  [OpenSSF Scorecard](https://github.com/ossf/scorecard/blob/main/docs/checks.md)
+- Secret scanning remains layered and cannot prove absence. Offline candidate
+  and history scans should be mandatory; network validation must be separately
+  consented.
+  [Gitleaks](https://github.com/gitleaks/gitleaks),
+  [TruffleHog](https://github.com/trufflesecurity/trufflehog/blob/main/README.md),
+  [GitHub push protection](https://docs.github.com/en/code-security/concepts/secret-security/push-protection)
+- Exported telemetry must be opt-in and tightly allowlisted because baggage
+  propagates and high-cardinality dimensions can create privacy and reliability
+  problems.
+  [OpenTelemetry signals](https://opentelemetry.io/docs/concepts/signals/),
+  [OpenTelemetry baggage](https://opentelemetry.io/docs/concepts/signals/baggage/),
+  [OpenTelemetry metrics](https://opentelemetry.io/docs/concepts/signals/metrics/)
+- Agent evals should grade final environment state. For AutoGit, deterministic
+  Git/provider invariants are stronger evidence than model narration.
+  [Anthropic agent eval guidance](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+
+## 15. Comparable-product lessons
+
+| Project | Useful lesson for AutoGit | Boundary to preserve |
 | --- | --- | --- |
-| Phase 0 — contract | Artifacts drafted; review/freeze pending | Agreed product, threat, event, lifecycle, architecture, ADR, and test contract |
-| Phase 1 — foundation | Implementation in progress; exit not claimed | Buildable Go core with durable state and validated ingress |
-| Phase 2 — safe local workflow | Implementation in progress; exit not claimed | Consent through verified local commit with session ownership |
-| Phase 3 — integrations and recovery | Implementation in progress; exit not claimed | Adapters, provider jobs, retries, concurrency, and crash reconciliation |
-| Phase 4 — private alpha | Native OS CI gate passed; reproducible packaging implemented; private-alpha/release gates open | Dogfoodable local/private release on supported OSes |
-| Phase 5 — public beta | Local public-preflight implementation; canary/beta gates open | Explicit-public, portfolio-quality, supportable beta release |
-
-The release-builder integration suite is tagged `release_integration` and runs in the dedicated Ubuntu reproducible-build job; the native OS matrix retains the platform-neutral Go suite.
-
-No phase is complete because its code exists. The phase exit gate requires the
-listed deliverables, tests, security invariants, documentation, and review.
-
-## 4. Work packages
-
-Work package IDs are stable planning identifiers. A package may be split into
-implementation issues, but its exit evidence must remain attached to this ID.
-
-### Phase 0 — contract and readiness
-
-| ID | Work | Dependencies | Deliverable and exit test |
-| --- | --- | --- | --- |
-| `P0-01` | Freeze terminology and requirement IDs | None | Cross-document review; all must-level FR/NFR IDs are traceable in the [test strategy](test-strategy.md) |
-| `P0-02` | Freeze event, result, capability, and error semantics | `P0-01` | [`event-contract.md`](event-contract.md) and schema agree; valid/invalid/replay fixtures are defined |
-| `P0-03` | Freeze lifecycle, state, and side-effect invariants | `P0-01`, `P0-02` | Lifecycle transition table, ADRs, and threat invariants have no contradiction |
-| `P0-04` | Freeze test, provider-safety, and OS strategy | `P0-01..03` | Test targets, disposable provider policy, fuzz/crash plan, and release gates are approved |
-
-Phase 0 exits when the [product requirements](product-requirements.md) exit
-criteria are satisfied and Phase 1 work can start without a product-policy
-decision. No provider or user-project operation is part of Phase 0.
-
-### Phase 1 — foundation
-
-| ID | Work | Dependencies | Deliverable and tests |
-| --- | --- | --- | --- |
-| `P1-01` | Go module, CLI skeleton, configuration, structured errors | `P0-02`, `P0-03` | Reproducible build; command/error contract tests; no shell execution from ingress |
-| `P1-02` | SQLite schema, migrations, repositories, permissions, retention | `P0-03` | Migration/rollback, transaction, corruption, and restrictive-permission tests |
-| `P1-03` | Canonical event/result types, JSON Schema validation, receipts, digesting | `P0-02`, `P1-02` | Schema/adapter contract, size, malformed input, duplicate ID, collision, and unknown-major tests |
-| `P1-04` | System Git, filesystem, clock, process, and provider ports | `P0-03`, `P1-01` | Deterministic fakes; argument/path/redaction tests; network-denied core suite |
-| `P1-05` | Correlation IDs, redacted audit events, doctor/status plumbing | `P1-02..04` | Audit transition and diagnostic privacy tests |
-
-Phase 1 exits when the core builds on the required platforms, accepts only the
-canonical contract, persists receipts transactionally, and passes all
-foundation smoke/core tests without network credentials.
-
-### Phase 2 — safe local workflow
-
-| ID | Work | Dependencies | Deliverable and tests |
-| --- | --- | --- | --- |
-| `P2-01` | Canonical repository/worktree discovery and consent policy | `P1-01..05` | `enable/disable/status/plan/config explain`; root, policy precedence, consent, plan, and local-only tests |
-| `P2-02` | Session/task/prompt state, completion evidence, causal buffer | `P1-02..03`, `P2-01` | Event ordering, weak-stop handling, queue-unknown, replay, and synthetic-task tests |
-| `P2-03` | Baselines, ownership attribution, isolated candidate/index construction | `P1-04`, `P2-02` | Dirty-worktree, overlap, worktree, symlink, Unicode/control-path, rename/delete, and concurrent writer tests |
-| `P2-04` | Candidate security policy and trusted verification runner | `P1-04`, `P2-03` | Secret/history/path/size/conflict tests; bounded command, output, cancellation, digest, and no-verifier tests |
-| `P2-05` | Conventional Commit evidence/composition and local Git transaction | `P2-03..04` | Message quality/parser/trailer tests; intent-before-effect, exact tree, no-force, and crash reconciliation tests |
-
-Phase 2 exits when a consented session can safely produce one verified local
-commit containing only owned changes, while preserving unrelated user state on
-all failure paths. No remote provider is required for this exit.
-
-### Phase 3 — integrations and recovery
-
-| ID | Work | Dependencies | Deliverable and tests |
-| --- | --- | --- | --- |
-| `P3-01` | Durable coordinator, leases, outbox, retries, crash reconciliation | `P1-02`, `P2-02`, `P2-05` | Fault injection at every intent boundary; duplicate/out-of-order, lease, restart, and idempotency tests |
-| `P3-02` | GitHub provider port via `gh`: identity, create, remote, push, postconditions | `P2-01`, `P2-05`, `P3-01` | Fake-provider contract, collision/auth/offline/non-fast-forward/protection tests; no force/all-ref/delete |
-| `P3-03` | Codex, Claude Code, Cursor, Gemini CLI, OpenCode, CommandCode adapters | `P1-03`, `P2-02` | Six adapter contract suites, capability degradation, install invocation, and no-adapter-mutation tests |
-| `P3-04` | Owned adapter installation, upgrade, backup, uninstall | `P3-03`, `P1-05` | Config merge/backup/rollback/idempotence and ownership-preservation tests |
-| `P3-05` | `sync`, `verify`, `retry`, `logs`, notifications, result/exit mapping | `P3-01..04` | CLI black-box tests, redacted diagnostics, local-commit/push-failure notification tests |
-
-Phase 3 exits when supported clients produce equivalent canonical behavior,
-remote jobs are exact-SHA/idempotent, and process crashes or network failures
-cannot create duplicate/wrong pushes or lose a local commit.
-
-### Phase 4 — private alpha
-
-| ID | Work | Dependencies | Deliverable and tests |
-| --- | --- | --- | --- |
-| `P4-01` | Cross-platform packaging and CI | `P3-03..05` | Required Linux/macOS/Windows/ARM smoke and core matrix; signed/reproducible build evidence |
-| `P4-02` | Controlled dogfood on local/private repositories | `P3-01..05`, `P4-01` | Test-only repository cohort; no user project/GitHub mutation; opt-in private publication and rollback drills |
-| `P4-03` | Performance, observability, support diagnostics, documentation | `P3-05`, `P4-01` | NFR p95 benchmarks, `doctor/status/logs`, runbooks, redaction review, and defect regression fixtures |
-
-Private alpha exits only when the full regression suite, safety gates, OS
-matrix, and recovery drills pass for a bounded internal cohort. Alpha does not
-authorize default public publication.
-
-### Phase 5 — public beta
-
-| ID | Work | Dependencies | Deliverable and tests |
-| --- | --- | --- | --- |
-| `P5-01` | Public preflight and portfolio readiness | `P2-04..05`, `P3-02`, `P4-03` | Explicit visibility/destination/file/scan/verification/README/license summary; placeholder/readiness checks |
-| `P5-02` | Isolated public canary and beta release process | `P4-01..03`, `P5-01` | Dedicated tagged provider cohort; exact owner/name/visibility/ref/SHA postconditions and allowlisted cleanup |
-| `P5-03` | Beta support, upgrade, incident, and rollback operations | `P3-04..05`, `P5-02` | Release notes, compatibility manifest, migration/rollback drills, security response and support triage |
-
-Public beta exits when `FR-PUB-*`, `FR-CMT-*`, `FR-VER-*`, `FR-SEC-*`, and all
-non-negotiable threat invariants pass the extended release suite. The beta
-must preserve private-by-default behavior and must never use a developer's
-personal project or token as a test fixture.
-
-## 5. Cross-package dependencies and sequencing
-
-```text
-Phase 0 contract
-      |
-      v
-Phase 1 types/state/ports
-      |
-      v
-Phase 2 consent -> ownership -> guards/verification -> local commit
-      |
-      v
-Phase 3 coordinator + provider + adapters + operations
-      |
-      v
-Phase 4 private alpha / OS and performance
-      |
-      v
-Phase 5 public preflight -> canary -> public beta
-```
-
-Tests and fakes begin with each package and may proceed in parallel when their
-ports are stable. Provider work cannot unblock local safety work. Adapter work
-cannot define core semantics. Public canary work cannot begin until exact
-destination, visibility, history, and cleanup postconditions are implemented.
-
-## 6. Model allocation and work protocol
-
-The project uses the requested two-model division:
-
-| Model | Authorized role | Reasoning policy |
-| --- | --- | --- |
-| 5.6 Sol | Main planning/review model only | High reasoning for architecture, requirements trade-offs, review, risk-gate decisions, and final acceptance review; it does not perform implementation file/code/test work |
-| 5.6 Luna | Actual implementation, documentation, and test work | Choose reasoning by task: medium for bounded docs/mechanical changes, high for security/state/concurrency/provider work, and focused lower effort only for mechanical validation when risk is low |
-
-Every work package has one written objective, dependency list, acceptance
-tests, and a review handoff. Luna reports exact paths, commands, results, and
-unresolved risks. Sol reviews against the normative documents and may return a
-package for rework; review does not silently change product policy.
-
-## 7. Risk gates
-
-The following gates apply throughout implementation; later phases cannot waive
-an earlier gate:
-
-- **RG-01 Consent:** no Git/provider mutation without recorded tracking
-  consent; public visibility requires separate explicit consent.
-- **RG-02 Ownership:** no unconditional whole-worktree staging; ambiguous or
-  overlapping paths are excluded or approved explicitly.
-- **RG-03 Evidence:** guards, verification, message, commit, and push evidence
-  name the same candidate/base/policy digests and are invalidated on change.
-- **RG-04 Execution safety:** no shell interpolation, unsafe path/ref/option
-  handling, unbounded command, secret output, or implicit provider operation.
-- **RG-05 Side effects:** durable intent precedes Git/provider effects; exact
-  commit SHA/ref postconditions and crash reconciliation are mandatory.
-- **RG-06 Recovery:** offline/auth/non-fast-forward failures retain local work,
-  report incomplete publication, and retry only the same safe intent.
-- **RG-07 Privacy:** no prompt, source, diff, token, credential, remote, or
-  secret leakage in default logs/state/results.
-- **RG-08 Provider safety:** tests use fakes or tagged disposable resources;
-  cleanup is allowlisted and never broad or destructive.
-- **RG-09 Release quality:** required OS/performance/reliability thresholds and
-  all traceability/test-strategy gates pass before alpha or beta promotion.
-
-## 8. Definition of Done
-
-A work package is done only when all applicable conditions hold:
-
-1. Its behavior is linked to stable FR/NFR IDs and does not contradict the
-   event contract, lifecycle, architecture, ADRs, or threat model.
-2. The implementation uses typed ports and bounded, argument-safe processes;
-   no direct cross-module storage access or undocumented fallback exists.
-3. Unit/component tests cover success, failure, replay, cancellation, and
-   boundary cases; disposable Git/provider tests cover every external effect.
-4. Tests are deterministic, isolated, network-denied unless explicitly in the
-   provider canary, and safe against user-project/GitHub mutation.
-5. Security findings are redacted and actionable; no secret, prompt, source,
-   or credential enters default diagnostics.
-6. Crash/concurrency behavior is tested for any durable intent or shared
-   repository state.
-7. Required documentation, CLI/result/error behavior, migrations, upgrade
-   notes, and operational runbooks are updated.
-8. The package passes the relevant smoke/core/full/extended tier and its
-   acceptance evidence is recorded with OS, version, and command results.
-9. Review confirms no force-push, destructive cleanup, unconsented public
-   operation, stale verification, or unrelated user change can pass.
-
-## 9. Implementation slices, delivered evidence, and open gates
-
-The code currently contains implementation slices across phases. Their
-presence is not phase-exit evidence and does not waive any dependency or
-sequencing gate.
-
-Delivered where section 10 provides direct evidence:
-
-- [x] Go module, CLI/CI skeleton, and cross-build smoke definition.
-- [x] SQLite/state primitives, receipt and lifecycle transactions, and
-      restrictive local-state permissions.
-- [x] Canonical event/result validation, receipts/deduplication, digesting,
-      and stable lifecycle/audit evidence.
-- [x] Core-owned completion-candidate promotion requires an observed ingress
-      completion claim, known queue state, and settled tool/prompt state; replay
-      retries the deterministic promotion without creating duplicate facts.
-- [x] Argument-safe Git/filesystem/process/provider ports and deterministic
-      fakes.
-- [x] Local public-preflight validation and canonical report digest.
-
-Open gates and next priorities:
-
-- [ ] Complete acceptance review of the Phase 0 terminology, IDs, schema,
-      lifecycle, threat invariants, and test traceability matrix recorded in
-      [`contract-freeze.md`](contract-freeze.md); the v1 compatibility boundary
-      is now explicit, while approval and the future-major migration window
-      remain policy gates.
-- [x] Bridge durable session/repository observations into owned candidate
-      derivation and the verified local-commit workflow for both explicit clean
-      session completion and the trusted hook completion profile; implicit
-      inference without an explicit trusted profile remains a separate policy
-      gate.
-- [x] Complete local public preflight/provider CLI publication, including
-      readiness evidence and exact remote visibility postconditions; live
-      canary evidence remains a separate release gate.
-- [x] Observe hosted native Linux, macOS, and Windows coverage in
-      [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
-      at `76dfbee`; all native tests, builds, and p95 gates passed.
-- [ ] Run an opt-in disposable GitHub canary with exact postconditions and
-      allowlisted cleanup.
-- [x] Recover and rerun the installed 177-case prototype regression floor.
-- [x] Replace that compatibility floor with Go v1 coverage and reach the
-      >=609 deterministic release-test target. CI enforces the floor by
-      counting passing named Go test cases/subtests from `go test -json`.
-- [ ] Complete all Phase 0 freeze, phase-exit, external-provider, release,
-      canary, and beta gates before claiming promotion.
-
-## 10. Local implementation evidence (2026-09-01)
-
-The first implementation slice is intentionally limited to contracts that can
-be exercised without a user repository or network credentials:
-
-- `internal/events`: bounded UTF-8 JSON envelope decoding, duplicate-key and
-  trailing-input rejection, event-class/producer/type and scope validation,
-  canonical SHA-256 payload digests, SQLite receipt transactions, replay and
-  identity-conflict detection, causal pending records, lifecycle projection
-  transactions, audit metadata, and restrictive state permissions.
-- `internal/policy`: explicit policy merge semantics, local-only provider
-  prohibition, and separate public-consent requirement.
-- `internal/repository`: canonical repository/worktree discovery and keyed
-  non-reversible identities, including nested working directories and linked
-  worktree metadata checks; it now exposes a read-only baseline observation
-  boundary for HEAD, index/status digests, changed-path rename pairs, and
-  bounded in-memory file fingerprints. `internal/staging` can consume that
-  observation directly, while `internal/state` persists only bounded
-  source-free HMAC path/content/mode evidence and rejects changed-baseline
-  replays.
-- `internal/gitport`: argument-array execution with bounded output and exact
-  SHA-to-`refs/heads/<ref>` push construction.
-- `internal/historyscan`: bounded, read-only exact-candidate-SHA history
-  scanning with policy/scanner-bound evidence and redacted findings.
-- `internal/commit` and `internal/security`: Conventional Commit validation,
-  trailer/content checks, secret/conflict findings, and redaction.
-- `internal/app` and `cmd/autogit`: stable JSON hook results, optional adapter
-  translation, keyed project resolution, lifecycle status projection, redacted
-  diagnostics, and local policy operations with private/local defaults.
-- `internal/state`, `internal/staging`, `internal/verification`,
-  `internal/coordinator`, `internal/gittransaction`, `internal/provider`,
-  `internal/adapters`, and `internal/install`: tested durable job/outbox/lease,
-  ownership/index, bounded verifier, durable git intent/reconciliation,
-  exact-provider, six-adapter contract matrix, and owned-config primitives;
-  `staging` now excludes unchanged baseline paths, blocks baseline edits and
-  deletions as ambiguous, retains an explicitly observed file mode, and
-  exposes a deep-copied immutable candidate snapshot directly compatible with
-  `gittransaction`. It can capture explicit regular files from a canonical
-  root, rejects symlinks at every path component, derives a plan from that
-  capture, and binds content, mode, and deletion state into a private ownership
-  digest. `workflow.RunPlan` rejects empty plans and accepts candidate bytes
-  only from this ownership plan; its guard evidence binds that immutable plan
-  digest. `gittransaction`
-  additionally separates real-Git candidate preparation from commit/ref
-  mutation with exact-tree, unchanged-HEAD/index, and idempotent recovery
-  tests.
-- `internal/workflow`: a composable local workflow that accepts a captured,
-  caller-owned snapshot and recorded tracking policy; it scans before durable
-  Git intent, prepares an isolated candidate, runs a frozen trusted verifier
-  set against its exact candidate/base/policy/guard evidence, and creates only
-  the verified AutoGit-owned local commit ref. It copies the input snapshot at
-  entry so a later collaborator mutation cannot change the scanned/verified/
-  committed bytes. It has real-Git coverage for preserving the current branch
-  and shared index, plus a secret-block path that proves no durable intent or
-  ref is created.
-- `internal/publication`: a pure local public-preflight package with no Git,
-  provider, or network dependency; it validates consent, destination identity,
-  candidate/history scans, verification evidence, file metadata, README/license
-  readiness, and produces a canonical report digest.
-- `internal/provider`: provider push binding that accepts only a validated
-  remote alias whose resolved URL matches the canonical GitHub destination;
-  `internal/provider.SystemRunner` (also exposed as `CommandRunner`) is the
-  production bounded process runner for Git/`gh` argv, with direct execution,
-  cancellation, controlled environment, and capped output. The separate
-  `internal/verification.ExecRunner` provides the corresponding bounded
-  process boundary for trusted verifier argv.
-
-The following review/release gates remain open and are not represented as
-completed: acceptance of the Phase 0 contract, the opt-in disposable-provider
-canary, and alpha/beta promotion. Implicit
-message/verifier inference remains intentionally unavailable without an
-explicit trusted profile; the protected
-`enable --auto-complete --verifiers FILE` profile, source-free durable
-evidence, session start/complete coordinator, session-start hook wiring,
-explicit `sync --complete --all-owned` resume path, deterministic task-intent
-message composer, and trusted hook completion path are implemented. The
-user-facing consent-gated repository-initialization command, explicit private
-and evidence-gated public `publish` paths, deterministic lifecycle fact
-emission, tested repository-creation/local-remote transaction package, adapter
-discovery/install surface, and randomized durable-boundary recovery matrices
-are implemented, but local evidence does not satisfy those external release
-gates.
-The prototype shell test scripts are not part of this repository, but the
-installed reference checkout was rerun on 2026-09-05 and passed all 177
-disposable scenarios. Native OS execution is now covered by the hosted CI
-evidence recorded in section 10.19. The local test suite does not make claims
-about the remaining provider or phase-promotion gates.
-
-### 10.1 Portability evidence (local, 2026-09-01)
-
-The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) now
-defines the native matrix and cross-build smoke jobs. Fresh `go test ./...`,
-`go vet ./...`, `go build ./...`, and all three requested cross-build commands
-pass locally. Hosted native execution evidence is recorded in section 10.19;
-the CI run also passed the deterministic test floor and native p95 gates.
-Provider credentials, network publication, and user-project fixtures are not
-used.
-
-### 10.2 Local implementation evidence (2026-09-04)
-
-The following additional slices are implemented and covered by deterministic
-tests:
-
-- `cmd/autogit publish` accepts only a completed AutoGit commit intent for the
-  discovered repository and requires an explicit remote alias, owner,
-  repository, branch, and visibility. It validates tracking/provider policy
-  before resolving `gh` and records one immutable push intent keyed by the
-  commit ID.
-- Private publication uses the provider's exact remote URL binding and exact
-  commit-SHA/ref postcondition through the durable coordinator. A transient
-  provider failure remains `RETRY_WAIT`; a successful retry reuses the same
-  SHA and destination identity.
-- Remote policy can be enabled explicitly with `--provider github`,
-  `--owner`, `--destination`, and visibility; the default `enable` behavior
-  remains local-only and private. Public policy and command consent are
-  separate requirements.
-- Public `publish` returns a bounded, lowercase-JSON preflight report before
-  provider executable discovery when the required local candidate/history,
-  verification, README/license, and readiness evidence is not available. When
-  all explicit evidence passes, it confirms hosted owner/name/visibility before
-  allowing the exact-SHA push.
-- `install --list` exposes all six adapter manifests and marks observation-only
-  clients as non-installable until a stable client hook contract exists; it
-  does not discover implicit configuration paths or mutate state.
-- The CLI trusted executable resolver rejects a final-component symlink, and
-  durable push intents retain a canonical remote-destination digest.
-
-Fresh local evidence for this slice is `go test ./...`, `go test -race ./...`,
-`go vet ./...`, and `go build ./...`. The private publication test uses fake
-local `git`/`gh` executables and no network credentials. This evidence does
-not satisfy the live GitHub canary, prototype-regression, or release-count
-gates; hosted native evidence is recorded in section 10.19.
-
-### 10.3 Lifecycle facts and repository transaction evidence (2026-09-04)
-
-The CLI emits deterministic core-owned domain facts after explicit local sync
-completion and after each durable publication attempt. The facts bind the
-candidate, base, policy, verifier, guard, message, commit, remote, ref, and
-operation error category digests needed by the lifecycle projection. Replaying
-the same idempotency key is safe; legacy/manual commit intents without a
-projected lifecycle scope remain authoritative in durable job state.
-
-`autogit init` now provides the user-facing repository-initialization
-boundary. It resolves an explicit canonical directory, rejects protected and
-nested/bare Git targets, persists the selected local/private or remote/private/public
-tracking policy before invoking Git, initializes an explicit branch, and merges
-bounded ecosystem-derived ignore entries without staging or committing user
-files, and creates a minimal README only when none exists. Its `--dry-run` path performs the same canonical preflight without
-creating state or Git metadata. Remote creation remains a separate explicit command so hosted side
-effects are independently reviewable and resumable.
-
-`autogit doctor` reports the trusted executable availability for Git and
-`gh`, the adapter/installable counts, and the availability of the SQLite and
-durable lease stores. Provider authentication is explicitly reported as
-`not_checked` because doctor does not contact GitHub or expose credentials.
-
-For supported known queue states, the application now promotes an accepted
-ingress `task.completed` claim to a deterministic core
-`task.completion_candidate` fact only after the reducer confirms that no tool
-or blocking prompt remains. An ingress claim cannot directly complete a task,
-and a forged domain completion still requires the recorded candidate fact;
-verified candidate derivation and explicit local sync remain the mutation
-boundary.
-
-`autogit remote create` and `internal/provider.RepositoryTransaction` provide
-a durable, collision-safe
-hosted-repository creation boundary. It persists intent before provider
-creation, refuses mismatched existing aliases, requires exact hosted
-owner/name/visibility confirmation, records a hosted-created intermediate
-state before local mutation, verifies the attached URL, and never deletes or
-implicitly rebinds a hosted repository after failure. A created but unattached
-job can be resumed by the same immutable identity; collision and identity
-failures remain visible and do not attach a same-name remote.
-Remote job identity is bound to the keyed repository identity (state schema
-v7), so a job cannot be replayed against another repository in the shared
-application state directory.
-
-### 10.4 Cross-process ownership recovery evidence (2026-09-05)
-
-The session boundary now encodes a bounded, deterministic, source-free
-baseline manifest before recording `session.started` or an explicit `sync`
-baseline. Each recorded file uses a key-bound HMAC path identifier plus
-presence, executable-bit mode, and content digest; raw filenames and source
-bytes are not persisted. The schema-7 migration adds this evidence to existing
-session rows and validates it on replay.
-
-`sync --complete --all-owned` can resume a hook-captured session in a fresh
-process. It re-observes `HEAD`, the shared index, and current status, maps
-current paths to the manifest with the repository identity key, excludes paths
-unchanged from the baseline, blocks edits/deletions of pre-existing dirty
-paths, and owns only newly changed paths. For clean tracked paths, it also
-consults the immutable baseline tree so deletions and renames become explicit
-delete/add entries rather than silently losing the deletion. The explicit
-`--path` mode remains available for a narrower caller-selected candidate.
-Tests cover clean and dirty cross-process resumes, pre-existing-work
-exclusion, changed-baseline blocking, clean tracked rename/delete handling,
-key binding, malformed evidence, and absence of raw path/source leakage.
-
-`doctor` is read-only even before initialization: it reports unavailable
-state/lease stores without creating the state directory, database, or identity
-key. Duplicate completion ingress retries the deterministic core candidate
-promotion, while the core still requires an ingress completion claim and
-settled tool/prompt/queue state.
-
-### 10.5 Read-only plan evidence (2026-09-05)
-
-`autogit plan --repo DIR` now performs a bounded repository observation and
-returns an actionable JSON summary containing `HEAD`, shared-index/status/path
-digests, changed-path count, and tracking/local/provider/public-consent checks.
-`autogit status --repo DIR` exposes the same repository summary alongside
-lifecycle state. Both commands use the read-only repository runner; real
-repository tests snapshot `HEAD` and the shared index before and after the
-operations. Neither command stages files, creates commit intents, moves refs,
-or contacts a provider, and `plan` does not initialize AutoGit state.
-`config explain` likewise validates optional verifier configuration without
-creating AutoGit state.
-
-### 10.6 Read-only verification recovery (2026-09-05)
-
-`autogit verify --all-owned` now reconstructs a hook-captured session from its
-source-free durable baseline manifest, observes current ownership, and runs
-the trusted verifier set without requiring raw paths from the original
-process. It is intentionally read-only: verification does not create a
-commit intent, move an AutoGit ref, or alter the shared index. Explicit
-`--path` verification remains available for callers that want a narrower
-candidate scope.
-
-### 10.7 Consistent filesystem baseline capture (2026-09-05)
-
-Baseline capture now re-observes `HEAD`, the Git index identity/content, and
-porcelain status after reading the selected files. Any repository change
-during that window fails closed instead of recording a mixed-time baseline.
-The capture boundary also retains the existing race-substitution checks and
-supports linked worktrees, Unicode paths, rename/delete status records, and
-Git-ignore/control-path validation. Real tests cover a concurrent status
-change, replacement during a read, linked-worktree index resolution, and a
-Unicode candidate path.
-
-### 10.8 Durable intent fault evidence (2026-09-05)
-
-Coordinator tests now inject failures at the initial commit and push intent
-write boundaries and assert that no Git or provider effect is invoked. They
-also inject commit-result persistence failure after the Git effect and verify
-that restart-style evidence reconciliation records the result without
-repeating the commit. Provider transaction tests inject initial remote-intent
-persistence failure and a post-hosted-create result persistence failure; retry
-confirms the exact hosted identity before local attachment and does not
-recreate the repository. This is deterministic boundary coverage; the
-required 1,000 randomized crash/concurrency schedules and every external
-release gate remain open. Real SQLite lease tests run concurrent identical
-commit and hosted-create requests and verify that only one external effect
-occurs. Lease reacquisition now fails for every active owner, and release is
-serialized with acquisition, preventing same-process overlap and stale-owner
-release races. Commit processing rechecks the durable intent after waiting for
-the lease, so a contended retry observes a completed job instead of issuing a
-second Git effect.
-
-The local Git transaction tests also inject failure at commit-intent
-persistence and assert that `commit-tree` and AutoGit refs remain untouched.
-They inject commit-result persistence failure after ref creation and verify a
-retry recovers the existing ref without creating a second commit. Lifecycle
-completion now validates that the loader handoff matches the ingress session,
-repository, client, and required ephemeral trusted root before running the
-workflow.
-
-Independent state-store handles now exercise concurrent commit and hosted-create
-requests as process-boundary tests, including reopening SQLite after a lost
-commit, push, or hosted-create result. Receipt/projection and durable state
-transactions use SQLite immediate writer locking with a bounded busy timeout;
-this prevents deferred read-to-write upgrades from returning `SQLITE_BUSY`
-while preserving transactional rollback and idempotent replay. Concurrent
-duplicate lifecycle completion ingress is verified to converge on one AutoGit
-ref and one durable task completion fact. A local remote-attachment response
-loss is also retried from the exact durable hosted identity without recreating
-or reattaching the remote twice.
-
-The four legacy compatibility suites were rerun from the installed reference
-checkout on 2026-09-05 and passed all 177 disposable scenarios (16, 53, 105,
-and 3). They remain regression-floor evidence only; they exercise the Bash
-hook and do not replace the Go v1 suite or its enforced `>=609` floor.
-
-### 10.11 Deterministic commit fault schedule evidence (2026-09-05)
-
-`internal/coordinator` now runs seeded 1,000-schedule commit and 1,000-schedule
-push matrices plus 1,000 concurrent multi-store commit schedules. They cover
-clean operation, durable intent/result-write failure, transient retry, lease
-serialization, and idempotent recovery. Each schedule retries or reconciles
-the same immutable request and asserts exactly one Git/provider effect. This
-strengthens deterministic intent recovery evidence but does not satisfy the
-remaining randomized concurrent process schedules, canary, or
-phase-promotion gates.
-
-### 10.12 Subprocess recovery evidence (2026-09-05)
-
-`internal/coordinator/process_recovery_test.go` now runs real child-process
-crash schedules after durable commit and push intent, after the Git/provider
-effect, and after result persistence, then reopens SQLite and proves one exact
-recovered effect. It also runs two independent child processes through the
-same durable writer lease and proves one commit effect. This is stronger
-process-boundary evidence for commit and push, but it does not close the
-required 1,000 randomized schedules across every durable intent boundary.
-
-`internal/gittransaction/process_recovery_test.go` adds real child-process
-crash coverage after the local Git ref update and after commit-result
-persistence, plus the pre-effect intent case, and proves restart recovery or
-fail-closed reconciliation without creating a second commit object.
-`internal/provider/process_recovery_test.go` does the same for hosted
-repository creation and local attachment, proving that a lost hosted-create
-or attach result is recovered from the exact durable identity. These tests
-strengthen the process-boundary evidence, but do not close the required 1,000
-randomized schedules across every durable intent boundary.
-
-### 10.13 Fail-closed hosted intent reads (2026-09-05)
-
-The hosted-repository transaction now propagates a durable intent read error
-after the initial intent write instead of treating an unavailable record as an
-empty request. A regression test proves that no hosted create call occurs when
-that read fails, preventing a transient state-store failure from issuing a
-duplicate provider operation.
-
-It also rejects `REMOTE_CREATED` and `REMOTE_ATTACHED` records that lack the
-exact hosted identity required for recovery. This prevents an incomplete
-record from being interpreted as permission to create the destination again.
-
-The CLI publication and retry paths now propagate push-job read failures
-before emitting lifecycle facts. A closed or unavailable state store therefore
-returns an explicit state error instead of silently reporting a publication
-without its durable projection attempt.
-
-### 10.14 Seeded randomized subprocess schedules (2026-09-05)
-
-The release test suite now runs three reproducible 1,000-schedule subprocess
-matrices: coordinator commit/push intent/effect/result boundaries, local Git
-transaction intent/ref/result boundaries, and hosted repository intent/create/
-created/attached boundaries. Each matrix asserts one effect, exact durable
-completion, and coverage of every named boundary. This closes the randomized
-process evidence for those side-effect protocols; the remaining persistence
-boundaries are recorded below.
-
-### 10.15 Randomized persistence-boundary schedules (2026-09-05)
-
-The release suite now also runs reproducible 1,000-schedule subprocess
-matrices for event receipt acceptance, session-baseline persistence, and
-candidate/verification persistence. Each matrix covers pre-write, post-write,
-normal, and concurrent process schedules, then reopens the durable store and
-asserts one exact receipt or immutable evidence record. Candidate and
-verification records now have typed restart reads, digest/state validation, and
-same-ID immutable identity-conflict rejection.
-
-The state opener establishes a new SQLite file with mode `0600` before
-migration and retries bounded `SQLITE_BUSY` migration failures. This closes the
-randomized local crash/concurrency evidence for every implemented durable
-intent boundary: event receipt, baseline, candidate/verification, local Git
-transaction, hosted create/attach, and coordinator commit/push. Native OS
-execution, the disposable provider canary, and alpha/beta promotion remain
-external release gates. The non-race release stream runs all 1,000 schedules;
-race-enabled CI samples 50 schedules per newly added persistence matrix so
-the instrumented subprocess tests stay within Go's per-package timeout.
-
-### 10.16 Local performance and traceability evidence (2026-09-05)
-
-The repository now contains 15 Go benchmarks covering the no-candidate core
-hook, canonical event build
-and decode, adapter digesting/manifests, repository path digests at 1,000 and
-100,000 paths, actual 100,000-path baseline capture, durable baseline encoding,
-commit messages, policy merge, security scanning, publication preflight, and
-lifecycle reduction. The
-benchmark suite runs with `go test -run '^$' -bench '^Benchmark' ./...`.
-This satisfies the local benchmark-suite artifact requirement. Hosted p95
-latency evidence is recorded in section 10.19; performance and phase
-promotion remain release gates.
-`scripts/performance-gate.sh` runs 20 samples and enforces the documented
-150-ms no-candidate-hook and 1-second 100,000-path baseline p95 limits. The
-native CI matrix now emits five benchmark samples and runs those p95 gates per
-supported runner; the hosted evidence in run 34044266757 passed them on Linux,
-macOS, and Windows. This closes the native-OS gate only; it does not promote a
-release phase.
-
-`TestMustLevelRequirementsHaveTraceabilityRows` parses the product
-requirements and fails when a functional or non-functional requirement is
-missing from the test-strategy traceability matrix or appears more than once.
-It validates matrix maintenance locally without treating planned external
-canary or phase-promotion evidence as complete.
-
-### 10.17 Disposable provider-canary harness (2026-09-05)
-
-The opt-in `github_canary` provider test and
-[`scripts/github-canary.sh`](../scripts/github-canary.sh) now exercise a real
-GitHub repository only when manually dispatched with a dedicated owner and the
-`AUTOGIT_CANARY_TOKEN` secret. The run creates the exact
-`autogit-v1-test-<run-id>` identity, verifies
-owner, full name, visibility, branch, and commit SHA, and deletes only that
-validated repository in an exit trap. Public visibility additionally requires
-the explicit `PUBLIC` dispatch confirmation. The workflow is
-[`github-canary.yml`](../.github/workflows/github-canary.yml); live canary
-execution and cleanup evidence remain release gates.
-
-### 10.18 Release support and rollback artifact (2026-09-05)
-
-[`release-runbook.md`](release-runbook.md) records the private-alpha/public-beta
-evidence checklist, private-first rollout, incident metadata, adapter rollback,
-durable-intent reconciliation, compatibility migration, and disposable-resource
-cleanup procedure. It intentionally leaves approval, the live canary, and
-phase-promotion decisions with the release owner.
-
-### 10.19 Hosted native CI evidence (2026-09-05)
-
-[CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
-completed successfully for commit `76dfbee08aa42d25a39f0231d876f03e7724a83e`.
-All eight jobs passed: native Ubuntu, macOS, and Windows; Linux arm64,
-Darwin arm64, and Windows amd64 cross-builds; security analysis; and
-reproducible release packaging. Each
-native runner passed formatting, tests, the `>=609` deterministic test floor,
-build, benchmark sampling, and the p95 performance gates; Linux and macOS also
-passed race tests. This closes the native-OS gate. It does not close Phase 0
-acceptance, the disposable provider canary, or private-alpha/public-beta
-promotion.
-
-### 10.20 Gate audit (2026-09-05)
-
-- **Phase 0 acceptance — open.** The contract-freeze record says
-  `product acceptance review pending`; the product requirements, threat model,
-  event contract, lifecycle, architecture, and test strategy still carry
-  draft/proposed acceptance status. The requirements-to-test traceability test
-  passes, and the frozen terminology/invariants are recorded, but no product
-  approver and acceptance date are recorded. This is evidence for review, not
-  a Phase 0 exit.
-- **Disposable GitHub canary — open.** The tagged harness and allowlisted
-  cleanup path are implemented, and the local tagged token-boundary test
-  passes. The shell entrypoint requires `AUTOGIT_CANARY_TOKEN` and overwrites
-  `GH_TOKEN` from that dedicated value. No live run or cleanup artifact exists;
-  no canary was attempted because the dedicated token is not present in this
-  environment.
-- **Private alpha — open.** The native OS CI gate, deterministic floor,
-  security analysis, cross-builds, p95 gates, local regression floor, and
-  documented local recovery evidence are present. The bounded private cohort,
-  release-owner review, and remaining acceptance/provider evidence are not
-  recorded, so alpha is not promoted.
-- **Public beta — open.** Public preflight and the release runbook exist, but
-  beta depends on the unresolved Phase 0 and private-alpha decisions and the
-  live canary/public release evidence. No beta promotion is claimed.
-
-### 10.21 Deterministic release-build artifact (2026-09-05)
-
-[`scripts/release-build.sh`](../scripts/release-build.sh) builds supported
-Linux, macOS, and Windows amd64/arm64 binaries with `-trimpath`, disabled VCS
-stamping, and a fixed linker build ID. The script validates requested targets,
-does not publish or remove anything, names Windows artifacts with `.exe`, and
-writes a sorted `SHA256SUMS` file for only the binaries built in that run. Its
-integration test proves identical Linux amd64 bytes from two builds, no
-embedded local source path, correct Windows arm64 output architecture,
-checksums, and rejection of unsupported targets. CI now runs all six supported
-targets twice and byte-compares every matching artifact. Signing remains a
-release-owner gate: the repository contains no signing key and this artifact
-does not claim a signed release.
-
-### 10.22 Compatibility manifest (2026-09-05)
-
-[`compatibility-manifest.json`](compatibility-manifest.json) is the release
-artifact for the v1 event/result majors, current durable schema behavior, and
-all six adapter contracts/capabilities. Its regression test compares every
-entry to the actual adapter manifest and opens a new state database to verify
-the durable schema version. It is an unsigned, unreleased compatibility record
-and does not approve a migration or beta release.
-
-### 10.23 Release-support artifacts (2026-09-05)
-
-[`release-notes.md`](release-notes.md) provides an unreleased, redacted
-release-notes template tied to the compatibility manifest and release evidence.
-The release runbook now defines security/support triage categories, a
-publication stop-and-preserve procedure, redacted incident metadata, and the
-release-owner decisions that cannot be automated. These artifacts implement
-the P5-03 documentation surface without claiming a release note, incident
-response authority, or beta promotion.
+| [Aider](https://github.com/Aider-AI/aider/blob/main/aider/website/docs/git.md) | Fast automatic commits, separate handling of existing dirty files, undo, and generated commit messages make Git automation approachable | AutoGit should differentiate on explicit consent, immutable verification, and never guessing ownership |
+| [GitButler](https://github.com/gitbutlerapp/gitbutler/blob/master/README.md) | Hunk assignment and an operation timeline make complex Git state reviewable | Do not import implicit history rewriting or weaken AutoGit's exact-effect rules |
+| [Entire](https://github.com/entireio/cli) | Per-worktree checkpoints and rewind improve recovery | Metadata branches and transcripts can expose source/context; keep AutoGit metadata minimal and local |
+| [Git AI](https://github.com/git-ai-project/git-ai/blob/main/README.md) | Git Notes can support optional ecosystem attribution | Agent-reported attribution is evidence, not cryptographic proof, and must remain opt-in |
+| [Git Town](https://github.com/git-town/git-town) | Continue, status, runlog, offline, and undo are excellent recovery UX patterns | Undo must remain bounded to AutoGit-owned effects |
+| [OpenHands](https://github.com/OpenHands/docs/blob/main/openhands/usage/architecture/runtime.mdx) | Secure-by-default container execution and explicit warnings for unisolated local execution set an honest precedent | A container name alone is not a security proof; advertise achieved filesystem/network/process controls |
+
+## 16. Plan maintenance
+
+- This file is the architecture and release source of truth.
+- todo.md is the executable checklist and must use the same IDs.
+- Every completed item links to a PR/commit, exact commands, native platforms,
+  and retained evidence. A checked box alone is not release evidence.
+- Re-run dependency, provider API, client hook, MCP, Git, Go, and sandbox
+  research before each beta/GA release candidate.
+- Reassess priority immediately after any data-loss, wrong-target, privacy, or
+  supply-chain incident.
+- Update the compatibility manifest from tested facts; never edit it to match a
+  desired marketing claim.
