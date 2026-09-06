@@ -259,8 +259,8 @@ Open gates and next priorities:
       readiness evidence and exact remote visibility postconditions; live
       canary evidence remains a separate release gate.
 - [x] Observe hosted native Linux, macOS, and Windows coverage in
-      [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
-      at `ad0e05d`; all native tests, builds, and p95 gates passed.
+      [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
+      at `76dfbee`; all native tests, builds, and p95 gates passed.
 - [ ] Run an opt-in disposable GitHub canary with exact postconditions and
       allowlisted cleanup.
 - [x] Recover and rerun the installed 177-case prototype regression floor.
@@ -644,7 +644,7 @@ promotion remain release gates.
 `scripts/performance-gate.sh` runs 20 samples and enforces the documented
 150-ms no-candidate-hook and 1-second 100,000-path baseline p95 limits. The
 native CI matrix now emits five benchmark samples and runs those p95 gates per
-supported runner; the hosted evidence in run 33972129362 passed them on Linux,
+supported runner; the hosted evidence in run 34044266757 passed them on Linux,
 macOS, and Windows. This closes the native-OS gate only; it does not promote a
 release phase.
 
@@ -677,10 +677,11 @@ phase-promotion decisions with the release owner.
 
 ### 10.19 Hosted native CI evidence (2026-09-05)
 
-[CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
-completed successfully for commit `ad0e05d79c6eda3b602ca5f98e55841683e1b3e6`.
-All seven jobs passed: native Ubuntu, macOS, and Windows; Linux arm64,
-Darwin arm64, and Windows amd64 cross-builds; and security analysis. Each
+[CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
+completed successfully for commit `76dfbee08aa42d25a39f0231d876f03e7724a83e`.
+All eight jobs passed: native Ubuntu, macOS, and Windows; Linux arm64,
+Darwin arm64, and Windows amd64 cross-builds; security analysis; and
+reproducible release packaging. Each
 native runner passed formatting, tests, the `>=609` deterministic test floor,
 build, benchmark sampling, and the p95 performance gates; Linux and macOS also
 passed race tests. This closes the native-OS gate. It does not close Phase 0

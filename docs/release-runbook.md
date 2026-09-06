@@ -8,8 +8,8 @@ not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
 
-[CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
-completed successfully for commit `ad0e05d79c6eda3b602ca5f98e55841683e1b3e6`.
+[CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
+completed successfully for commit `76dfbee08aa42d25a39f0231d876f03e7724a83e`.
 Its native Linux, macOS, and Windows jobs passed tests, builds, deterministic
 test-floor checks, benchmark sampling, and p95 gates; security analysis and
 all three cross-build jobs also passed. This closes the native-OS gate only.
@@ -30,7 +30,7 @@ command output, and redacted artifact links for each item:
 3. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
 4. [Recorded] The native Linux, macOS, and Windows matrix passed in
-   [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362),
+   [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757),
    including benchmark, p95-gate, and build steps. Cross-build output alone is
    not native evidence.
 5. The same run passed the native p95 gates. Retain the run logs with the

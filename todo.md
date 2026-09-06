@@ -154,8 +154,8 @@ tests:
   support, compatibility migration, incident handling, and rollback; approval
   and phase promotion remain release gates.
 - [x] Observe hosted native Linux, macOS, and Windows coverage in
-  [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362)
-  at `ad0e05d`; cross-build checks remain separate evidence.
+  [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
+  at `76dfbee`; cross-build and reproducible-package checks also passed.
 - [ ] Run the opt-in disposable GitHub canary with exact owner/name/visibility/
   ref/SHA postconditions and allowlisted cleanup.
 - [ ] Complete private-alpha and public-beta gates; do not claim a phase exit

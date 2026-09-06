@@ -86,7 +86,7 @@ The remaining review/release gates are recorded in
 [`docs/implementation-plan.md`](implementation-plan.md) and are not silently
 closed by this contract record: acceptance approval of the frozen contract,
 the disposable provider canary, and alpha/beta promotion. Hosted native OS
-evidence is recorded in [CI run 33972129362](https://github.com/udayvarmora07/autogit/actions/runs/33972129362).
+evidence is recorded in [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757).
 Implicit message/verifier inference remains intentionally unsupported without
 an explicit trusted profile; it is a policy boundary, not
 permission to infer completion. The protected
