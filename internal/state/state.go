@@ -175,6 +175,17 @@ func Open(path string) (*Store, error) {
 	s := &Store{db: db, path: path}
 	return s, nil
 }
+
+func OpenContext(ctx context.Context, path string) (*Store, error) {
+	if path == "" {
+		return nil, errors.New("state path is empty")
+	}
+	db, err := sharedDB.OpenContext(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{db: db, path: path}, nil
+}
 func (s *Store) Close() error { return s.db.Close() }
 
 /*

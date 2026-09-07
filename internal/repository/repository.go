@@ -23,9 +23,27 @@ func Discover(candidate string) (Info, error) {
 	return DiscoverWithKey(candidate, []byte("autogit-development-identity-key"))
 }
 
+func DiscoverContext(ctx context.Context, candidate string) (Info, error) {
+	return DiscoverWithKeyContext(ctx, candidate, []byte("autogit-development-identity-key"))
+}
+
 // DiscoverWithKey derives non-reversible repository identities. Production
 // callers should supply the per-installation key held in protected state.
 func DiscoverWithKey(candidate string, key []byte) (Info, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return DiscoverWithKeyContext(ctx, candidate, key)
+}
+
+// DiscoverWithKeyContext derives repository identities while honoring the
+// caller's operation budget. External Git validation inherits this context.
+func DiscoverWithKeyContext(ctx context.Context, candidate string, key []byte) (Info, error) {
+	if ctx == nil {
+		return Info{}, errors.New("repository context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return Info{}, err
+	}
 	if len(key) == 0 {
 		return Info{}, errors.New("identity key is required")
 	}
@@ -110,13 +128,16 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 					cd = filepath.Join(common, cd)
 				}
 				if resolved, evalErr := filepath.EvalSymlinks(cd); evalErr == nil {
+					if !containsPath(resolved, linkedGitDir) {
+						return Info{}, errors.New("linked worktree commondir escapes Git metadata")
+					}
 					common = resolved
 				} else {
 					return Info{}, evalErr
 				}
 			}
 		}
-		if err := verifyLinkedWorktree(root, linkedGitDir); err != nil {
+		if err := verifyLinkedWorktree(ctx, root, linkedGitDir); err != nil {
 			return Info{}, err
 		}
 	}
@@ -125,15 +146,21 @@ func DiscoverWithKey(candidate string, key []byte) (Info, error) {
 	return Info{Root: root, CommonDir: common, RepoID: repoID, WorktreeID: workID}, nil
 }
 
-func verifyLinkedWorktree(root, expectedGitDir string) error {
+func verifyLinkedWorktree(ctx context.Context, root, expectedGitDir string) error {
 	git, err := gitExecutable()
 	if err != nil {
 		return errors.New("git executable is unavailable")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	effectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	result, runErr := (gitport.Runner{Executable: git}).Run(ctx, root, "-C", root, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir")
+	result, runErr := (gitport.Runner{Executable: git}).Run(effectCtx, root, "-C", root, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir")
 	if runErr != nil || result.Err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := effectCtx.Err(); err != nil {
+			return err
+		}
 		return errors.New("invalid linked worktree metadata")
 	}
 	lines := strings.Split(strings.TrimSpace(result.Output), "\n")
@@ -168,6 +195,12 @@ func samePath(left, right string) bool {
 	}
 	return filepath.Clean(left) == filepath.Clean(right)
 }
+
+func containsPath(parent, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
 func digest(key []byte, kind, value string) string {
 	h := hmac.New(sha256.New, key)
 	_, _ = h.Write([]byte(kind + "\x00" + value))

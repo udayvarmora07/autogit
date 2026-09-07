@@ -61,6 +61,9 @@ func ReadPath(path string, max int64) ([]byte, error) {
 		return nil, err
 	}
 	parent := filepath.Dir(absolute)
+	if err := verifyPathAncestors(parent); err != nil {
+		return nil, err
+	}
 	canonicalParent, err := filepath.EvalSymlinks(parent)
 	if err != nil {
 		return nil, err
@@ -160,6 +163,48 @@ func WriteExclusiveWithin(root, relative string, data []byte, mode fs.FileMode) 
 	return file.Close()
 }
 
+// EnsurePrivateRoot creates a state directory when needed and tightens an
+// existing directory through its open directory handle. It rejects symlinked
+// ancestors before creation and avoids chmod-by-path replacement races.
+func EnsurePrivateRoot(root string) error {
+	stateRoot, _, err := openStateRoot(root, true)
+	if err != nil {
+		return err
+	}
+	file, err := stateRoot.Open(".")
+	if err != nil {
+		_ = stateRoot.Close()
+		return err
+	}
+	if runtime.GOOS != "windows" {
+		if err := file.Chmod(0700); err != nil {
+			_ = file.Close()
+			_ = stateRoot.Close()
+			return err
+		}
+	}
+	if err := file.Close(); err != nil {
+		_ = stateRoot.Close()
+		return err
+	}
+	if err := verifyPrivateRootDirectory(stateRoot, "."); err != nil {
+		_ = stateRoot.Close()
+		return err
+	}
+	return stateRoot.Close()
+}
+
+// CheckPrivateRoot validates an existing state directory without creating or
+// changing it.
+func CheckPrivateRoot(root string) error {
+	stateRoot, _, err := openStateRoot(root, false)
+	if err != nil {
+		return err
+	}
+	defer stateRoot.Close()
+	return verifyPrivateRootDirectory(stateRoot, ".")
+}
+
 func openStateRoot(root string, createParents bool) (*os.Root, string, error) {
 	if root == "" || strings.ContainsRune(root, 0) {
 		return nil, "", fmt.Errorf("%w: root is empty or contains NUL", ErrUnsafePath)
@@ -169,19 +214,93 @@ func openStateRoot(root string, createParents bool) (*os.Root, string, error) {
 		return nil, "", err
 	}
 	absolute = filepath.Clean(absolute)
-	if createParents {
-		if err := os.MkdirAll(absolute, 0700); err != nil {
-			return nil, "", err
-		}
-	}
-	if err := verifyExistingDirectory(absolute); err != nil {
+	if err := verifyPathAncestors(absolute); err != nil {
 		return nil, "", err
 	}
-	stateRoot, err := os.OpenRoot(absolute)
+	anchorPath, err := nearestExistingAncestor(absolute)
 	if err != nil {
 		return nil, "", err
 	}
+	anchor, err := os.OpenRoot(anchorPath)
+	if err != nil {
+		return nil, "", err
+	}
+	relative, err := filepath.Rel(anchorPath, absolute)
+	if err != nil || filepath.IsAbs(relative) || startsParent(relative) {
+		_ = anchor.Close()
+		return nil, "", fmt.Errorf("%w: state root is outside its anchor", ErrUnsafePath)
+	}
+	stateRoot := anchor
+	if relative != "." {
+		if createParents {
+			if err := anchor.MkdirAll(relative, 0700); err != nil {
+				_ = anchor.Close()
+				return nil, "", err
+			}
+		}
+		if err := verifyRelativePath(anchor, relative, false); err != nil {
+			_ = anchor.Close()
+			return nil, "", err
+		}
+		stateRoot, err = anchor.OpenRoot(relative)
+		if err != nil {
+			_ = anchor.Close()
+			return nil, "", err
+		}
+		if err := anchor.Close(); err != nil {
+			_ = stateRoot.Close()
+			return nil, "", err
+		}
+	}
+	if err := verifyRootDirectory(stateRoot, "."); err != nil {
+		_ = stateRoot.Close()
+		return nil, "", err
+	}
 	return stateRoot, absolute, nil
+}
+
+func verifyPathAncestors(path string) error {
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				if info.Mode()&os.ModeSymlink != 0 {
+					return fmt.Errorf("%w: state-root ancestor is unsafe", ErrUnsafePath)
+				}
+				// A regular file can only be the requested root itself; the
+				// caller will report that it is not a directory. An existing
+				// non-directory ancestor makes the path invalid now.
+				if current != filepath.Clean(path) {
+					return fmt.Errorf("%w: state-root ancestor is not a directory", ErrUnsafePath)
+				}
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return nil
+		}
+	}
+}
+
+func nearestExistingAncestor(path string) (string, error) {
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return "", fmt.Errorf("%w: state-root anchor is unsafe", ErrUnsafePath)
+			}
+			return current, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+	}
 }
 
 func cleanRelative(relative string) (string, error) {
@@ -244,6 +363,14 @@ func verifyRelativePath(root *os.Root, relative string, allowMissingFinal bool) 
 		if index != len(parts)-1 && !info.IsDir() {
 			return fmt.Errorf("%w: path component %q is not a directory", ErrUnsafePath, current)
 		}
+		if info.IsDir() {
+			if !OwnedByCurrentUser(info) {
+				return fmt.Errorf("%w: directory component %q is not owned by the current user", ErrUnsafePath, current)
+			}
+			if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+				return fmt.Errorf("%w: directory component %q permissions are too broad", ErrUnsafePath, current)
+			}
+		}
 	}
 	return nil
 }
@@ -258,6 +385,9 @@ func verifyDestination(root *os.Root, relative string) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: destination is not a regular file", ErrUnsafePath)
+	}
+	if !OwnedByCurrentUser(info) {
+		return fmt.Errorf("%w: destination is not owned by the current user", ErrUnsafePath)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return fmt.Errorf("%w: destination permissions are too broad", ErrUnsafePath)
@@ -317,6 +447,9 @@ func verifyExistingDirectory(path string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("%w: directory is not a real directory", ErrUnsafePath)
 	}
+	if !OwnedByCurrentUser(info) {
+		return fmt.Errorf("%w: directory is not owned by the current user", ErrUnsafePath)
+	}
 	return nil
 }
 
@@ -337,6 +470,20 @@ func verifyPrivateDirectory(path string) error {
 }
 
 func verifyPrivateRootDirectory(root *os.Root, relative string) error {
+	if err := verifyRootDirectory(root, relative); err != nil {
+		return err
+	}
+	info, err := root.Lstat(relative)
+	if err != nil {
+		return err
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return fmt.Errorf("%w: directory permissions are too broad", ErrUnsafePath)
+	}
+	return nil
+}
+
+func verifyRootDirectory(root *os.Root, relative string) error {
 	info, err := root.Lstat(relative)
 	if err != nil {
 		return err
@@ -344,8 +491,8 @@ func verifyPrivateRootDirectory(root *os.Root, relative string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("%w: directory is not a real directory", ErrUnsafePath)
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
-		return fmt.Errorf("%w: directory permissions are too broad", ErrUnsafePath)
+	if !OwnedByCurrentUser(info) {
+		return fmt.Errorf("%w: directory is not owned by the current user", ErrUnsafePath)
 	}
 	return nil
 }
@@ -357,6 +504,9 @@ func verifyPrivateRootFile(root *os.Root, relative string) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: file is not a regular non-symlink", ErrUnsafePath)
+	}
+	if !OwnedByCurrentUser(info) {
+		return fmt.Errorf("%w: file is not owned by the current user", ErrUnsafePath)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return fmt.Errorf("%w: file permissions are too broad", ErrUnsafePath)

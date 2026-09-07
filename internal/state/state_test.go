@@ -21,6 +21,14 @@ import (
 // made intent validation reject every test intent.
 var testRepoDir = filepath.Join(os.TempDir(), "autogit-test-repo")
 
+func TestOpenContextHonorsCancellationBeforeOpening(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := OpenContext(ctx, filepath.Join(t.TempDir(), "state.db")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenContext() error = %v, want context canceled", err)
+	}
+}
+
 func TestStorePersistsTypedJobAndOutboxAtomically(t *testing.T) {
 	d := t.TempDir()
 	s, err := Open(filepath.Join(d, "state.db"))

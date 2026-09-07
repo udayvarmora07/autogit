@@ -10,7 +10,8 @@
   in-process connection, WAL, busy timeout, foreign keys, synchronous mode, and
   checkpointing, then migrates both event and workflow tables in one bounded
   transaction. Read-only diagnostics use a separate no-create, no-migration
-  opener from the same package.
+  opener from the same package. Context-aware state and event openers pass the
+  caller's cancellation budget through this gateway.
 - **Consequences:** State and event repositories depend on the gateway rather
   than importing the SQLite driver. Legacy databases are upgraded together;
   newer schema versions fail closed. Cross-process contention is retried only

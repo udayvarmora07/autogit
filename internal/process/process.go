@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"sync"
 )
 
 const DefaultMaxOutput = 1 << 20
@@ -50,9 +51,11 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		command.Env = append([]string(nil), options.Env...)
 	}
 	stdout := &boundedOutput{max: max}
+	overflow := &outputLimitSignal{ch: make(chan struct{})}
+	stdout.overflow = overflow
 	stderr := stdout
 	if options.SeparateOutput {
-		stderr = &boundedOutput{max: max}
+		stderr = &boundedOutput{max: max, overflow: overflow}
 	}
 	command.Stdout = stdout
 	command.Stderr = stderr
@@ -74,6 +77,8 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	go func() {
 		select {
 		case <-ctx.Done():
+			_ = supervisor.Terminate(command)
+		case <-overflow.ch:
 			_ = supervisor.Terminate(command)
 		case <-done:
 		}
@@ -98,17 +103,31 @@ type boundedOutput struct {
 	bytes     []byte
 	max       int
 	truncated bool
+	overflow  *outputLimitSignal
+}
+
+type outputLimitSignal struct {
+	ch   chan struct{}
+	once sync.Once
+}
+
+func (b *boundedOutput) signalOverflow() {
+	if b.overflow != nil {
+		b.overflow.once.Do(func() { close(b.overflow.ch) })
+	}
 }
 
 func (b *boundedOutput) Write(value []byte) (int, error) {
 	remaining := b.max - len(b.bytes)
 	if remaining <= 0 {
 		b.truncated = len(value) > 0
+		b.signalOverflow()
 		return len(value), io.ErrShortBuffer
 	}
 	if len(value) > remaining {
 		b.bytes = append(b.bytes, value[:remaining]...)
 		b.truncated = true
+		b.signalOverflow()
 		return len(value), io.ErrShortBuffer
 	}
 	b.bytes = append(b.bytes, value...)

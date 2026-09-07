@@ -71,6 +71,18 @@ func TestOpenAppliesSQLiteSafetyContractAndCombinedSchema(t *testing.T) {
 	}
 }
 
+func TestOpenContextDoesNotCreateStateAfterCancellation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "state.db")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := OpenContext(ctx, path); !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenContext() error = %v, want context canceled", err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("canceled open created state directory: %v", err)
+	}
+}
+
 func TestOpenRejectsFinalSymlinkWithoutFollowingIt(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated Windows privileges in some environments")
@@ -89,6 +101,49 @@ func TestOpenRejectsFinalSymlinkWithoutFollowingIt(t *testing.T) {
 	}
 	if info, err := os.Lstat(linkPath); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("symlink was modified: info=%v err=%v", info, err)
+	}
+}
+
+func TestOpenRejectsPreexistingWALSymlinkBeforeSQLiteOpens(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated Windows privileges in some environments")
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "state.db")
+	outside := filepath.Join(t.TempDir(), "outside.wal")
+	if err := os.WriteFile(outside, []byte("must remain unchanged"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, path+"-wal"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil || !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("Open(preexisting WAL symlink) error = %v, want ErrUnsafePath", err)
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "must remain unchanged" {
+		t.Fatalf("preexisting WAL target changed to %q", got)
+	}
+}
+
+func TestOpenRejectsSymlinkedStateDirectoryAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated Windows privileges in some environments")
+	}
+	outside := t.TempDir()
+	parent := t.TempDir()
+	link := filepath.Join(parent, "linked")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(filepath.Join(link, "nested", "state.db")); err == nil || !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("Open(symlinked state directory) error = %v, want ErrUnsafePath", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "nested", "state.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink target was modified: %v", err)
 	}
 }
 

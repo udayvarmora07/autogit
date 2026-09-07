@@ -125,9 +125,9 @@ func (s Service) Run(ctx context.Context, req Request) (result Result, err error
 		return result, err
 	}
 	if s.Lease != nil {
-		info, discoverErr := repository.Discover(req.RepositoryDir)
+		info, discoverErr := repository.DiscoverContext(ctx, req.RepositoryDir)
 		if len(s.IdentityKey) > 0 {
-			info, discoverErr = repository.DiscoverWithKey(req.RepositoryDir, s.IdentityKey)
+			info, discoverErr = repository.DiscoverWithKeyContext(ctx, req.RepositoryDir, s.IdentityKey)
 		}
 		if discoverErr != nil {
 			return result, fmt.Errorf("resolve repository writer: %w", discoverErr)
@@ -183,7 +183,7 @@ func (s Service) prepareAndVerify(ctx context.Context, req Request) (Result, *gi
 	if s.Git == nil || s.Intents == nil {
 		return Result{}, nil, nil, verification.VerificationPolicy{}, errors.New("local commit dependencies are required")
 	}
-	info, err := repository.Discover(req.RepositoryDir)
+	info, err := repository.DiscoverContext(ctx, req.RepositoryDir)
 	if err != nil {
 		return Result{}, nil, nil, verification.VerificationPolicy{}, fmt.Errorf("resolve repository: %w", err)
 	}

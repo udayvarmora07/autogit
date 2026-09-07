@@ -121,6 +121,22 @@ func TestLoadRegistryFileRejectsSymlinkedConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRegistryFileRejectsSymlinkedConfigurationParent(t *testing.T) {
+	outside := t.TempDir()
+	path := filepath.Join(outside, "verifiers.json")
+	if err := os.WriteFile(path, verifierConfigJSON(t, nil), 0600); err != nil {
+		t.Fatal(err)
+	}
+	aliasParent := t.TempDir()
+	alias := filepath.Join(aliasParent, "config")
+	if err := os.Symlink(outside, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := LoadRegistryFile(filepath.Join(alias, "verifiers.json"), 1<<20); err == nil {
+		t.Fatal("verifier configuration through a parent symlink was accepted")
+	}
+}
+
 func TestLoadRegistryFileRejectsBroadUnixPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission policy does not apply on Windows")

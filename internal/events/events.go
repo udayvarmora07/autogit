@@ -540,6 +540,17 @@ func OpenStore(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+func OpenStoreContext(ctx context.Context, path string) (*Store, error) {
+	if path == "" {
+		return nil, errors.New("state path is required")
+	}
+	db, err := sharedDB.OpenContext(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
 func nextReceiptRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
 	if _, err := tx.ExecContext(ctx, `UPDATE event_revision_sequence SET revision=revision+1 WHERE id=1`); err != nil {
 		return 0, err

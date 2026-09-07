@@ -13,6 +13,14 @@ import (
 
 const validEvent = `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"01J7N6X8P5K2V4W6FQ8M9ABCDF","event_type":"session.idle","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1.0.0","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","session_id":"session"},"ordering":{"stream_id":"repo/session"},"idempotency":{"key":"idle-1","attempt":1},"payload":{}}`
 
+func TestOpenStoreContextHonorsCancellationBeforeOpening(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := OpenStoreContext(ctx, filepath.Join(t.TempDir(), "state.db")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenStoreContext() error = %v, want context canceled", err)
+	}
+}
+
 func TestDecodeRejectsDuplicateKeysAndTrailingJSON(t *testing.T) {
 	for name, input := range map[string]string{
 		"duplicate": strings.Replace(validEvent, `"payload":{}`, `"payload":{},"payload":{}`, 1),

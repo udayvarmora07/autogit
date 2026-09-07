@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"autogit/internal/securefs"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -41,8 +43,22 @@ func OpenContext(ctx context.Context, path string) (*sql.DB, error) {
 	if ctx == nil {
 		return nil, errors.New("database context is required")
 	}
+	openCtx, cancel := context.WithTimeout(ctx, openTimeout)
+	defer cancel()
+	if err := openCtx.Err(); err != nil {
+		return nil, err
+	}
 	absolute, err := prepareWritablePath(path)
 	if err != nil {
+		return nil, err
+	}
+	if err := openCtx.Err(); err != nil {
+		return nil, err
+	}
+	if err := restrictDatabaseArtifacts(absolute); err != nil {
+		return nil, err
+	}
+	if err := openCtx.Err(); err != nil {
 		return nil, err
 	}
 	database, err := sql.Open("sqlite", writableDSN(absolute))
@@ -50,11 +66,11 @@ func OpenContext(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, err
 	}
 	configurePool(database)
-	if err := configureSQLite(ctx, database); err != nil {
+	if err := configureSQLite(openCtx, database); err != nil {
 		_ = database.Close()
 		return nil, err
 	}
-	if err := migrate(ctx, database); err != nil {
+	if err := migrate(openCtx, database); err != nil {
 		_ = database.Close()
 		return nil, err
 	}
@@ -70,6 +86,9 @@ func OpenContext(ctx context.Context, path string) (*sql.DB, error) {
 func OpenReadOnly(ctx context.Context, path string) (*sql.DB, error) {
 	if ctx == nil {
 		return nil, errors.New("database context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	absolute, err := prepareExistingPath(path)
 	if err != nil {
@@ -281,19 +300,11 @@ func prepareWritablePath(path string) (string, error) {
 		return "", err
 	}
 	parent := filepath.Dir(absolute)
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return "", fmt.Errorf("state directory: %w", err)
-	}
-	if info, err := os.Lstat(parent); err != nil {
-		return "", err
-	} else if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", fmt.Errorf("%w: state directory is not a real directory", ErrUnsafePath)
-	} else if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
-		// A caller-created, non-sticky state root can be tightened in place.
-		// Never chmod a shared sticky directory such as /tmp.
-		if info.Mode()&01000 != 0 || os.Chmod(parent, 0700) != nil {
-			return "", fmt.Errorf("%w: state directory permissions are too broad (%o)", ErrUnsafePath, info.Mode().Perm())
+	if err := securefs.EnsurePrivateRoot(parent); err != nil {
+		if errors.Is(err, securefs.ErrUnsafePath) {
+			return "", fmt.Errorf("%w: state directory: %v", ErrUnsafePath, err)
 		}
+		return "", fmt.Errorf("state directory: %w", err)
 	}
 	if err := verifyDirectory(parent); err != nil {
 		return "", err
@@ -301,6 +312,9 @@ func prepareWritablePath(path string) (string, error) {
 	if info, err := os.Lstat(absolute); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return "", fmt.Errorf("%w: database file is not a regular file", ErrUnsafePath)
+		}
+		if !securefs.OwnedByCurrentUser(info) {
+			return "", fmt.Errorf("%w: database file is not owned by the current user", ErrUnsafePath)
 		}
 		if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 			return "", fmt.Errorf("%w: database permissions are too broad", ErrUnsafePath)
@@ -324,6 +338,9 @@ func prepareWritablePath(path string) (string, error) {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return "", fmt.Errorf("%w: database file is not a regular file", ErrUnsafePath)
 		}
+		if !securefs.OwnedByCurrentUser(info) {
+			return "", fmt.Errorf("%w: database file is not owned by the current user", ErrUnsafePath)
+		}
 		if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 			return "", fmt.Errorf("%w: database permissions are too broad", ErrUnsafePath)
 		}
@@ -336,7 +353,10 @@ func prepareExistingPath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := verifyDirectory(filepath.Dir(absolute)); err != nil {
+	if err := securefs.CheckPrivateRoot(filepath.Dir(absolute)); err != nil {
+		if errors.Is(err, securefs.ErrUnsafePath) {
+			return "", fmt.Errorf("%w: state directory: %v", ErrUnsafePath, err)
+		}
 		return "", err
 	}
 	info, err := os.Lstat(absolute)
@@ -345,6 +365,9 @@ func prepareExistingPath(path string) (string, error) {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return "", fmt.Errorf("%w: database file is not a regular file", ErrUnsafePath)
+	}
+	if !securefs.OwnedByCurrentUser(info) {
+		return "", fmt.Errorf("%w: database file is not owned by the current user", ErrUnsafePath)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return "", fmt.Errorf("%w: database permissions are too broad", ErrUnsafePath)
@@ -390,9 +413,12 @@ func restrictDatabaseArtifacts(path string) error {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return fmt.Errorf("%w: database artifact is not a regular file", ErrUnsafePath)
 		}
+		if !securefs.OwnedByCurrentUser(info) {
+			return fmt.Errorf("%w: database artifact is not owned by the current user", ErrUnsafePath)
+		}
 		if runtime.GOOS != "windows" {
-			if err := os.Chmod(artifact, 0600); err != nil {
-				return err
+			if info.Mode().Perm()&0077 != 0 {
+				return fmt.Errorf("%w: database artifact permissions are too broad", ErrUnsafePath)
 			}
 		}
 	}

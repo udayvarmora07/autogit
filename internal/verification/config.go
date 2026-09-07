@@ -200,12 +200,8 @@ func LoadTrustedRegistryFile(path, trustedDir string, max int64) (*VerifierRegis
 	if err != nil {
 		return nil, errors.New("trusted verifier state directory is invalid")
 	}
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
-		return nil, errors.New("trusted verifier state directory is invalid")
-	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
-		return nil, errors.New("trusted verifier state directory permissions are too broad")
+	if err := securefs.CheckPrivateRoot(root); err != nil {
+		return nil, fmt.Errorf("trusted verifier state directory: %w", err)
 	}
 	candidate, err := filepath.Abs(path)
 	if err != nil || filepath.Clean(candidate) != candidate {
@@ -220,5 +216,9 @@ func LoadTrustedRegistryFile(path, trustedDir string, max int64) (*VerifierRegis
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return nil, errors.New("trusted verifier configuration must be inside state directory")
 	}
-	return LoadRegistryFile(candidate, max)
+	raw, err := securefs.ReadWithin(root, rel, max)
+	if err != nil {
+		return nil, err
+	}
+	return LoadRegistry(raw, max)
 }

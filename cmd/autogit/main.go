@@ -151,19 +151,18 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		if keyErr != nil {
 			return keyErr
 		}
-		if _, discoverErr := repository.DiscoverWithKey(root, key); discoverErr != nil {
+		if _, discoverErr := repository.DiscoverWithKeyContext(ctx, root, key); discoverErr != nil {
 			return cliError{"E_SCOPE", discoverErr.Error()}
 		}
 	}
-	if err = os.MkdirAll(dir, 0700); err != nil {
+	if err = securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	identityKey, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
 	}
-	s, err := events.OpenStore(filepath.Join(dir, "state.db"))
+	s, err := events.OpenStoreContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -177,7 +176,7 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		if root == "" {
 			return cliError{"E_SCOPE", "--repo is required"}
 		}
-		info, err := repository.DiscoverWithKey(root, identityKey)
+		info, err := repository.DiscoverWithKeyContext(ctx, root, identityKey)
 		if err != nil {
 			return cliError{"E_SCOPE", err.Error()}
 		}
@@ -208,7 +207,7 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		var info repository.Info
 		if root != "" {
 			var discoverErr error
-			info, discoverErr = repository.DiscoverWithKey(root, identityKey)
+			info, discoverErr = repository.DiscoverWithKeyContext(ctx, root, identityKey)
 			if discoverErr != nil {
 				return cliError{"E_SCOPE", discoverErr.Error()}
 			}
@@ -267,7 +266,7 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": strings.ToUpper(cmd) + "_APPLIED"})
 	case "logs":
 		root := flag(args[1:], "--repo")
-		info, discoverErr := repository.DiscoverWithKey(root, identityKey)
+		info, discoverErr := repository.DiscoverWithKeyContext(ctx, root, identityKey)
 		if discoverErr != nil {
 			return cliError{"E_SCOPE", discoverErr.Error()}
 		}
@@ -307,7 +306,7 @@ func runPlanContext(ctx context.Context, args []string, dir string, out io.Write
 	if err != nil {
 		return err
 	}
-	info, err := repository.DiscoverWithKey(root, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, root, key)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
@@ -784,10 +783,9 @@ func runInitContext(ctx context.Context, options initOptions, dir string, out io
 	if err != nil {
 		return cliError{"E_PROVIDER", "git is unavailable"}
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
@@ -805,7 +803,7 @@ func runInitContext(ctx context.Context, options initOptions, dir string, out io
 	if _, err := repository.Initialize(ctx, gitport.Runner{Executable: gitPath}, root, options.Branch); err != nil {
 		return cliError{"E_GIT", safeMessage(err.Error())}
 	}
-	info, err := repository.DiscoverWithKey(root, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, root, key)
 	if err != nil || info.RepoID != repoID {
 		return cliError{"E_STATE", "initialized repository identity could not be confirmed"}
 	}
@@ -831,19 +829,18 @@ func runRemoteContext(ctx context.Context, args []string, dir string, out io.Wri
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
 	}
-	info, err := repository.DiscoverWithKey(options.Repo, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, options.Repo, key)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	db, err := state.Open(filepath.Join(dir, "state.db"))
+	db, err := state.OpenContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -893,19 +890,18 @@ func runPublishContext(ctx context.Context, args []string, dir string, out io.Wr
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
 	}
-	info, err := repository.DiscoverWithKey(options.Repo, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, options.Repo, key)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	db, err := state.Open(filepath.Join(dir, "state.db"))
+	db, err := state.OpenContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -1221,19 +1217,18 @@ func runSyncContext(ctx context.Context, args []string, dir string, out io.Write
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
 	}
-	info, err := repository.DiscoverWithKey(options.Repo, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, options.Repo, key)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	db, err := state.Open(filepath.Join(dir, "state.db"))
+	db, err := state.OpenContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -1302,7 +1297,7 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 }
 
 func emitSyncDomainFacts(ctx context.Context, statePath string, p policy.Policy, info repository.Info, options syncOptions, result localworkflow.Result, intent state.GitCommitIntentRecord) error {
-	store, err := events.OpenStore(statePath)
+	store, err := events.OpenStoreContext(ctx, statePath)
 	if err != nil {
 		return err
 	}
@@ -1369,7 +1364,7 @@ func cloneFactPayload(in map[string]any) map[string]any {
 }
 
 func emitPublishDomainFacts(ctx context.Context, statePath string, p policy.Policy, info repository.Info, job state.PushJob, operationErr error) error {
-	store, err := events.OpenStore(statePath)
+	store, err := events.OpenStoreContext(ctx, statePath)
 	if err != nil {
 		return err
 	}
@@ -1526,19 +1521,18 @@ func runVerifyContext(ctx context.Context, args []string, dir string, out io.Wri
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
 	}
-	info, err := repository.DiscoverWithKey(options.Repo, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, options.Repo, key)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	db, err := state.Open(filepath.Join(dir, "state.db"))
+	db, err := state.OpenContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -1622,19 +1616,18 @@ func runRetryContext(ctx context.Context, args []string, dir string, out io.Writ
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key, err := loadIdentityKey(dir)
 	if err != nil {
 		return err
 	}
-	info, err := repository.DiscoverWithKey(options.Repo, key)
+	info, err := repository.DiscoverWithKeyContext(ctx, options.Repo, key)
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	db, err := state.Open(filepath.Join(dir, "state.db"))
+	db, err := state.OpenContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -1759,7 +1752,7 @@ func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		if err != nil {
 			return err
 		}
-		trusted, resolveErr := repository.DiscoverWithKey(root, pendingKey)
+		trusted, resolveErr := repository.DiscoverWithKeyContext(ctx, root, pendingKey)
 		if resolveErr != nil {
 			return cliError{"E_SCOPE", "cannot resolve approved repository"}
 		}
@@ -1778,10 +1771,9 @@ func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		return err
 	}
 	dir := statePath
-	if err = os.MkdirAll(dir, 0700); err != nil {
+	if err = securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
 	}
-	_ = os.Chmod(dir, 0700)
 	key := pendingKey
 	if len(key) == 0 {
 		key, err = loadIdentityKey(dir)
@@ -1796,7 +1788,7 @@ func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	}
 	if e.Project != nil {
 		if root, ok := e.Project["candidate_root"].(string); ok {
-			info, resolveErr := repository.DiscoverWithKey(root, key)
+			info, resolveErr := repository.DiscoverWithKeyContext(ctx, root, key)
 			if resolveErr != nil || e.Scope["repo_id"] != info.RepoID {
 				return cliError{"E_SCOPE", "event project does not match trusted repository"}
 			}
@@ -1805,7 +1797,7 @@ func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 			}
 		}
 	}
-	s, err := events.OpenStore(filepath.Join(dir, "state.db"))
+	s, err := events.OpenStoreContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
@@ -1815,13 +1807,13 @@ func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	// Event receipts/projections and repository session evidence have separate
 	// package-owned ports, even though they share the same private SQLite file.
 	// The baseline service never writes raw source bytes to this database.
-	baselineStore, err := state.Open(filepath.Join(dir, "state.db"))
+	baselineStore, err := state.OpenContext(ctx, filepath.Join(dir, "state.db"))
 	if err != nil {
 		return err
 	}
 	defer baselineStore.Close()
 	a.Baselines = &session.Service{Runner: repository.SystemRunner{}, Store: baselineStore}
-	a.Resolver = func(root string) (repository.Info, error) { return repository.DiscoverWithKey(root, key) }
+	a.Resolver = func(root string) (repository.Info, error) { return repository.DiscoverWithKeyContext(ctx, root, key) }
 	completionMessage := flag(args, "--message")
 	completionVerifierPath := flag(args, "--verifiers")
 	var completionRegistry *verification.VerifierRegistry

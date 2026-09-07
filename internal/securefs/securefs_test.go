@@ -99,3 +99,82 @@ func TestReadWithinRejectsSymlinkedParentAndEnforcesLimit(t *testing.T) {
 		t.Fatal("oversized state file was accepted")
 	}
 }
+
+func TestReadWithinRejectsPermissiveNestedStateDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission policy does not apply on Windows")
+	}
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "verifiers")
+	if err := os.Mkdir(nested, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "config.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadWithin(root, "verifiers/config.json", 1024); err == nil || !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("permissive nested state directory error = %v, want ErrUnsafePath", err)
+	}
+}
+
+func TestReadWithinRejectsSymlinkedStateRootAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated Windows privileges in some environments")
+	}
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outside, "state"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "state", "identity.key"), []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	parent := t.TempDir()
+	link := filepath.Join(parent, "linked")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadWithin(filepath.Join(link, "state"), "identity.key", 1024); err == nil || !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("symlinked state-root ancestor error = %v, want ErrUnsafePath", err)
+	}
+}
+
+func TestReadWithinRejectsExistingFileUnderSymlinkedStateRootAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated Windows privileges in some environments")
+	}
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outside, "state"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "state", "identity.key"), []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	parent := t.TempDir()
+	link := filepath.Join(parent, "linked")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadWithin(filepath.Join(link, "state"), "identity.key", 1024); err == nil || !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("existing file through symlinked state-root ancestor error = %v, want ErrUnsafePath", err)
+	}
+}
+
+func TestEnsurePrivateRootTightensExistingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission assertion")
+	}
+	root := t.TempDir()
+	if err := EnsurePrivateRoot(root); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("state root mode = %o, want 700", info.Mode().Perm())
+	}
+}

@@ -1,12 +1,15 @@
 package repository
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDiscoverRejectsHomeAndFilesystemRoot(t *testing.T) {
@@ -95,5 +98,49 @@ func TestDiscoverUsesHardenedGitRunnerForLinkedWorktreeValidation(t *testing.T) 
 		if !strings.Contains(string(args), want) {
 			t.Fatalf("hardened Git args=%q missing %q", args, want)
 		}
+	}
+	escape := t.TempDir()
+	if err := os.WriteFile(filepath.Join(linkedGit, "commondir"), []byte(escape+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DiscoverWithKey(linkedRoot, []byte("test-identity-key")); err == nil {
+		t.Fatal("linked worktree accepted a commondir outside its Git directory")
+	}
+}
+
+func TestDiscoverWithKeyContextPropagatesCancellationToLinkedWorktreeGit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-specific")
+	}
+	mainRoot := t.TempDir()
+	mainGit := filepath.Join(mainRoot, ".git")
+	linkedRoot := t.TempDir()
+	linkedGit := filepath.Join(mainGit, "worktrees", "linked")
+	for _, directory := range []string{mainGit, filepath.Dir(linkedGit), linkedGit} {
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(linkedGit, "commondir"), []byte("../..\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(linkedRoot, ".git"), []byte("gitdir: "+linkedGit+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fakeGitDir := t.TempDir()
+	fakeGit := filepath.Join(fakeGitDir, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nsleep 30\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeGitDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := DiscoverWithKeyContext(ctx, linkedRoot, []byte("test-identity-key"))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("DiscoverWithKeyContext error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("cancellation took %s", elapsed)
 	}
 }
