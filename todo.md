@@ -233,11 +233,16 @@ All items are release blockers.
 
 ## Immediate PR queue
 
-- [ ] PR-001 SQLite engine upgrade and embedded-version/WAL tests.
-- [ ] PR-002 Single SQLite gateway and migration owner.
-- [ ] PR-003 State/policy filesystem trust boundary.
-- [ ] PR-004 Hardened Git init and worktree discovery.
-- [ ] PR-005 Operation deadlines and descendant termination.
+- [x] PR-001 SQLite engine upgrade and embedded-version/WAL tests. Evidence:
+  [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] PR-002 Single SQLite gateway and migration owner. Evidence: [Phase 0
+  P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] PR-003 State/policy filesystem trust boundary. Evidence: [Phase 0
+  P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] PR-004 Hardened Git init and worktree discovery. Evidence: [Phase 0
+  P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] PR-005 Operation deadlines and descendant termination. Evidence: [Phase
+  0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
 - [x] PR-006 Session-start replay idempotency. Evidence: [Phase 0
   P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
 - [x] PR-007 Transactional consent and durable policy file. Evidence: [Phase 0

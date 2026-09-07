@@ -43,7 +43,7 @@ func NamespaceSandboxAvailable() bool {
 	if _, err := sandboxPrlimitExecutable(); err != nil {
 		return false
 	}
-	probe := exec.Command(bwrap, "--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev", "--clearenv", "--", "/bin/true")
+	probe := exec.Command(bwrap, "--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev", "--clearenv", "--", "/bin/true") // #nosec G204 -- bwrap is canonicalized and the probe argv is fixed.
 	probe.Dir = string(filepath.Separator)
 	probe.Env = []string{}
 	return probe.Run() == nil

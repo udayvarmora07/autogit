@@ -322,10 +322,10 @@ func Retain(ctx context.Context, path string, policy RetentionPolicy) (Retention
 	}
 	if policy.ReceiptAge > 0 || policy.MaxReceiptRows > 0 {
 		where, args := receiptRetentionPredicate(now, policy)
-		if _, execErr := tx.ExecContext(ctx, `INSERT OR IGNORE INTO event_receipt_tombstones(event_id,idempotency_key,payload_digest,disposition,revision,created_at) SELECT event_id,idempotency_key,payload_digest,disposition,revision,created_at FROM event_receipts WHERE `+where, args...); execErr != nil {
+		if _, execErr := tx.ExecContext(ctx, `INSERT OR IGNORE INTO event_receipt_tombstones(event_id,idempotency_key,payload_digest,disposition,revision,created_at) SELECT event_id,idempotency_key,payload_digest,disposition,revision,created_at FROM event_receipts WHERE `+where, args...); execErr != nil { // #nosec G202 -- where is assembled only from fixed predicates; all values are bound.
 			return report, execErr
 		}
-		result, execErr := tx.ExecContext(ctx, `DELETE FROM event_receipts WHERE `+where, args...)
+		result, execErr := tx.ExecContext(ctx, `DELETE FROM event_receipts WHERE `+where, args...) // #nosec G202 -- where is assembled only from fixed predicates; all values are bound.
 		if execErr != nil {
 			return report, execErr
 		}
@@ -476,7 +476,7 @@ func allocateMaintenancePath(destination string) (string, func(), error) {
 			return "", func() {}, err
 		}
 		path := filepath.Join(parent, ".autogit-maint-"+hex.EncodeToString(random[:]))
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600) // #nosec G304 -- parent is a validated private maintenance directory and the filename is cryptographically random.
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}
@@ -541,12 +541,12 @@ func replaceMaintenancePath(temporary, destination string) error {
 }
 
 func copyMaintenanceFile(source, destination string) (int64, error) {
-	in, err := os.Open(source)
+	in, err := os.Open(source) // #nosec G304 -- source was validated as a regular owned backup by the caller.
 	if err != nil {
 		return 0, err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600) // #nosec G304 -- destination was validated as a private exclusive maintenance path by the caller.
 	if err != nil {
 		return 0, err
 	}

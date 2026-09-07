@@ -6,7 +6,7 @@ Review trigger: remove the suppression if the named boundary, input source, or
 Git compatibility requirement changes; otherwise review on every dependency
 or security-tool upgrade.
 
-These are the 22 line-scoped suppressions used by the pinned gosec job. They
+These are the 28 line-scoped suppressions used by the pinned gosec job. They
 are false positives at deliberately bounded compatibility or security
 boundaries, not global rule exclusions.
 
@@ -24,3 +24,6 @@ boundaries, not global rule exclusions.
 | G304 (2) | `internal/gittransaction/transaction.go`, Git index reads | The index path comes from validated Git state and is used only within the canonical repository transaction boundary. | `internal/gittransaction/transaction_test.go`: HEAD/index-change, unsafe-input, exact-snapshot, and concurrent-index tests |
 | G304 | `internal/db/database.go`, state-file creation | The absolute path is canonicalized and its existing ancestors are verified before exclusive creation. | `internal/db/database_test.go`: symlinked state/WAL rejection, cancellation, read-only, and serialized-open tests |
 | G703 | `internal/repository/repository.go`, linked-worktree `commondir` read | Git-resolved metadata is constrained and validated before the linked-worktree path is accepted. | `internal/repository/repository_test.go`: canonical identity, hardened linked-worktree discovery, and cancellation tests |
+| G204 | `internal/process/sandbox_linux.go`, fixed bubblewrap probe | The executable is canonicalized as a regular trusted binary and the probe arguments are fixed constants. | `internal/process/sandbox_test.go`: sandbox availability and filesystem/network enforcement tests |
+| G202 (2) | `internal/db/maintenance.go`, receipt retention predicates | The SQL fragment is assembled only from fixed predicates; all runtime values use placeholders. | `internal/db/maintenance_test.go`: receipt tombstone, retention, and pending-recovery preservation tests |
+| G304 (3) | `internal/db/maintenance.go`, maintenance temporary/backup copies | Parent/destination paths are validated private regular-file boundaries before these operations; temporary names use exclusive creation and random bytes. | `internal/db/maintenance_test.go`: backup/restore round-trip, destination-preservation, symlink, and integrity tests |
