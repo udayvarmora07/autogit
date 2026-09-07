@@ -128,13 +128,21 @@ type FileMetadata struct {
 // ScanEvidence is bound to exactly one candidate and policy revision. Scope
 // must be ScanCandidate or ScanHistory, and Digest is the evidence digest.
 type ScanEvidence struct {
-	Scope           string
-	CandidateDigest string
-	PolicyDigest    string
-	Passed          bool
-	Digest          string
-	Findings        int
-	ReasonCodes     []string
+	Scope                string
+	Scanner              string
+	CandidateDigest      string
+	PolicyDigest         string
+	Passed               bool
+	Digest               string
+	Findings             int
+	ReasonCodes          []string
+	FilesPresented       int
+	FilesScanned         int
+	BytesScanned         int64
+	Truncated            bool
+	LimitReason          string
+	RedactedFingerprints []string
+	ProviderGuidance     string
 }
 
 // VerificationEvidence binds all required verifier inputs, including guards
@@ -254,12 +262,20 @@ type Report struct {
 }
 
 type ScanSummary struct {
-	Scope           string `json:"scope"`
-	Passed          bool   `json:"passed"`
-	Findings        int    `json:"findings"`
-	CandidateDigest string `json:"candidate_digest,omitempty"`
-	PolicyDigest    string `json:"policy_digest,omitempty"`
-	EvidenceDigest  string `json:"evidence_digest,omitempty"`
+	Scope                string   `json:"scope"`
+	Scanner              string   `json:"scanner,omitempty"`
+	Passed               bool     `json:"passed"`
+	Findings             int      `json:"findings"`
+	CandidateDigest      string   `json:"candidate_digest,omitempty"`
+	PolicyDigest         string   `json:"policy_digest,omitempty"`
+	EvidenceDigest       string   `json:"evidence_digest,omitempty"`
+	FilesPresented       int      `json:"files_presented,omitempty"`
+	FilesScanned         int      `json:"files_scanned,omitempty"`
+	BytesScanned         int64    `json:"bytes_scanned,omitempty"`
+	Truncated            bool     `json:"truncated,omitempty"`
+	LimitReason          string   `json:"limit_reason,omitempty"`
+	RedactedFingerprints []string `json:"redacted_fingerprints,omitempty"`
+	ProviderGuidance     string   `json:"provider_guidance,omitempty"`
 }
 type VerificationSummary struct {
 	Passed            bool   `json:"passed"`
@@ -429,7 +445,11 @@ func checkVerification(e VerificationEvidence, candidate, base, policy, guard, v
 }
 
 func scanSummary(e ScanEvidence, expected string) ScanSummary {
-	return ScanSummary{Scope: expected, Passed: e.Passed, Findings: nonnegative(e.Findings), CandidateDigest: boundedMeta(e.CandidateDigest), PolicyDigest: boundedMeta(e.PolicyDigest), EvidenceDigest: boundedMeta(e.Digest)}
+	fingerprints := append([]string(nil), e.RedactedFingerprints...)
+	if len(fingerprints) > MaxReasonCodes {
+		fingerprints = fingerprints[:MaxReasonCodes]
+	}
+	return ScanSummary{Scope: expected, Scanner: boundedMeta(e.Scanner), Passed: e.Passed, Findings: nonnegative(e.Findings), CandidateDigest: boundedMeta(e.CandidateDigest), PolicyDigest: boundedMeta(e.PolicyDigest), EvidenceDigest: boundedMeta(e.Digest), FilesPresented: nonnegative(e.FilesPresented), FilesScanned: nonnegative(e.FilesScanned), BytesScanned: nonnegative64(e.BytesScanned), Truncated: e.Truncated, LimitReason: boundedMeta(e.LimitReason), RedactedFingerprints: fingerprints, ProviderGuidance: boundedMeta(e.ProviderGuidance)}
 }
 
 func summarizeFiles(files []FileMetadata, r *Report) ([]FileMetadata, int, int64) {
@@ -550,6 +570,8 @@ func snapshot(in Request) Request {
 	in.Files = append([]FileMetadata(nil), in.Files...)
 	in.CandidateScan.ReasonCodes = append([]string(nil), in.CandidateScan.ReasonCodes...)
 	in.HistoryScan.ReasonCodes = append([]string(nil), in.HistoryScan.ReasonCodes...)
+	in.CandidateScan.RedactedFingerprints = append([]string(nil), in.CandidateScan.RedactedFingerprints...)
+	in.HistoryScan.RedactedFingerprints = append([]string(nil), in.HistoryScan.RedactedFingerprints...)
 	in.Verification.ReasonCodes = append([]string(nil), in.Verification.ReasonCodes...)
 	if len(in.README.Content) > maxREADMEBytes+1 {
 		in.README.Content = in.README.Content[:maxREADMEBytes+1]
@@ -660,6 +682,13 @@ func min(a, b int) int {
 	return b
 }
 func nonnegative(value int) int {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func nonnegative64(value int64) int64 {
 	if value < 0 {
 		return 0
 	}

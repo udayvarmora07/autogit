@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"autogit/internal/process"
 )
 
 // TrustedVerifierSpec is trusted repository configuration. Adapter payloads
@@ -27,6 +29,8 @@ type TrustedVerifierSpec struct {
 	MaxOutput        int
 	Environment      map[string]string
 	ExecutableDigest string
+	IsolationTier    IsolationTier
+	ResourceLimits   process.ResourceLimits
 }
 
 // VerificationPolicy is the repository's effective verification policy.
@@ -65,6 +69,15 @@ func NewVerifierRegistry(specs []TrustedVerifierSpec) (*VerifierRegistry, error)
 		}
 		if err := trustedArgv(in.Argv); err != nil {
 			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
+		}
+		if in.IsolationTier == "" {
+			in.IsolationTier = DefaultIsolationTier()
+		}
+		if _, err := RequireCapability(in.IsolationTier); err != nil {
+			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
+		}
+		if in.ResourceLimits == (process.ResourceLimits{}) && in.IsolationTier == TierProcessBounded {
+			in.ResourceLimits = defaultVerifierResourceLimits()
 		}
 		if !filepath.IsAbs(in.Argv[0]) {
 			return nil, fmt.Errorf("verifier %q: executable must be absolute", in.Name)
@@ -142,6 +155,9 @@ func (r *VerifierRegistry) Select(policy VerificationPolicy) (VerificationPlan, 
 		if !spec.Applicable || len(required) > 0 && !required[spec.Name] {
 			continue
 		}
+		if isPublicPolicy(policy) && spec.IsolationTier == TierNone {
+			return VerificationPlan{}, fmt.Errorf("public verification cannot use the none isolation tier")
+		}
 		selected = append(selected, cloneSpec(spec))
 	}
 	return VerificationPlan{Specs: selected, VerifierSetVersion: r.VerifierSetVersion, VerifierSetDigest: r.VerifierSetDigest, ConfigDigest: r.ConfigDigest}, nil
@@ -196,10 +212,11 @@ type TrustedEvidence struct {
 	StdoutDigest      string
 	StderrDigest      string
 	EvidenceDigest    string
+	IsolationTier     IsolationTier
 }
 
 func (e TrustedEvidence) ValidForTrusted(candidate, base, policy, guard, verifierSet string) bool {
-	return e.Passed && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
+	return e.Passed && e.IsolationTier != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
 }
 
 type VerificationResult struct {
@@ -223,7 +240,7 @@ func (r VerificationResult) ValidFor(req TrustedRequest, policy VerificationPoli
 		return false
 	}
 	for i, e := range r.Evidence {
-		if e.Verifier != plan.Specs[i].Name || e.EvidenceDigest != digestCanonical(evidenceWithoutDigest(e)) || !e.ValidForTrusted(req.CandidateDigest, req.BaseDigest, req.PolicyDigest, req.GuardDigest, r.VerifierSetDigest) {
+		if e.Verifier != plan.Specs[i].Name || e.IsolationTier != plan.Specs[i].IsolationTier || e.EvidenceDigest != digestCanonical(evidenceWithoutDigest(e)) || !e.ValidForTrusted(req.CandidateDigest, req.BaseDigest, req.PolicyDigest, req.GuardDigest, r.VerifierSetDigest) {
 			return false
 		}
 	}
@@ -300,7 +317,10 @@ func (r *VerifierRegistry) Verify(parent context.Context, policy VerificationPol
 }
 
 func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedRequest, runner Runner) (TrustedEvidence, error) {
-	e := TrustedEvidence{Verifier: spec.Name, VerifierVersion: spec.Version, CandidateDigest: req.CandidateDigest, BaseDigest: req.BaseDigest, PolicyDigest: req.PolicyDigest, GuardDigest: req.GuardDigest}
+	e := TrustedEvidence{Verifier: spec.Name, VerifierVersion: spec.Version, CandidateDigest: req.CandidateDigest, BaseDigest: req.BaseDigest, PolicyDigest: req.PolicyDigest, GuardDigest: req.GuardDigest, IsolationTier: spec.IsolationTier}
+	if _, err := RequireCapability(spec.IsolationTier); err != nil {
+		return e, err
+	}
 	// The executable is checked again at execution time to close replacement and
 	// symlink races between registry construction and verification.
 	canonical, err := canonicalTrustedExecutable(spec.Argv[0])
@@ -334,7 +354,11 @@ func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedReq
 		var res Result
 		var runErr error
 		if br, ok := runner.(boundedRunner); ok {
-			res, runErr = br.RunBounded(commandCtx, req.Dir, env, max, append([]string(nil), spec.Argv...)...)
+			if resourceRunner, resourceOK := runner.(resourceBoundedRunner); resourceOK {
+				res, runErr = resourceRunner.RunBoundedWithLimits(commandCtx, req.Dir, env, max, spec.ResourceLimits, append([]string(nil), spec.Argv...)...)
+			} else {
+				res, runErr = br.RunBounded(commandCtx, req.Dir, env, max, append([]string(nil), spec.Argv...)...)
+			}
 		} else {
 			res, runErr = runner.Run(commandCtx, req.Dir, env, append([]string(nil), spec.Argv...)...)
 		}
@@ -532,14 +556,16 @@ func outputLimitError(err error) bool {
 }
 
 type canonicalSpec struct {
-	Name             string            `json:"name"`
-	Version          string            `json:"version"`
-	Argv             []string          `json:"argv"`
-	Applicable       bool              `json:"applicable"`
-	Timeout          int64             `json:"timeout_ns"`
-	MaxOutput        int               `json:"max_output"`
-	Environment      map[string]string `json:"environment,omitempty"`
-	ExecutableDigest string            `json:"executable_digest,omitempty"`
+	Name             string                 `json:"name"`
+	Version          string                 `json:"version"`
+	Argv             []string               `json:"argv"`
+	Applicable       bool                   `json:"applicable"`
+	Timeout          int64                  `json:"timeout_ns"`
+	MaxOutput        int                    `json:"max_output"`
+	Environment      map[string]string      `json:"environment,omitempty"`
+	ExecutableDigest string                 `json:"executable_digest,omitempty"`
+	IsolationTier    IsolationTier          `json:"isolation_tier"`
+	ResourceLimits   process.ResourceLimits `json:"resource_limits"`
 }
 type registryCanonical struct {
 	Version string          `json:"version"`
@@ -553,7 +579,7 @@ type verifierSetCanonical struct {
 func canonicalSpecs(specs []TrustedVerifierSpec) []canonicalSpec {
 	out := make([]canonicalSpec, len(specs))
 	for i, s := range specs {
-		out[i] = canonicalSpec{Name: s.Name, Version: s.Version, Argv: append([]string(nil), s.Argv...), Applicable: s.Applicable, Timeout: s.Timeout.Nanoseconds(), MaxOutput: s.MaxOutput, Environment: cloneEnvironment(s.Environment), ExecutableDigest: s.ExecutableDigest}
+		out[i] = canonicalSpec{Name: s.Name, Version: s.Version, Argv: append([]string(nil), s.Argv...), Applicable: s.Applicable, Timeout: s.Timeout.Nanoseconds(), MaxOutput: s.MaxOutput, Environment: cloneEnvironment(s.Environment), ExecutableDigest: s.ExecutableDigest, IsolationTier: s.IsolationTier, ResourceLimits: s.ResourceLimits}
 	}
 	return out
 }

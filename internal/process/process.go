@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 const DefaultMaxOutput = 1 << 20
@@ -21,6 +22,16 @@ type Options struct {
 	Args           []string
 	MaxOutput      int
 	SeparateOutput bool
+	Limits         ResourceLimits
+}
+
+// ResourceLimits are best-effort OS-enforced ceilings for a process-bounded
+// operation. Zero fields retain the historical unlimited value.
+type ResourceLimits struct {
+	CPUTime     time.Duration
+	MemoryBytes uint64
+	FileBytes   uint64
+	Processes   uint64
 }
 
 type Result struct {
@@ -68,6 +79,11 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		return Result{}, err
 	}
 	if err := supervisor.Attach(command); err != nil {
+		_ = supervisor.Terminate(command)
+		_ = command.Wait()
+		return Result{}, err
+	}
+	if err := applyResourceLimits(command.Process.Pid, options.Limits); err != nil {
 		_ = supervisor.Terminate(command)
 		_ = command.Wait()
 		return Result{}, err

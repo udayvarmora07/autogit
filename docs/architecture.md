@@ -221,6 +221,9 @@ The Phase 0 product has no network API. Planned CLI commands are:
 | `autogit remote create` | Create and exactly bind an approved GitHub destination |
 | `autogit retry` | Retry an eligible existing push/provider job |
 | `autogit logs` | Show redacted audit records |
+| `autogit backup` / `restore` | Validate and atomically create/restore a local SQLite state backup |
+| `autogit integrity` / `repair` | Inspect state read-only or run explicit non-destructive maintenance |
+| `autogit retain` / `export` | Prune bounded non-active records or emit redacted structural diagnostics |
 | `autogit uninstall` | Remove only AutoGit-owned integrations/state by option |
 
 Mutating commands support dry-run where meaningful and structured JSON output.

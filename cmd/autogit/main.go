@@ -22,6 +22,7 @@ import (
 	"autogit/internal/adapters"
 	"autogit/internal/app"
 	"autogit/internal/coordinator"
+	sharedDB "autogit/internal/db"
 	"autogit/internal/events"
 	"autogit/internal/gitport"
 	"autogit/internal/gittransaction"
@@ -101,7 +102,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 
 func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable init status plan hook verify sync publish remote retry logs uninstall config explain\n")
+		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable init status plan hook verify sync publish remote retry logs backup restore integrity repair retain export uninstall config explain\n")
 		return nil
 	}
 	if args[0] == "version" || args[0] == "--version" {
@@ -142,6 +143,9 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	}
 	if cmd == "config" {
 		return runConfig(args[1:], dir, out)
+	}
+	if cmd == "backup" || cmd == "restore" || cmd == "integrity" || cmd == "repair" || cmd == "retain" || cmd == "export" {
+		return runMaintenanceContext(ctx, cmd, args[1:], dir, out)
 	}
 	if cmd == "sync" {
 		if err := validateSyncArgs(args[1:]); err != nil {
@@ -318,6 +322,106 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}
+}
+
+func runMaintenanceContext(ctx context.Context, cmd string, args []string, dir string, out io.Writer) error {
+	statePath := filepath.Join(dir, "state.db")
+	encode := func(value any) error {
+		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": cmd, "result": value})
+	}
+	switch cmd {
+	case "backup":
+		output, present := flagValue(args, "--output")
+		if !present || output == "" || len(args) != 2 {
+			return cliError{"E_USAGE", "backup requires exactly --output PATH"}
+		}
+		report, err := sharedDB.Backup(ctx, statePath, output)
+		if err != nil {
+			return cliError{"E_BACKUP", safeMessage(err.Error())}
+		}
+		return encode(report)
+	case "restore":
+		input, present := flagValue(args, "--input")
+		if !present || input == "" || len(args) != 2 {
+			return cliError{"E_USAGE", "restore requires exactly --input PATH"}
+		}
+		if err := securefs.EnsurePrivateRoot(dir); err != nil {
+			return err
+		}
+		report, err := sharedDB.Restore(ctx, input, statePath)
+		if err != nil {
+			return cliError{"E_RESTORE", safeMessage(err.Error())}
+		}
+		return encode(report)
+	case "integrity":
+		if len(args) != 0 {
+			return cliError{"E_USAGE", "integrity does not accept arguments"}
+		}
+		report, err := sharedDB.Inspect(ctx, statePath)
+		if err != nil {
+			return cliError{"E_INTEGRITY", safeMessage(err.Error())}
+		}
+		return encode(report)
+	case "repair":
+		if len(args) != 0 {
+			return cliError{"E_USAGE", "repair does not accept arguments"}
+		}
+		report, err := sharedDB.Repair(ctx, statePath)
+		if err != nil {
+			return cliError{"E_REPAIR", safeMessage(err.Error())}
+		}
+		return encode(report)
+	case "export":
+		if len(args) != 0 {
+			return cliError{"E_USAGE", "export does not accept arguments"}
+		}
+		report, err := sharedDB.Export(ctx, statePath)
+		if err != nil {
+			return cliError{"E_EXPORT", safeMessage(err.Error())}
+		}
+		var value any
+		if err := json.Unmarshal(report, &value); err != nil {
+			return cliError{"E_EXPORT", "redacted export could not be encoded"}
+		}
+		return encode(value)
+	case "retain":
+		valueFlags := 0
+		for _, name := range []string{"--audit-age-hours", "--receipt-age-hours", "--outbox-age-hours"} {
+			if hasFlag(args, name) {
+				valueFlags++
+			}
+		}
+		if len(args) != valueFlags*2+btoi(hasFlag(args, "--compact")) {
+			return cliError{"E_USAGE", "retain accepts --audit-age-hours, --receipt-age-hours, --outbox-age-hours, and optional --compact"}
+		}
+		policy := sharedDB.RetentionPolicy{Compact: hasFlag(args, "--compact")}
+		for _, item := range []struct {
+			name string
+			set  *time.Duration
+		}{{"--audit-age-hours", &policy.MaxAuditAge}, {"--receipt-age-hours", &policy.ReceiptAge}, {"--outbox-age-hours", &policy.MaxOutboxAge}} {
+			if raw, ok := flagValue(args, item.name); ok {
+				hours, err := strconv.ParseInt(raw, 10, 64)
+				if err != nil || hours <= 0 {
+					return cliError{"E_USAGE", item.name + " must be a positive integer"}
+				}
+				*item.set = time.Duration(hours) * time.Hour
+			}
+		}
+		report, err := sharedDB.Retain(ctx, statePath, policy)
+		if err != nil {
+			return cliError{"E_RETENTION", safeMessage(err.Error())}
+		}
+		return encode(report)
+	default:
+		return cliError{"E_USAGE", "unknown maintenance command"}
+	}
+}
+
+func btoi(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func runPlanContext(ctx context.Context, args []string, dir string, out io.Writer) error {
@@ -1146,11 +1250,12 @@ func buildPublicPreflight(ctx context.Context, trustedDir, root string, intent s
 	request.Files = files
 	request.README = publication.READMEInput{Path: readmePath, Content: readme}
 	request.License = publication.LicenseEvidence{Selected: options.License, FilePath: licensePath, Present: licensePresent}
-	scan := security.Scanner{}.Scan(ctx, security.CandidateSnapshot{Files: treeSecurityFiles(entries)})
-	request.CandidateScan = publication.ScanEvidence{Scope: publication.ScanCandidate, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: scan.Safe(), Findings: len(scan.Findings), ReasonCodes: append([]string(nil), scan.ReasonCodes...), Digest: digestValue(scan)}
+	scanReport := security.NewPinnedOfflineScanner().Scan(ctx, security.CandidateSnapshot{Files: treeSecurityFiles(entries)})
+	scan := scanReport.Result
+	request.CandidateScan = publication.ScanEvidence{Scope: publication.ScanCandidate, Scanner: scanReport.Scanner, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: scan.Safe(), Findings: len(scan.Findings), ReasonCodes: append([]string(nil), scan.ReasonCodes...), Digest: scanReport.EvidenceDigest, FilesPresented: scanReport.Coverage.FilesPresented, FilesScanned: scanReport.Coverage.FilesScanned, BytesScanned: scanReport.Coverage.TotalBytes, Truncated: scanReport.Truncated, LimitReason: scanReport.Coverage.LimitReason, RedactedFingerprints: append([]string(nil), scanReport.RedactedFingerprints...), ProviderGuidance: scanReport.ProviderGuidance}
 	history, historyErr := historyscan.ScanHistory(ctx, gittransaction.SystemRunner{}, historyscan.Request{RepoRoot: root, CandidateSHA: intent.SHA, PolicyDigest: intent.Intent.PolicyDigest})
 	if historyErr == nil {
-		request.HistoryScan = publication.ScanEvidence{Scope: publication.ScanHistory, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: history.Safe(), Findings: len(history.Findings), ReasonCodes: append([]string(nil), history.ReasonCodes...), Digest: digestValue(history)}
+		request.HistoryScan = publication.ScanEvidence{Scope: publication.ScanHistory, Scanner: history.SecretScanner, CandidateDigest: intent.Intent.CandidateDigest, PolicyDigest: intent.Intent.PolicyDigest, Passed: history.Safe(), Findings: len(history.Findings), ReasonCodes: append([]string(nil), history.ReasonCodes...), Digest: digestValue(history), FilesPresented: history.SecretFilesPresented, FilesScanned: history.SecretFilesScanned, BytesScanned: history.SecretBytesScanned, Truncated: history.SecretScanTruncated, RedactedFingerprints: append([]string(nil), history.SecretFingerprints...), ProviderGuidance: history.ProviderGuidance}
 	}
 	verifierPath := options.Verifiers
 	if verifierPath == "" && p.VerifierConfig != "" {

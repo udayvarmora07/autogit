@@ -25,6 +25,10 @@ type Runner interface {
 type boundedRunner interface {
 	RunBounded(context.Context, string, map[string]string, int, ...string) (Result, error)
 }
+
+type resourceBoundedRunner interface {
+	RunBoundedWithLimits(context.Context, string, map[string]string, int, process.ResourceLimits, ...string) (Result, error)
+}
 type Request struct {
 	CandidateDigest, BaseDigest, PolicyDigest, VerifierDigest, Name, Dir string
 	Env                                                                  map[string]string
@@ -142,7 +146,19 @@ func (e ExecRunner) RunBounded(ctx context.Context, dir string, env map[string]s
 	}
 	return e.run(ctx, dir, env, max, args...)
 }
-func (ExecRunner) run(ctx context.Context, dir string, env map[string]string, max int, args ...string) (Result, error) {
+func (e ExecRunner) RunBoundedWithLimits(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, args ...string) (Result, error) {
+	if max <= 0 {
+		max = e.MaxOutput
+	}
+	if max <= 0 {
+		max = 1 << 20
+	}
+	return e.runWithLimits(ctx, dir, env, max, limits, args...)
+}
+func (e ExecRunner) run(ctx context.Context, dir string, env map[string]string, max int, args ...string) (Result, error) {
+	return e.runWithLimits(ctx, dir, env, max, process.ResourceLimits{}, args...)
+}
+func (ExecRunner) runWithLimits(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, args ...string) (Result, error) {
 	if len(args) == 0 {
 		return Result{}, errors.New("empty verifier argv")
 	}
@@ -158,7 +174,7 @@ func (ExecRunner) run(ctx context.Context, dir string, env map[string]string, ma
 	for _, k := range keys {
 		commandEnv = append(commandEnv, k+"="+env[k])
 	}
-	processResult, err := process.Run(ctx, process.Options{Executable: args[0], Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true})
+	processResult, err := process.Run(ctx, process.Options{Executable: args[0], Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true, Limits: limits})
 	if processResult.Truncated || errors.Is(err, process.ErrOutputLimit) {
 		return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode}, fmt.Errorf("verification output exceeded limit")
 	}

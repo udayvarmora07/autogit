@@ -529,6 +529,19 @@ type Projector func(current []byte, event Event) (ProjectionResult, error)
 
 type Store struct{ db *sql.DB }
 
+type receiptQuery interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func receiptRow(ctx context.Context, query receiptQuery, column, value string) (eventID, digest string, disposition Disposition, revision int64, err error) {
+	if column != "event_id" && column != "idempotency_key" {
+		return "", "", "", 0, errors.New("invalid receipt lookup column")
+	}
+	statement := `SELECT event_id,payload_digest,disposition,revision FROM event_receipts WHERE ` + column + `=? UNION ALL SELECT event_id,payload_digest,disposition,revision FROM event_receipt_tombstones WHERE ` + column + `=? LIMIT 1`
+	err = query.QueryRowContext(ctx, statement, value, value).Scan(&eventID, &digest, &disposition, &revision)
+	return
+}
+
 func OpenStore(path string) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("state path is required")
@@ -574,14 +587,14 @@ func (s *Store) LookupReceipt(ctx context.Context, e Event) (Receipt, error) {
 	}
 	key := stringValue(e.Idempotency["key"])
 	var byID Receipt
-	var id, digest string
-	errID := s.db.QueryRowContext(ctx, `SELECT event_id,payload_digest,disposition,revision FROM event_receipts WHERE event_id=?`, e.EventID).Scan(&id, &digest, &byID.Disposition, &byID.Revision)
+	id, digest, idDisposition, idRevision, errID := receiptRow(ctx, s.db, "event_id", e.EventID)
+	byID.Disposition, byID.Revision = idDisposition, idRevision
 	if errID != nil && !errors.Is(errID, sql.ErrNoRows) {
 		return Receipt{}, errID
 	}
 	var byKey Receipt
-	var keyID, keyDigest string
-	errKey := s.db.QueryRowContext(ctx, `SELECT event_id,payload_digest,disposition,revision FROM event_receipts WHERE idempotency_key=?`, key).Scan(&keyID, &keyDigest, &byKey.Disposition, &byKey.Revision)
+	keyID, keyDigest, keyDisposition, keyRevision, errKey := receiptRow(ctx, s.db, "idempotency_key", key)
+	byKey.Disposition, byKey.Revision = keyDisposition, keyRevision
 	if errKey != nil && !errors.Is(errKey, sql.ErrNoRows) {
 		return Receipt{}, errKey
 	}
@@ -618,12 +631,8 @@ func (s *Store) AcceptAndProject(ctx context.Context, e Event, projector Project
 	}
 	defer tx.Rollback()
 	key := stringValue(e.Idempotency["key"])
-	var oldDigest, oldID string
-	var oldRev int64
-	idErr := tx.QueryRowContext(ctx, `SELECT event_id,payload_digest,revision FROM event_receipts WHERE event_id=?`, e.EventID).Scan(&oldID, &oldDigest, &oldRev)
-	var keyDigest, keyID string
-	var keyRev int64
-	keyErr := tx.QueryRowContext(ctx, `SELECT event_id,payload_digest,revision FROM event_receipts WHERE idempotency_key=?`, key).Scan(&keyID, &keyDigest, &keyRev)
+	oldID, oldDigest, _, oldRev, idErr := receiptRow(ctx, tx, "event_id", e.EventID)
+	keyID, keyDigest, _, _, keyErr := receiptRow(ctx, tx, "idempotency_key", key)
 	if idErr == nil || keyErr == nil {
 		if idErr == nil && keyErr == nil && oldID == e.EventID && keyID == e.EventID && oldDigest == e.Digest && keyDigest == e.Digest {
 			var stateRevision int64
@@ -776,7 +785,7 @@ func (s *Store) Logs(ctx context.Context, repositoryID string, limit int) ([]Aud
 	if limit < 1 || limit > 200 {
 		return nil, schema("E_USAGE", "log limit must be between 1 and 200")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT a.revision,a.disposition,a.reason_code,a.metadata,a.created_at,r.payload_digest FROM audit_events a LEFT JOIN event_receipts r ON r.revision=a.revision WHERE a.repository_id=? ORDER BY a.revision DESC LIMIT ?`, repositoryID, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT a.revision,a.disposition,a.reason_code,a.metadata,a.created_at,r.payload_digest FROM audit_events a LEFT JOIN (SELECT revision,payload_digest FROM event_receipts UNION ALL SELECT revision,payload_digest FROM event_receipt_tombstones) r ON r.revision=a.revision WHERE a.repository_id=? ORDER BY a.revision DESC LIMIT ?`, repositoryID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -885,13 +894,9 @@ func (s *Store) Accept(ctx context.Context, e Event) (Receipt, error) {
 		return Receipt{}, err
 	}
 	defer tx.Rollback()
-	var oldDigest, oldID string
-	var rev int64
 	key := stringValue(e.Idempotency["key"])
-	idErr := tx.QueryRowContext(ctx, `SELECT event_id,payload_digest,revision FROM event_receipts WHERE event_id=?`, e.EventID).Scan(&oldID, &oldDigest, &rev)
-	var keyDigest, keyID string
-	var keyRev int64
-	keyErr := tx.QueryRowContext(ctx, `SELECT event_id,payload_digest,revision FROM event_receipts WHERE idempotency_key=?`, key).Scan(&keyID, &keyDigest, &keyRev)
+	oldID, oldDigest, _, rev, idErr := receiptRow(ctx, tx, "event_id", e.EventID)
+	keyID, keyDigest, _, _, keyErr := receiptRow(ctx, tx, "idempotency_key", key)
 	if idErr == nil || keyErr == nil {
 		if idErr == nil && keyErr == nil && oldID == e.EventID && keyID == e.EventID && oldDigest == e.Digest && keyDigest == e.Digest {
 			return Receipt{Disposition: Duplicate, Revision: rev}, tx.Commit()
@@ -908,11 +913,10 @@ func (s *Store) Accept(ctx context.Context, e Event) (Receipt, error) {
 	disp := Accepted
 	causation := stringValue(e.Ordering["causation_id"])
 	if causation != "" {
-		var x string
-		if err = tx.QueryRowContext(ctx, `SELECT event_id FROM event_receipts WHERE event_id=?`, causation).Scan(&x); errors.Is(err, sql.ErrNoRows) {
+		if _, _, _, _, lookupErr := receiptRow(ctx, tx, "event_id", causation); errors.Is(lookupErr, sql.ErrNoRows) {
 			disp = Pending
-		} else if err != nil {
-			return Receipt{}, err
+		} else if lookupErr != nil {
+			return Receipt{}, lookupErr
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO event_receipts(event_id,idempotency_key,payload_digest,disposition,revision,created_at) VALUES(?,?,?,?,?,?)`, e.EventID, stringValue(e.Idempotency["key"]), e.Digest, disp, rev, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {

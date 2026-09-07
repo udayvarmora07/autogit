@@ -184,6 +184,36 @@ func TestReceiptRevisionSequenceDoesNotReuseDeletedRevisions(t *testing.T) {
 	}
 }
 
+func TestTombstonedReceiptRemainsAnIdempotencyBoundary(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	e, err := Decode([]byte(validEvent), 64<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Accept(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO event_receipt_tombstones(event_id,idempotency_key,payload_digest,disposition,revision,created_at) SELECT event_id,idempotency_key,payload_digest,disposition,revision,created_at FROM event_receipts WHERE event_id=?`, e.EventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM event_receipts WHERE event_id=?`, e.EventID); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := s.Accept(context.Background(), e)
+	if err != nil || duplicate.Disposition != Duplicate {
+		t.Fatalf("tombstoned duplicate=%+v err=%v", duplicate, err)
+	}
+	changed := e
+	changed.Digest = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	if _, err := s.Accept(context.Background(), changed); err == nil || CodeOf(err) != "E_IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("tombstoned conflict error=%v", err)
+	}
+}
+
 func TestStoreBuffersMissingCausation(t *testing.T) {
 	raw := strings.Replace(validEvent, `"causation_id"`, `"causation_id"`, 1)
 	raw = strings.Replace(raw, `"ordering":{"stream_id":"repo/session"}`, `"ordering":{"stream_id":"repo/session","causation_id":"01J7N6X8P5K2V4W6FQ8M9ABCD0"}`, 1)

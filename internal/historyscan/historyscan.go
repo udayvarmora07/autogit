@@ -81,19 +81,26 @@ type Finding struct {
 // Evidence is bound to the exact candidate, policy, and scanner version. A
 // blocked result is still useful evidence, but can never authorize publish.
 type Evidence struct {
-	CandidateSHA string
-	CandidateRef string
-	PolicyDigest string
-	Scanner      string
-	Digest       string
+	CandidateSHA  string
+	CandidateRef  string
+	PolicyDigest  string
+	Scanner       string
+	SecretScanner string
+	Digest        string
 
-	Findings       []Finding
-	ReasonCodes    []string
-	CommitsScanned int
-	ObjectsScanned int
-	TotalBytes     int64
-	Blocked        bool
-	findingLimit   int
+	Findings             []Finding
+	ReasonCodes          []string
+	CommitsScanned       int
+	ObjectsScanned       int
+	TotalBytes           int64
+	SecretFilesPresented int
+	SecretFilesScanned   int
+	SecretBytesScanned   int64
+	SecretScanTruncated  bool
+	SecretFingerprints   []string
+	ProviderGuidance     string
+	Blocked              bool
+	findingLimit         int
 }
 
 // Result is retained as a readable name for callers that model scan output as
@@ -160,6 +167,7 @@ var (
 type HistoryScanner struct {
 	Runner         Runner
 	Scanner        security.Scanner
+	SecretScanner  security.OfflineSecretScanner
 	ScannerVersion string
 }
 
@@ -209,7 +217,7 @@ func (s HistoryScanner) Scan(parent context.Context, req Request) (Evidence, err
 	if root == "" {
 		root = req.Root
 	}
-	e := Evidence{CandidateSHA: sha, CandidateRef: ref, PolicyDigest: req.PolicyDigest, Scanner: s.version()}
+	e := Evidence{CandidateSHA: sha, CandidateRef: ref, PolicyDigest: req.PolicyDigest, Scanner: s.version(), SecretScanner: security.OfflineScannerVersion}
 	e.findingLimit = limits.MaxFindings
 	finish := func(err error) (Evidence, error) {
 		if e.findingLimit > 0 && len(e.Findings) >= e.findingLimit {
@@ -453,6 +461,10 @@ func (s HistoryScanner) Scan(parent context.Context, req Request) (Evidence, err
 	scanner := s.Scanner
 	scanner.Limits = security.Limits{MaxFiles: 1, MaxFileBytes: limits.MaxBlobBytes, MaxTotalBytes: limits.MaxTotalBytes, MaxFindings: limits.MaxFindings, TimeBudget: limits.Timeout}
 	scanner.BinaryPolicy = security.BinaryReject
+	secretScanner := s.SecretScanner
+	if secretScanner == nil {
+		secretScanner = security.NewPinnedOfflineScanner(scanner)
+	}
 	type blobMeta struct{ size int64 }
 	metadata := make(map[string]blobMeta, len(objectIDs))
 	plannedTotal := int64(0)
@@ -519,15 +531,24 @@ func (s HistoryScanner) Scan(parent context.Context, req Request) (Evidence, err
 				e.addFinding(Finding{Path: item.path, Category: "lfs", Reason: ReasonLFSPointer, Digest: oid})
 				continue
 			}
-			scan := scanner.Scan(ctx, security.CandidateSnapshot{Files: []security.CandidateFile{{Path: item.path, Content: blob, Mode: parseMode(item.mode)}}})
-			for _, code := range scan.ReasonCodes {
+			scan := secretScanner.Scan(ctx, security.CandidateSnapshot{Files: []security.CandidateFile{{Path: item.path, Content: blob, Mode: parseMode(item.mode)}}})
+			e.SecretScanner = scan.Scanner
+			e.SecretFilesPresented += scan.Coverage.FilesPresented
+			e.SecretFilesScanned += scan.Coverage.FilesScanned
+			e.SecretBytesScanned += scan.Coverage.TotalBytes
+			e.SecretScanTruncated = e.SecretScanTruncated || scan.Truncated
+			e.SecretFingerprints = append(e.SecretFingerprints, scan.RedactedFingerprints...)
+			if e.ProviderGuidance == "" {
+				e.ProviderGuidance = scan.ProviderGuidance
+			}
+			for _, code := range scan.Result.ReasonCodes {
 				e.addReason(code)
 			}
-			for _, f := range scan.Findings {
+			for _, f := range scan.Result.Findings {
 				e.addFinding(Finding{Path: f.Path, Category: f.Category, Reason: f.Code, Digest: oid})
 			}
-			if scan.Blocked && len(scan.Findings) == 0 {
-				for _, code := range scan.ReasonCodes {
+			if scan.Result.Blocked && len(scan.Result.Findings) == 0 {
+				for _, code := range scan.Result.ReasonCodes {
 					e.addFinding(Finding{Path: item.path, Category: "scan", Reason: code, Digest: oid})
 				}
 			}
@@ -699,7 +720,10 @@ func evidenceDigest(e Evidence) string {
 	for _, f := range findings {
 		fmt.Fprintf(h, "f:%s\x00%s\x00%s\x00%s\x00", f.Path, f.Category, f.Reason, f.Digest)
 	}
-	fmt.Fprintf(h, "c:%d\x00o:%d\x00b:%d\x00t:%t\x00", e.CommitsScanned, e.ObjectsScanned, e.TotalBytes, e.Blocked)
+	for _, fingerprint := range uniqueSorted(e.SecretFingerprints) {
+		fmt.Fprintf(h, "fp:%s\x00", fingerprint)
+	}
+	fmt.Fprintf(h, "c:%d\x00o:%d\x00b:%d\x00t:%t\x00ss:%s\x00sf:%d\x00sc:%d\x00sb:%d\x00st:%t\x00pg:%s\x00", e.CommitsScanned, e.ObjectsScanned, e.TotalBytes, e.Blocked, e.SecretScanner, e.SecretFilesPresented, e.SecretFilesScanned, e.SecretBytesScanned, e.SecretScanTruncated, e.ProviderGuidance)
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 

@@ -1,7 +1,7 @@
 # AutoGit world-class implementation plan
 
 Status: Active; release posture is NO-GO for private alpha
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
@@ -113,9 +113,9 @@ Git/provider side effects:
 | Product contract | Detailed requirements, lifecycle, threat model, ADRs, and traceability test | Documents remain proposed and acceptance has no owner/date | Block alpha |
 | Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, HEAD/index rechecks | Init and linked-worktree paths use weaker runners; hostile attributes/filters and SHA-256 need broader differential tests | Block alpha |
 | Ownership | Source-free baseline evidence, race checks, rename/delete handling, fail-closed ambiguity | Duplicate start replay performs capture before dedupe | Block alpha |
-| Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules | Old SQLite, two schema owners on one DB, incomplete path hardening, no supported backup/restore or retention | Block alpha |
-| Verification | Frozen executable/config digests, timeout and output bounds | No filesystem/network sandbox, resource ceiling, or descendant cleanup | Block public use |
-| Security scanning | Candidate and bounded history checks; failures block | Regex/entropy engine is incomplete; broad gosec exclusions; scan coverage is not explicit | Block public use |
+| Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules, supported backup/restore/integrity/retention APIs | Native backup/restore/retention runtime matrix and remaining Phase 1 recovery drills | Block alpha |
+| Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings | Filesystem/network sandbox tiers and native platform resource/isolation validation remain unavailable | Block public use |
+| Security scanning | Candidate and bounded history checks; pinned offline interface, exact-blob scope, coverage/limit evidence, redacted fingerprints | Detection engine breadth and provider-side push protection remain separately scoped; native security-tool matrix remains | Block public use |
 | Adapters | Six manifests and canonical event translation | Static manifests are stale; three installers unsupported; no pinned real-payload fixture program or runtime capability negotiation | Block compatibility claim |
 | GitHub provider | Exact destination/SHA/ref checks and durable reconciliation | Ambient gh identity, no typed versioned REST transport, no App tokens, limited GHE/rate-limit coverage, no live canary | Block alpha |
 | CLI and operations | Read-only status/plan/doctor/log commands | Monolithic 2,143-line command file, sparse help, no version command, duplicated error code, stdout/stderr ambiguity, no root deadlines | Block supportability |

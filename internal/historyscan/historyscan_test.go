@@ -34,7 +34,7 @@ func TestHistoryScanFindsSecretRemovedFromCandidate(t *testing.T) {
 	if strings.Contains(fmt.Sprintf("%#v", got), "old-secret-value") {
 		t.Fatal("secret value leaked in evidence")
 	}
-	if got.Digest == "" || got.CandidateSHA == "" || got.Scanner == "" {
+	if got.Digest == "" || got.CandidateSHA == "" || got.Scanner == "" || got.SecretScanner != security.OfflineScannerVersion || got.ProviderGuidance == "" || got.SecretFilesPresented == 0 {
 		t.Fatalf("unbound evidence: %#v", got)
 	}
 }

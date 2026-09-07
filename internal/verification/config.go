@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"autogit/internal/process"
 	"autogit/internal/securefs"
 )
 
@@ -28,13 +29,18 @@ type verifierConfig struct {
 }
 
 type verifierConfigEntry struct {
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Argv        []string          `json:"argv"`
-	Applicable  *bool             `json:"applicable"`
-	TimeoutMS   *int64            `json:"timeout_ms"`
-	MaxOutput   *int              `json:"max_output"`
-	Environment map[string]string `json:"environment"`
+	Name          string            `json:"name"`
+	Version       string            `json:"version"`
+	Argv          []string          `json:"argv"`
+	Applicable    *bool             `json:"applicable"`
+	TimeoutMS     *int64            `json:"timeout_ms"`
+	MaxOutput     *int              `json:"max_output"`
+	Environment   map[string]string `json:"environment"`
+	IsolationTier string            `json:"isolation_tier"`
+	CPUTimeMS     *int64            `json:"cpu_time_ms"`
+	MemoryBytes   *uint64           `json:"memory_bytes"`
+	FileBytes     *uint64           `json:"file_bytes"`
+	Processes     *uint64           `json:"processes"`
 }
 
 // LoadRegistry parses a trusted verifier configuration and returns the same
@@ -89,10 +95,36 @@ func LoadRegistry(raw []byte, max int64) (*VerifierRegistry, error) {
 			}
 			maxOutput = *entry.MaxOutput
 		}
+		limits := process.ResourceLimits{}
+		if entry.CPUTimeMS != nil {
+			if *entry.CPUTimeMS <= 0 || *entry.CPUTimeMS > int64(maxVerifierTimeout/time.Millisecond) {
+				return nil, fmt.Errorf("verifier %q has invalid CPU limit", entry.Name)
+			}
+			limits.CPUTime = time.Duration(*entry.CPUTimeMS) * time.Millisecond
+		}
+		if entry.MemoryBytes != nil {
+			if *entry.MemoryBytes < 16<<20 || *entry.MemoryBytes > 16<<30 {
+				return nil, fmt.Errorf("verifier %q has invalid memory limit", entry.Name)
+			}
+			limits.MemoryBytes = *entry.MemoryBytes
+		}
+		if entry.FileBytes != nil {
+			if *entry.FileBytes < 1<<20 || *entry.FileBytes > 1<<32 {
+				return nil, fmt.Errorf("verifier %q has invalid file limit", entry.Name)
+			}
+			limits.FileBytes = *entry.FileBytes
+		}
+		if entry.Processes != nil {
+			if *entry.Processes == 0 || *entry.Processes > 1024 {
+				return nil, fmt.Errorf("verifier %q has invalid process limit", entry.Name)
+			}
+			limits.Processes = *entry.Processes
+		}
 		specs = append(specs, TrustedVerifierSpec{
 			Name: entry.Name, Version: entry.Version, Argv: append([]string(nil), entry.Argv...),
 			Applicable: applicable, Timeout: timeout, MaxOutput: maxOutput,
-			Environment: cloneEnvironment(entry.Environment),
+			Environment:   cloneEnvironment(entry.Environment),
+			IsolationTier: IsolationTier(entry.IsolationTier), ResourceLimits: limits,
 		})
 	}
 	return NewVerifierRegistry(specs)

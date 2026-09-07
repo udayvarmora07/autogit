@@ -38,7 +38,8 @@ safe local operations (`install`, `doctor`, `enable`, `disable`, `init`, `status
 `plan`, `hook`, `logs`, `uninstall`, `config explain`, baseline-capturing
 `sync` (plus explicit clean-session `sync --complete`), clean-session read-only
 `verify`, explicit private `publish`, guarded `retry`, and explicit
-`remote create`). `verify` accepts either explicit repository/session/path/
+`remote create`, plus explicit state maintenance commands `backup`, `restore`,
+`integrity`, `repair`, `retain`, and redacted `export`). `verify` accepts either explicit repository/session/path/
 message/verifier inputs or `--all-owned` for source-free restart evidence, and
 never commits or updates refs. `sync --complete` creates only an AutoGit-owned
 local commit ref after trusted verification; `sync --complete --all-owned` can
@@ -94,6 +95,13 @@ fail-closed composer is used.
 `autogit verify --all-owned` uses the same source-free session evidence as
 `sync --complete --all-owned`, but only runs trusted verification and never
 creates a commit intent or AutoGit ref.
+
+State maintenance is explicit and local: `backup --output PATH` creates a
+validated standalone SQLite backup, `restore --input PATH` atomically replaces
+the state database after integrity checks, `integrity` is read-only, `repair`
+only checkpoints/optimizes a healthy database, `retain` prunes bounded
+non-active records, and `export` returns structural counts without payloads or
+metadata.
 
 ### Verification and remaining release gates
 

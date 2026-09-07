@@ -30,6 +30,7 @@ const (
 	CurrentSchemaVersion  = 7
 	openTimeout           = 15 * time.Second
 	busyTimeoutMS         = 5000
+	walAutoCheckpoint     = 1000
 )
 
 var ErrUnsafePath = errors.New("unsafe database path")
@@ -125,7 +126,7 @@ func configureSQLite(ctx context.Context, database *sql.DB) error {
 	for attempt := 0; attempt < 8; attempt++ {
 		var journalMode string
 		lastErr = func() error {
-			if _, err := database.ExecContext(ctx, `PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=1000;`); err != nil {
+			if _, err := database.ExecContext(ctx, `PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=1000; PRAGMA checkpoint_fullfsync=1;`); err != nil {
 				return err
 			}
 			if err := database.QueryRowContext(ctx, `PRAGMA journal_mode=WAL`).Scan(&journalMode); err != nil {
@@ -158,6 +159,34 @@ func configureSQLite(ctx context.Context, database *sql.DB) error {
 	}
 	if !atLeastVersion(version, RequiredSQLiteVersion) {
 		return fmt.Errorf("SQLite version %s is older than required %s", version, RequiredSQLiteVersion)
+	}
+	var synchronous int
+	if err := database.QueryRowContext(ctx, `PRAGMA synchronous`).Scan(&synchronous); err != nil {
+		return err
+	}
+	if synchronous != 1 && synchronous != 2 {
+		return fmt.Errorf("SQLite synchronous mode %d is not durable", synchronous)
+	}
+	var foreignKeys int
+	if err := database.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil || foreignKeys != 1 {
+		if err == nil {
+			err = errors.New("SQLite foreign_keys pragma is disabled")
+		}
+		return err
+	}
+	var busyTimeout int
+	if err := database.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil || busyTimeout != busyTimeoutMS {
+		if err == nil {
+			err = fmt.Errorf("SQLite busy_timeout is %d, want %d", busyTimeout, busyTimeoutMS)
+		}
+		return err
+	}
+	var checkpoint int
+	if err := database.QueryRowContext(ctx, `PRAGMA wal_autocheckpoint`).Scan(&checkpoint); err != nil || checkpoint != walAutoCheckpoint {
+		if err == nil {
+			err = fmt.Errorf("SQLite wal_autocheckpoint is %d, want %d", checkpoint, walAutoCheckpoint)
+		}
+		return err
 	}
 	return nil
 }
@@ -316,6 +345,9 @@ func prepareWritablePath(path string) (string, error) {
 	if err := verifyDirectory(parent); err != nil {
 		return "", err
 	}
+	if err := checkLocalFilesystem(parent); err != nil {
+		return "", err
+	}
 	if info, err := os.Lstat(absolute); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return "", fmt.Errorf("%w: database file is not a regular file", ErrUnsafePath)
@@ -366,6 +398,9 @@ func prepareExistingPath(path string) (string, error) {
 		}
 		return "", err
 	}
+	if err := checkLocalFilesystem(filepath.Dir(absolute)); err != nil {
+		return "", err
+	}
 	info, err := os.Lstat(absolute)
 	if err != nil {
 		return "", err
@@ -378,6 +413,9 @@ func prepareExistingPath(path string) (string, error) {
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return "", fmt.Errorf("%w: database permissions are too broad", ErrUnsafePath)
+	}
+	if err := restrictDatabaseArtifacts(absolute); err != nil {
+		return "", err
 	}
 	return absolute, nil
 }
@@ -474,6 +512,7 @@ CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY,kind TEXT NOT NULL,aggreg
 CREATE TABLE IF NOT EXISTS audit (id TEXT PRIMARY KEY,repository_id TEXT,reason_code TEXT,metadata TEXT,prev_digest TEXT,digest TEXT,at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(published_at,created_at);
 CREATE TABLE IF NOT EXISTS event_receipts (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL, disposition TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS event_receipt_tombstones (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL, disposition TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS event_revision_sequence (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
 INSERT OR IGNORE INTO event_revision_sequence(id,revision) VALUES(1,COALESCE((SELECT MAX(revision) FROM event_receipts),0));
 CREATE TABLE IF NOT EXISTS pending_events (event_id TEXT PRIMARY KEY, causation_id TEXT NOT NULL, payload BLOB NOT NULL);

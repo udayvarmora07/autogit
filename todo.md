@@ -74,25 +74,29 @@ All items are release blockers.
 
 ## Phase 1 — trusted local core
 
-- [ ] P1-01 Assert SQLite journal, synchronous, foreign-key, busy-timeout,
+- [x] P1-01 Assert SQLite journal, synchronous, foreign-key, busy-timeout,
   checkpoint, and connection settings; detect unsupported/network filesystems
-  and fail closed or use a documented safe journal mode.
-- [ ] P1-02 Add supported online backup, restore, integrity check,
+  and fail closed or use a documented safe journal mode. Evidence: [Phase 1
+  P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
+- [x] P1-02 Add supported online backup, restore, integrity check,
   foreign-key check, migration rollback, repair, and redacted export flows.
-- [ ] P1-03 Implement bounded audit/event retention, pruning, compaction, and
+  Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
+- [x] P1-03 Implement bounded audit/event retention, pruning, compaction, and
   privacy-budget tests without removing active recovery evidence.
-- [ ] P1-04 Define and implement verification isolation tiers: none,
+  Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
+- [x] P1-04 Define and implement verification isolation tiers: none,
   process-bounded, filesystem-isolated, filesystem-and-network-isolated, and
-  remote-hermetic.
+  remote-hermetic. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
 - [ ] P1-04 Enforce and test descendant cleanup, CPU/memory/file/process
   limits, filesystem allowlists, and network denial for advertised tiers.
 - [ ] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
   AppContainer/job controls, and an honest macOS fallback.
-- [ ] P1-05 Introduce a pinned offline secret-scanner interface over exact
+- [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
   candidate blobs and reachable history; keep online validation separately
-  consented.
-- [ ] P1-05 Include scanner version, coverage, truncation/limit state, redacted
+  consented. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
+- [x] P1-05 Include scanner version, coverage, truncation/limit state, redacted
   fingerprints, and provider push-protection guidance in preflight evidence.
+  Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
 - [ ] P1-06 Differentially test tree creation for attributes, filters, LFS,
   sparse indexes/checkouts, submodules, worktrees, unusual modes, Unicode,
   newline, control, and option-like paths.

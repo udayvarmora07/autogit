@@ -2,8 +2,12 @@ package security
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path"
@@ -82,6 +86,114 @@ type ScanResult struct {
 	FilesScanned int
 	TotalBytes   int64
 	Blocked      bool
+}
+
+const OfflineScannerVersion = "autogit-secret-scanner/v1"
+
+// ScanCoverage makes the scanner's scope and limit state explicit without
+// retaining source bytes, paths outside the candidate, or matching values.
+type ScanCoverage struct {
+	FilesPresented int
+	FilesScanned   int
+	TotalBytes     int64
+	Truncated      bool
+	LimitReason    string
+}
+
+type OfflineScanReport struct {
+	Scanner              string
+	Result               ScanResult
+	Coverage             ScanCoverage
+	Truncated            bool
+	RedactedFingerprints []string
+	ProviderGuidance     string
+	RedactedSummary      string
+	EvidenceDigest       string
+}
+
+// OfflineSecretScanner is the scanner boundary consumed by candidate and
+// history workflows. Implementations receive immutable exact blobs and must
+// return metadata-only evidence. Online/provider scanners do not implement
+// this interface and cannot silently enter the local preflight path.
+type OfflineSecretScanner interface {
+	Scan(context.Context, CandidateSnapshot, ...ScanOptions) OfflineScanReport
+}
+
+// PinnedOfflineScanner is the built-in, deterministic scanner engine. Its
+// version is included in evidence so changing rules invalidates prior scans.
+type PinnedOfflineScanner struct {
+	engine  Scanner
+	version string
+}
+
+func NewPinnedOfflineScanner(engine ...Scanner) PinnedOfflineScanner {
+	selected := Scanner{}
+	if len(engine) > 0 {
+		selected = engine[0]
+	}
+	return PinnedOfflineScanner{engine: selected, version: OfflineScannerVersion}
+}
+
+func (s PinnedOfflineScanner) Scan(ctx context.Context, snapshot CandidateSnapshot, options ...ScanOptions) OfflineScanReport {
+	engine := s.engine
+	if len(options) > 0 {
+		if options[0].Limits != (Limits{}) {
+			engine.Limits = options[0].Limits
+		}
+		if options[0].BinaryPolicy != BinaryReject {
+			engine.BinaryPolicy = options[0].BinaryPolicy
+		}
+	}
+	result := engine.Scan(ctx, snapshot)
+	report := OfflineScanReport{
+		Scanner:          s.version,
+		Result:           result,
+		ProviderGuidance: "provider push protection remains separately consented and is not invoked by offline scanning",
+		Coverage: ScanCoverage{
+			FilesPresented: len(snapshot.Files),
+			FilesScanned:   result.FilesScanned,
+			TotalBytes:     result.TotalBytes,
+		},
+	}
+	for _, finding := range result.Findings {
+		fingerprint := sha256.Sum256([]byte(finding.Code + "\x00" + finding.Path))
+		report.RedactedFingerprints = append(report.RedactedFingerprints, "sha256:"+hex.EncodeToString(fingerprint[:]))
+	}
+	sort.Strings(report.RedactedFingerprints)
+	for _, reason := range result.ReasonCodes {
+		if isScannerLimitReason(reason) {
+			report.Truncated = true
+			report.Coverage.Truncated = true
+			if report.Coverage.LimitReason == "" {
+				report.Coverage.LimitReason = reason
+			}
+		}
+	}
+	report.RedactedSummary = fmt.Sprintf("blocked=%t;files=%d/%d;bytes=%d;limit=%s;findings=%d", result.Blocked, result.FilesScanned, len(snapshot.Files), result.TotalBytes, report.Coverage.LimitReason, len(result.Findings))
+	report.EvidenceDigest = offlineEvidenceDigest(report.Scanner, report.Coverage, result, report.RedactedFingerprints, report.ProviderGuidance)
+	return report
+}
+
+func isScannerLimitReason(reason string) bool {
+	switch reason {
+	case ReasonFileCount, ReasonFileBytes, ReasonTotalBytes, ReasonFindingCount, ReasonCancelled, ReasonTimeBudget, ReasonBinarySkipped, ReasonBinaryUnverified:
+		return true
+	default:
+		return false
+	}
+}
+
+func offlineEvidenceDigest(scanner string, coverage ScanCoverage, result ScanResult, fingerprints []string, guidance string) string {
+	value := struct {
+		Scanner       string
+		Coverage      ScanCoverage
+		Result        ScanResult
+		Fingerprints  []string
+		ProviderGuide string
+	}{scanner, coverage, result, fingerprints, guidance}
+	encoded, _ := json.Marshal(value)
+	digest := sha256.Sum256(encoded)
+	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
 // Safe is convenient for coordinator callers and intentionally requires that
