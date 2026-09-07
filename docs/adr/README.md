@@ -10,3 +10,4 @@
 - [ADR-0008: One shared SQLite gateway](0008-shared-sqlite-gateway.md)
 - [ADR-0009: Protected state filesystem boundary](0009-protected-state-filesystem.md)
 - [ADR-0010: Bounded external process lifecycle](0010-bounded-process-lifecycle.md)
+- [ADR-0011: Typed GitHub REST transport and explicit provider identity](0011-typed-github-rest-and-explicit-identity.md)

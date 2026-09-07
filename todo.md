@@ -152,6 +152,16 @@ All items are release blockers.
   bound Check Run without making it a source of truth.
 - [ ] P2-11 Add an optional, read-only-first MCP surface for status, plan,
   explain, and logs; require separate domain consent for verify/publish.
+
+### 2026-09-07 local implementation slice
+
+P2-06 through P2-10 now have a typed local implementation and deterministic
+contract evidence in [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md): bounded REST transport, explicit host/account/owner binding,
+in-memory GitHub App installation tokens, Enterprise version negotiation, and
+an optional redacted head-SHA Check Run projection. Their boxes remain open
+until the bundle's live disposable-provider, permission-review, and native
+artifact requirements are actually executed and reviewed.
+
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.

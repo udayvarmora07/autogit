@@ -5,6 +5,12 @@ Last updated: 2026-09-07
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
+Current execution slice (2026-09-07): the local implementation for P2-06
+through P2-10 is present in `internal/provider/github_rest.go` with deterministic
+contract tests and a retained evidence bundle. This does not change the
+release posture or waive the live disposable-provider, permission, native
+platform, and named-reviewer requirements.
+
 ## 1. Executive decision
 
 AutoGit already has an unusually strong safety-oriented foundation: explicit
