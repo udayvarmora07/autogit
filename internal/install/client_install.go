@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"autogit/internal/adapters"
 )
 
 // ClientInstallation is the registry consumed by the CLI. Supported entries
@@ -19,6 +21,7 @@ type ClientInstallation struct {
 	Adapter           string
 	Supported         bool
 	ConfigFormat      Format
+	ConfigShape       string
 	HookEvent         string
 	UnsupportedReason string
 }
@@ -30,23 +33,23 @@ type ClientInstallPlan struct {
 
 var ErrUnsupported = errors.New("client hook installation is unsupported")
 
-var clientInstallations = []ClientInstallation{
-	{Adapter: "codex", Supported: true, ConfigFormat: FormatJSON, HookEvent: "SessionEnd"},
-	{Adapter: "claude-code", Supported: true, ConfigFormat: FormatJSON, HookEvent: "Stop"},
-	{Adapter: "cursor", UnsupportedReason: "Cursor documents rules and permissions, but no lifecycle hook configuration"},
-	{Adapter: "gemini-cli", Supported: true, ConfigFormat: FormatJSON, HookEvent: "SessionEnd"},
-	{Adapter: "opencode", UnsupportedReason: "OpenCode hooks require a versioned plugin module; no stable command-hook config is available"},
-	{Adapter: "commandcode", UnsupportedReason: "No stable public CommandCode hook configuration contract is available"},
-}
-
 func ClientInstallations() []ClientInstallation {
-	out := make([]ClientInstallation, len(clientInstallations))
-	copy(out, clientInstallations)
+	registry := adapters.Registry()
+	out := make([]ClientInstallation, 0, len(registry.Entries))
+	for _, entry := range registry.Entries {
+		var format Format
+		if entry.InstallSupported {
+			format = Format(entry.Config.Format)
+		}
+		out = append(out, ClientInstallation{Adapter: entry.Adapter, Supported: entry.InstallSupported,
+			ConfigFormat: format, ConfigShape: entry.Config.Shape, HookEvent: entry.Config.HookEvent,
+			UnsupportedReason: entry.UnsupportedReason})
+	}
 	return out
 }
 
 func ClientInstallationFor(adapter string) (ClientInstallation, error) {
-	for _, entry := range clientInstallations {
+	for _, entry := range ClientInstallations() {
 		if entry.Adapter == adapter {
 			return entry, nil
 		}
@@ -99,24 +102,13 @@ func PlanClient(entry ClientInstallation, path string, roots []string, projectRo
 			return ClientInstallPlan{}, fmt.Errorf("%w: %v", ErrFormat, err)
 		}
 	}
-	hooks, err := hookObject(obj)
-	if err != nil {
-		return ClientInstallPlan{}, err
-	}
 	command, err := hookCommand(entry, projectRoot)
 	if err != nil {
 		return ClientInstallPlan{}, err
 	}
-	owned, foreign := findOwnedHook(hooks[entry.HookEvent], entry.Adapter, command)
-	if foreign {
-		return ClientInstallPlan{}, ErrOwnership
+	if err := addClientHook(obj, entry, command); err != nil {
+		return ClientInstallPlan{}, err
 	}
-	if !owned {
-		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": command, "name": "autogit"}}}
-		groups, _ := hooks[entry.HookEvent].([]any)
-		hooks[entry.HookEvent] = append(groups, group)
-	}
-	obj["hooks"] = hooks
 	p.Desired, err = json.Marshal(obj)
 	if err != nil {
 		return ClientInstallPlan{}, err
@@ -148,10 +140,9 @@ func canonicalProjectRoot(root string) (string, error) {
 }
 
 func hookCommand(entry ClientInstallation, root string) (string, error) {
-	event := "model.stopped"
-	switch entry.Adapter {
-	case "codex", "gemini-cli":
-		event = "session.ended"
+	event := "session.ended"
+	if entry.Adapter == "claude-code" {
+		event = "task.completed"
 	}
 	quotedRoot, err := shellQuote(root)
 	if err != nil {
@@ -205,21 +196,115 @@ func UninstallClient(entry ClientInstallation, path string, roots []string, proj
 	if err != nil {
 		return err
 	}
-	obj := map[string]any{}
-	if err := decodeJSON(original, &obj); err != nil {
-		return fmt.Errorf("%w: %v", ErrFormat, err)
-	}
-	hooks, err := hookObject(obj)
-	if err != nil {
-		return err
-	}
-	groups, _ := hooks[entry.HookEvent].([]any)
-	kept := make([]any, 0, len(groups))
-	removed := false
 	command, err := hookCommand(entry, projectRoot)
 	if err != nil {
 		return err
 	}
+	obj := map[string]any{}
+	if err := decodeJSON(original, &obj); err != nil {
+		return fmt.Errorf("%w: %v", ErrFormat, err)
+	}
+	removed, err := removeClientHook(obj, entry, command)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return nil
+	}
+	desired, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Original: original, Desired: desired, Exists: true, Mode: info.Mode(), Changed: true, resolvedDir: resolvedInstallDir(filepath.Dir(clean))}
+	return Apply(p)
+}
+
+func addClientHook(obj map[string]any, entry ClientInstallation, command string) error {
+	hooks, err := hookObject(obj)
+	if err != nil {
+		return err
+	}
+	if entry.ConfigShape == "flat-hooks" {
+		if raw, ok := hooks[entry.HookEvent]; ok {
+			if _, ok := raw.([]any); !ok {
+				return fmt.Errorf("%w: %s must be an array", ErrFormat, entry.HookEvent)
+			}
+		}
+		items, _ := hooks[entry.HookEvent].([]any)
+		owned, foreign := findFlatOwnedHook(items, entry.Adapter, command)
+		if foreign {
+			return ErrOwnership
+		}
+		if !owned {
+			items = append(items, map[string]any{"type": "command", "command": command})
+		}
+		hooks[entry.HookEvent] = items
+		if raw, exists := obj["version"]; exists {
+			if version, ok := raw.(float64); !ok || version != 1 {
+				return fmt.Errorf("%w: Cursor hooks version must be 1", ErrFormat)
+			}
+		} else {
+			obj["version"] = 1
+		}
+		obj["hooks"] = hooks
+		return nil
+	}
+	groups, err := clientHookGroups(hooks, entry.HookEvent)
+	if err != nil {
+		return err
+	}
+	owned, foreign := findOwnedHook(groups, entry.Adapter, command)
+	if foreign {
+		return ErrOwnership
+	}
+	if !owned {
+		groups = append(groups, map[string]any{"hooks": []any{map[string]any{"type": "command", "command": command, "name": "autogit"}}})
+	}
+	hooks[entry.HookEvent] = groups
+	obj["hooks"] = hooks
+	return nil
+}
+
+func removeClientHook(obj map[string]any, entry ClientInstallation, command string) (bool, error) {
+	hooks, err := hookObject(obj)
+	if err != nil {
+		return false, err
+	}
+	if entry.ConfigShape == "flat-hooks" {
+		raw, present := hooks[entry.HookEvent]
+		items, exists := raw.([]any)
+		if present && !exists {
+			return false, fmt.Errorf("%w: %s must be an array", ErrFormat, entry.HookEvent)
+		} else if !present {
+			items = nil
+		}
+		kept := make([]any, 0, len(items))
+		removed := false
+		for _, item := range items {
+			hm, ok := item.(map[string]any)
+			if ok && hm["command"] == command {
+				removed = true
+				continue
+			}
+			kept = append(kept, item)
+		}
+		if !removed {
+			return false, nil
+		}
+		if len(kept) == 0 {
+			delete(hooks, entry.HookEvent)
+		} else {
+			hooks[entry.HookEvent] = kept
+		}
+		obj["hooks"] = hooks
+		return true, nil
+	}
+	groups, err := clientHookGroups(hooks, entry.HookEvent)
+	if err != nil {
+		return false, err
+	}
+	kept := make([]any, 0, len(groups))
+	removed := false
 	for _, group := range groups {
 		gm, ok := group.(map[string]any)
 		if !ok {
@@ -244,7 +329,7 @@ func UninstallClient(entry ClientInstallation, path string, roots []string, proj
 		}
 	}
 	if !removed {
-		return nil
+		return false, nil
 	}
 	if len(kept) == 0 {
 		delete(hooks, entry.HookEvent)
@@ -252,12 +337,32 @@ func UninstallClient(entry ClientInstallation, path string, roots []string, proj
 		hooks[entry.HookEvent] = kept
 	}
 	obj["hooks"] = hooks
-	desired, err := json.Marshal(obj)
-	if err != nil {
-		return err
+	return true, nil
+}
+
+func clientHookGroups(hooks map[string]any, event string) ([]any, error) {
+	raw, exists := hooks[event]
+	if !exists {
+		return nil, nil
 	}
-	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Original: original, Desired: desired, Exists: true, Mode: info.Mode(), Changed: true, resolvedDir: resolvedInstallDir(filepath.Dir(clean))}
-	return Apply(p)
+	groups, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s must be an array", ErrFormat, event)
+	}
+	for _, rawGroup := range groups {
+		group, ok := rawGroup.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s entries must be objects", ErrFormat, event)
+		}
+		inner, exists := group["hooks"]
+		if !exists {
+			return nil, fmt.Errorf("%w: %s entries must contain hooks", ErrFormat, event)
+		}
+		if _, ok := inner.([]any); !ok {
+			return nil, fmt.Errorf("%w: %s entry hooks must be an array", ErrFormat, event)
+		}
+	}
+	return groups, nil
 }
 
 func hookObject(obj map[string]any) (map[string]any, error) {
@@ -291,6 +396,23 @@ func findOwnedHook(raw any, adapter, command string) (owned, foreign bool) {
 			} else {
 				foreign = true
 			}
+		}
+	}
+	return
+}
+
+func findFlatOwnedHook(items []any, adapter, command string) (owned, foreign bool) {
+	prefix := "autogit hook --adapter " + adapter + " "
+	for _, item := range items {
+		hm, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		value, _ := hm["command"].(string)
+		if value == command {
+			owned = true
+		} else if strings.HasPrefix(value, prefix) {
+			foreign = true
 		}
 	}
 	return

@@ -33,8 +33,8 @@ func TestP303ManifestsAreVersionedAndDescribeClientContracts(t *testing.T) {
 			if len(manifest.ClientVersions) == 0 || len(manifest.EventMappings) == 0 {
 				t.Fatalf("manifest lacks version or event mapping metadata: %+v", manifest)
 			}
-			if manifest.InstallSupported && (name == "cursor" || name == "opencode") {
-				t.Fatalf("%s must not claim an install contract", name)
+			if !manifest.InstallSupported && name == "cursor" {
+				t.Fatalf("Cursor has a documented hook contract and must be installable")
 			}
 		})
 	}

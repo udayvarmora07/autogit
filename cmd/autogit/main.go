@@ -231,7 +231,13 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		if entryErr != nil {
 			return cliError{"E_UNSUPPORTED", entryErr.Error()}
 		}
+		var installProbe adapters.ProbeReport
 		if cmd == "install" {
+			probe, probeErr := adapters.Probe(ctx, adapterName, adapters.ProbeOptions{})
+			if probeErr != nil {
+				return cliError{"E_ADAPTER", safeMessage(probeErr.Error())}
+			}
+			installProbe = probe
 			p, planErr := install.PlanClient(entry, configPath, []string{root}, root)
 			if planErr != nil {
 				if errors.Is(planErr, install.ErrUnsupported) {
@@ -251,7 +257,12 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 			}
 			return cliError{"E_INSTALL", uninstallErr.Error()}
 		}
-		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": strings.ToUpper(cmd) + "_APPLIED"})
+		result := map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": strings.ToUpper(cmd) + "_APPLIED"}
+		if cmd == "install" {
+			result["adapter_registry_version"] = adapters.RegistryVersion
+			result["probe"] = installProbe
+		}
+		return json.NewEncoder(out).Encode(result)
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}
@@ -536,12 +547,17 @@ func runDoctorContext(ctx context.Context, dir string, out io.Writer) error {
 		}
 	}
 	stateDatabase, lockStore := inspectDoctorState(ctx, dir)
+	adapterProbes, probeErr := adapters.ProbeAll(ctx, adapters.ProbeOptions{})
+	if probeErr != nil {
+		return cliError{"E_ADAPTER", safeMessage(probeErr.Error())}
+	}
 	result := map[string]any{
 		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "DOCTOR_OK",
 		"version": buildVersion, "commit": buildCommit, "build_date": buildDate, "compatibility": buildCompatibility,
 		"git_available": gitErr == nil, "gh_available": ghErr == nil, "provider_auth": "not_checked",
 		"state_dir": "configured", "state_database": stateDatabase, "lock_store": lockStore,
 		"adapter_count": len(installations), "installable_adapter_count": installable,
+		"adapter_registry_version": adapters.RegistryVersion, "adapter_probes": adapterProbes,
 	}
 	if gitErr != nil {
 		result["reason_code"] = "GIT_UNAVAILABLE"
@@ -580,10 +596,16 @@ func inspectDoctorState(ctx context.Context, dir string) (string, string) {
 
 func runInstallList(out io.Writer) error {
 	type discovered struct {
-		Adapter      string                      `json:"adapter"`
-		Installable  bool                        `json:"installable"`
-		Reason       string                      `json:"reason,omitempty"`
-		Capabilities adapters.CapabilityManifest `json:"capabilities"`
+		Adapter           string                      `json:"adapter"`
+		Installable       bool                        `json:"installable"`
+		Reason            string                      `json:"reason,omitempty"`
+		RegistryVersion   string                      `json:"registry_version"`
+		ContractStatus    adapters.ContractStatus     `json:"contract_status"`
+		FixtureVersion    string                      `json:"fixture_version"`
+		ContractSource    string                      `json:"contract_source,omitempty"`
+		ConfigShape       string                      `json:"config_shape,omitempty"`
+		HookEvent         string                      `json:"hook_event,omitempty"`
+		Capabilities      adapters.CapabilityManifest `json:"capabilities"`
 	}
 	entries := install.ClientInstallations()
 	result := make([]discovered, 0, len(entries))
@@ -592,7 +614,13 @@ func runInstallList(out io.Writer) error {
 		if err != nil {
 			return cliError{"E_ADAPTER", safeMessage(err.Error())}
 		}
-		result = append(result, discovered{Adapter: entry.Adapter, Installable: entry.Supported, Reason: entry.UnsupportedReason, Capabilities: manifest})
+		contract, err := adapters.RegistryEntryFor(entry.Adapter)
+		if err != nil {
+			return cliError{"E_ADAPTER", safeMessage(err.Error())}
+		}
+		result = append(result, discovered{Adapter: entry.Adapter, Installable: entry.Supported, Reason: entry.UnsupportedReason,
+			RegistryVersion: adapters.RegistryVersion, ContractStatus: contract.Status, FixtureVersion: contract.FixtureVersion,
+			ContractSource: contract.SourceURL, ConfigShape: contract.Config.Shape, HookEvent: contract.Config.HookEvent, Capabilities: manifest})
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "ADAPTER_DISCOVERY", "adapters": result})
 }

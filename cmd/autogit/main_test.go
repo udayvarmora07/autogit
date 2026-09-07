@@ -96,6 +96,30 @@ func TestDoctorReportsOperationalDependencySurface(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsVersionedAdapterProbes(t *testing.T) {
+	stateRoot := t.TempDir()
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	var out bytes.Buffer
+	if err := run([]string{"doctor"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Registry string                   `json:"adapter_registry_version"`
+		Probes   []map[string]interface{} `json:"adapter_probes"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Registry != "autogit.adapter-registry/1" || len(result.Probes) != 6 {
+		t.Fatalf("adapter probe report=%+v", result)
+	}
+	for _, probe := range result.Probes {
+		if probe["adapter"] == nil || probe["status"] == nil || probe["capabilities"] == nil {
+			t.Fatalf("incomplete adapter probe=%v", probe)
+		}
+	}
+}
+
 func TestDoctorReportsCorruptStateAsUnavailableWithoutRepairingIt(t *testing.T) {
 	stateRoot := t.TempDir()
 	if err := os.Chmod(stateRoot, 0700); err != nil {
@@ -1744,13 +1768,13 @@ func diagnosticEvent(id, key string) string {
 	return `{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"` + id + `","event_type":"session.idle","occurred_at":"2026-09-01T06:30:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"install","instance_id":"instance"},"scope":{"repo_id":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","session_id":"session"},"ordering":{"stream_id":"stream"},"idempotency":{"key":"` + key + `"},"payload":{}}`
 }
 
-func TestInstallRoutesThroughClientRegistryAndRejectsUnsupported(t *testing.T) {
+func TestInstallRoutesThroughClientRegistryAndRejectsObservationOnlyClient(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)
 	root := t.TempDir()
 	path := filepath.Join(root, "config.json")
 	var out bytes.Buffer
-	err := run([]string{"install", "--adapter", "cursor", "--path", path, "--root", root}, strings.NewReader(""), &out)
+	err := run([]string{"install", "--adapter", "opencode", "--path", path, "--root", root}, strings.NewReader(""), &out)
 	if err == nil || !strings.HasPrefix(err.Error(), "E_UNSUPPORTED:") {
 		t.Fatalf("error=%v, want explicit unsupported result", err)
 	}

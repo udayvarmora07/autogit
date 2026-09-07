@@ -134,48 +134,27 @@ type adapter struct {
 	capabilities Capabilities
 }
 
-var capabilityTable = map[string]Capabilities{
-	"codex":       {QueueState: "unknown", TaskBoundaries: "native", ChangedPaths: "reported", MonotonicSequence: true},
-	"claude-code": {QueueState: "unknown", TaskBoundaries: "native", ChangedPaths: "reported", MonotonicSequence: true},
-	"cursor":      {QueueState: "none", TaskBoundaries: "synthetic", ChangedPaths: "none"},
-	"gemini-cli":  {QueueState: "unknown", TaskBoundaries: "native", ChangedPaths: "reported", MonotonicSequence: true},
-	"opencode":    {QueueState: "none", TaskBoundaries: "synthetic", ChangedPaths: "derived"},
-	"commandcode": {QueueState: "unknown", TaskBoundaries: "synthetic", ChangedPaths: "derived", MonotonicSequence: false},
-}
-
-// clientContracts is deliberately explicit. A client whose hook/API contract
-// is not stable is represented as an observation-only adapter; installation
-// is owned by the install package and is never implied by this metadata.
-var clientContracts = map[string]struct {
-	versions []string
-	mapping  map[string]string
-	install  bool
-	contract string
-}{
-	"codex":       {versions: []string{"unknown", "0.x", "1.x", "2.x"}, mapping: map[string]string{"hook_event_name": "event", "session_id": "scope.session_id", "task_id": "scope.task_id"}, install: true, contract: "official-hook"},
-	"claude-code": {versions: []string{"unknown", "1.x", "2.x"}, mapping: map[string]string{"hook_event_name": "event", "session_id": "scope.session_id", "cwd": "project.candidate_root"}, install: true, contract: "official-hook"},
-	"cursor":      {versions: []string{"observation"}, mapping: map[string]string{"observation": "event", "sessionId": "scope.session_id"}, contract: "synthetic-observation"},
-	"gemini-cli":  {versions: []string{"unknown", "0.x", "1.x", "2.x"}, mapping: map[string]string{"hook_event_name": "event", "session_id": "scope.session_id"}, install: true, contract: "official-hook"},
-	"opencode":    {versions: []string{"observation"}, mapping: map[string]string{"observation": "event", "session": "scope.session_id"}, contract: "synthetic-observation"},
-	"commandcode": {versions: []string{"observation"}, mapping: map[string]string{"signal": "event", "session_id": "scope.session_id"}, contract: "synthetic-observation"},
-}
-
 func SupportedNames() []string {
-	return []string{"codex", "claude-code", "cursor", "gemini-cli", "opencode", "commandcode"}
+	entries := Registry().Entries
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Adapter)
+	}
+	return names
 }
 
 func New(name string) (Adapter, error) {
-	cap, ok := capabilityTable[name]
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrAdapter, name)
+	entry, err := RegistryEntryFor(name)
+	if err != nil {
+		return nil, err
 	}
-	return &adapter{name: name, capabilities: cap, manifest: CapabilityManifest{
-		Adapter: name, SchemaMajors: []string{"autogit.event/1"}, QueueState: cap.QueueState,
-		TaskBoundaries: cap.TaskBoundaries, ChangedPaths: cap.ChangedPaths,
-		MonotonicSequence: cap.MonotonicSequence,
-		ClientVersions:    append([]string(nil), clientContracts[name].versions...),
-		EventMappings:     cloneStringMap(clientContracts[name].mapping), InstallSupported: clientContracts[name].install,
-		Contract:        clientContracts[name].contract,
+	return &adapter{name: name, capabilities: entry.Capabilities, manifest: CapabilityManifest{
+		Adapter: name, SchemaMajors: append([]string(nil), entry.SchemaMajors...), QueueState: entry.Capabilities.QueueState,
+		TaskBoundaries: entry.Capabilities.TaskBoundaries, ChangedPaths: entry.Capabilities.ChangedPaths,
+		MonotonicSequence: entry.Capabilities.MonotonicSequence,
+		ClientVersions:    append([]string(nil), entry.ClientVersions...),
+		EventMappings:     cloneStringMap(entry.EventMappings), InstallSupported: entry.InstallSupported,
+		Contract:        entry.Contract,
 		ResultExitCodes: map[string]int{"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
 	}}, nil
 }
@@ -218,15 +197,15 @@ func (a *adapter) MapResult(r Result) ExitMapping {
 
 var eventAliases = map[string]string{
 	"start": "session.started", "session.start": "session.started", "session_started": "session.started", "session.started": "session.started",
-	"idle": "session.idle", "session.idle": "session.idle", "session_idle": "session.idle",
+	"sessionstart": "session.started", "session_start": "session.started", "idle": "session.idle", "session.idle": "session.idle", "session_idle": "session.idle",
 	"end": "session.ended", "session.end": "session.ended", "session.ended": "session.ended", "stop": "model.stopped", "model.stop": "model.stopped", "model.stopped": "model.stopped",
 	"sessionend": "session.ended", "session_end": "session.ended", "session-end": "session.ended",
 	"prompt": "prompt.submitted", "prompt.submit": "prompt.submitted", "prompt.submitted": "prompt.submitted",
-	"task.start": "task.started", "task.started": "task.started", "task.update": "task.updated", "task.updated": "task.updated",
+	"task.start": "task.started", "task.started": "task.started", "task.update": "task.updated", "task.updated": "task.updated", "taskcompleted": "task.completed", "task_completed": "task.completed",
 	"complete": "task.completed", "completed": "task.completed", "task.complete": "task.completed", "task.completed": "task.completed",
 	"fail": "task.failed", "failed": "task.failed", "task.fail": "task.failed", "task.failed": "task.failed",
 	"tool.start": "tool.started", "tool.started": "tool.started", "tool.complete": "tool.completed", "tool.completed": "tool.completed",
-	"change": "files.changed", "files.change": "files.changed", "files.changed": "files.changed",
+	"change": "files.changed", "files.change": "files.changed", "files.changed": "files.changed", "afterfileedit": "files.changed",
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
@@ -246,7 +225,9 @@ func (a *adapter) eventValue(m map[string]any) string {
 		keys = []string{"hook_event_name", "hook", "event", "event_type", "type"}
 	case "claude-code":
 		keys = []string{"hook_event_name", "eventName", "event", "hook", "type"}
-	case "cursor", "opencode":
+	case "cursor":
+		keys = []string{"hook_event_name", "observation", "event", "event_type", "hook", "type"}
+	case "opencode":
 		keys = []string{"observation", "event", "event_type", "hook", "type"}
 	case "commandcode":
 		keys = []string{"signal", "event", "event_type", "hook", "type"}
@@ -258,7 +239,7 @@ func (a *adapter) field(m map[string]any, key string) string {
 	switch a.name {
 	case "cursor":
 		if key == "session" {
-			return firstString(m, "sessionId", "session_id", "session")
+			return firstString(m, "conversation_id", "sessionId", "session_id", "session")
 		}
 	case "opencode":
 		if key == "session" {
@@ -268,26 +249,16 @@ func (a *adapter) field(m map[string]any, key string) string {
 	return firstString(m, key, key+"_id", key+"Id")
 }
 
-func supportedClientVersion(version string) bool {
-	version = strings.TrimSpace(strings.ToLower(version))
-	if version == "" || version == "unknown" {
-		return true
-	}
-	parts := strings.Split(version, ".")
-	if len(parts) == 0 {
+func supportedClientVersion(adapterName, version string) bool {
+	entry, err := RegistryEntryFor(adapterName)
+	if err != nil {
 		return false
 	}
-	major := 0
-	for _, r := range parts[0] {
-		if r < '0' || r > '9' {
-			return false
-		}
-		major = major*10 + int(r-'0')
-		if major > 99 {
-			return false
-		}
+	version = strings.TrimSpace(strings.ToLower(version))
+	if version == "" || version == "unknown" || version == "observation" {
+		return true
 	}
-	return major <= 2
+	return versionInWindow(version, entry.ClientVersions)
 }
 
 func capabilitiesFromObservation(m map[string]any, base Capabilities) Capabilities {
@@ -378,7 +349,7 @@ func (a *adapter) Translate(raw []byte, opts TranslateOptions) (CanonicalEvent, 
 	if err := validateDeclaredVersion(m); err != nil {
 		return CanonicalEvent{}, err
 	}
-	if err := validateScalarFields(m, "event", "event_type", "type", "hook", "eventName", "hook_event_name", "observation", "signal", "occurred_at", "timestamp", "time", "producer_seq", "sequence", "seq", "attempt", "retry"); err != nil {
+	if err := validateScalarFields(m, "event", "event_type", "type", "hook", "eventName", "hook_event_name", "observation", "signal", "file_path", "occurred_at", "timestamp", "time", "producer_seq", "sequence", "seq", "attempt", "retry"); err != nil {
 		return CanonicalEvent{}, err
 	}
 	eventRaw := opts.EventHint
@@ -417,6 +388,11 @@ func (a *adapter) Translate(raw []byte, opts TranslateOptions) (CanonicalEvent, 
 	}
 
 	root := firstString(m, "candidate_root", "cwd", "client_cwd")
+	if root == "" {
+		if roots, ok := m["workspace_roots"].([]any); ok && len(roots) > 0 {
+			root, _ = roots[0].(string)
+		}
+	}
 	if p, ok := m["project"].(map[string]any); ok {
 		if root == "" {
 			root = firstString(p, "candidate_root", "cwd", "client_cwd")
@@ -550,7 +526,7 @@ func (a *adapter) Translate(raw []byte, opts TranslateOptions) (CanonicalEvent, 
 		return CanonicalEvent{}, err
 	}
 	capabilities := capabilitiesFromObservation(m, a.capabilities)
-	if explicitClientVersion && !supportedClientVersion(clientVersion) {
+	if explicitClientVersion && !supportedClientVersion(a.name, clientVersion) {
 		// Unknown client versions are observations only. Never infer queue
 		// emptiness, task boundaries, changed paths, or ordering guarantees.
 		capabilities = Capabilities{QueueState: "unknown", TaskBoundaries: "synthetic", ChangedPaths: "derived", MonotonicSequence: false}
@@ -717,12 +693,16 @@ func addPayload(p map[string]any, key string, value any) {
 }
 
 func changes(m map[string]any) []map[string]any {
-	value := firstAny(m, "changed_files", "changedPaths", "files", "changes")
+	value := firstAny(m, "changed_files", "changedPaths", "files", "changes", "file_path")
 	if nested, ok := m["payload"].(map[string]any); ok && value == nil {
 		value = firstAny(nested, "changed_files", "changedPaths", "files", "changes")
 	}
 	var out []map[string]any
 	switch values := value.(type) {
+	case string:
+		if values != "" {
+			out = append(out, map[string]any{"path": values, "operation": "modified"})
+		}
 	case []any:
 		for _, v := range values {
 			switch x := v.(type) {

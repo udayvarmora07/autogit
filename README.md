@@ -68,6 +68,14 @@ lifecycle-driven inference remains open; installed-hook completion is
 available only through the explicit trusted profile described below. No command contacts GitHub or modifies a user
 repository implicitly; provider tests/canaries are not live.
 
+Adapter compatibility is maintained by the versioned registry in
+`internal/adapters/registry.go`, with sanitized client-versioned payload and
+configuration fixtures. `doctor` reports bounded executable/version probes and
+supported, degraded, or unsupported states; `install --list` reports the same
+registry metadata. Codex, Claude Code, Gemini CLI, and Cursor use
+schema-specific official hook installers. OpenCode and CommandCode remain
+observation-only until a stable native command-hook contract is pinned.
+
 Initialization is explicit. For a local project use
 `autogit init --repo DIR --local --branch main`; remote tracking requires
 `--provider github --owner OWNER --name NAME` and defaults to private. Use

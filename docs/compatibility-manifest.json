@@ -1,5 +1,6 @@
 {
   "schema_version": "autogit.compatibility/1",
+  "adapter_registry_version": "autogit.adapter-registry/1",
   "event_schema_majors": [
     "autogit.event/1"
   ],
@@ -36,6 +37,7 @@
       "event_mappings": {
         "hook_event_name": "event",
         "session_id": "scope.session_id",
+        "task_id": "scope.task_id",
         "cwd": "project.candidate_root"
       },
       "install_supported": true,
@@ -49,17 +51,18 @@
     {
       "adapter": "cursor",
       "schema_majors": ["autogit.event/1"],
-      "client_versions": ["observation"],
+      "client_versions": ["unknown", "3.x"],
       "event_mappings": {
-        "observation": "event",
-        "sessionId": "scope.session_id"
+        "hook_event_name": "event",
+        "conversation_id": "scope.session_id",
+        "workspace_roots": "project.candidate_root"
       },
-      "install_supported": false,
-      "contract": "synthetic-observation",
+      "install_supported": true,
+      "contract": "official-hook",
       "result_exit_codes": {"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
       "queue_state": "none",
       "task_boundaries": "synthetic",
-      "changed_paths": "none",
+      "changed_paths": "reported",
       "monotonic_sequence": false
     },
     {
@@ -68,7 +71,8 @@
       "client_versions": ["unknown", "0.x", "1.x", "2.x"],
       "event_mappings": {
         "hook_event_name": "event",
-        "session_id": "scope.session_id"
+        "session_id": "scope.session_id",
+        "task_id": "scope.task_id"
       },
       "install_supported": true,
       "contract": "official-hook",

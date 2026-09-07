@@ -115,22 +115,30 @@ All items are release blockers.
 
 ## Phase 2 — integrations and provider productization
 
-- [ ] P2-01 Build a versioned adapter capability registry from immutable,
-  sanitized, client-versioned payload/config fixtures.
-- [ ] P2-02 Add install-time and doctor-time version/capability probes with
-  explicit supported, degraded, and unsupported states.
-- [ ] P2-03 Refresh Codex hook contracts and installer from current official
-  behavior and pinned fixtures.
-- [ ] P2-03 Refresh Claude Code hook contracts and installer from current
-  official behavior and pinned fixtures.
-- [ ] P2-03 Refresh Gemini CLI hook contracts and installer from current
-  official behavior and pinned fixtures.
-- [ ] P2-03 Implement Cursor's current official hook surface rather than
-  reporting Cursor as hookless.
-- [ ] P2-04 Implement OpenCode and CommandCode only where stable native
+- [x] P2-01 Build a versioned adapter capability registry from immutable,
+  sanitized, client-versioned payload/config fixtures. Evidence: [Phase 2
+  P2-01–P2-05 bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-02 Add install-time and doctor-time version/capability probes with
+  explicit supported, degraded, and unsupported states. Evidence: [Phase 2
+  P2-01–P2-05 bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-03 Refresh Codex hook contracts and installer from current official
+  behavior and pinned fixtures. Evidence: [Phase 2 P2-01–P2-05
+  bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-03 Refresh Claude Code hook contracts and installer from current
+  official behavior and pinned fixtures. Evidence: [Phase 2 P2-01–P2-05
+  bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-03 Refresh Gemini CLI hook contracts and installer from current
+  official behavior and pinned fixtures. Evidence: [Phase 2 P2-01–P2-05
+  bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-03 Implement Cursor's current official hook surface rather than
+  reporting Cursor as hookless. Evidence: [Phase 2 P2-01–P2-05
+  bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-04 Implement OpenCode and CommandCode only where stable native
   contracts exist; otherwise retain precise observation-only explanations.
-- [ ] P2-05 Make each client config edit schema-specific, ownership-aware,
+  Evidence: [Phase 2 P2-01–P2-05 bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
+- [x] P2-05 Make each client config edit schema-specific, ownership-aware,
   atomic, backed up, reversible, and safe under concurrent user edits.
+  Evidence: [Phase 2 P2-01–P2-05 bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
 - [ ] P2-06 Implement a typed GitHub REST transport with an explicit API
   version, bounded/redacted bodies, pagination, request IDs, retry-after/rate
   limits, conditional reads, and durable reconciliation.

@@ -1,0 +1,1 @@
+{"description":"sanitized Gemini CLI hook fixture","hooks":{"SessionEnd":[{"hooks":[{"type":"command","name":"autogit","command":"autogit hook --adapter gemini-cli --event session.ended --root '/workspace/project'"}]}]}}

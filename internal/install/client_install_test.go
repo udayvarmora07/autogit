@@ -31,10 +31,10 @@ func TestClientRegistryReportsOnlyDocumentedHookFormatsAsSupported(t *testing.T)
 	}
 }
 
-func TestClaudeInstallUsesOwnedStopHookSchemaAndPreservesExistingHooks(t *testing.T) {
+func TestClaudeInstallUsesOwnedTaskCompletedHookSchemaAndPreservesExistingHooks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
-	original := []byte(`{"theme":"dark","hooks":{"Stop":[{"hooks":[{"type":"command","command":"user-check"}]}]}}`)
+	original := []byte(`{"theme":"dark","hooks":{"TaskCompleted":[{"hooks":[{"type":"command","command":"user-check"}]}]}}`)
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestGeminiInstallUsesSettingsHooksAndIsIdempotent(t *testing.T) {
 func TestUnsupportedClientInstallFailsClosedWithoutWriting(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	entry, _ := ClientInstallationFor("cursor")
+	entry, _ := ClientInstallationFor("opencode")
 	if _, err := PlanClient(entry, path, []string{dir}); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("error=%v, want ErrUnsupported", err)
 	}

@@ -1,0 +1,1 @@
+{"description":"sanitized Codex hook fixture","hooks":{"SessionEnd":[{"hooks":[{"type":"command","name":"autogit","command":"autogit hook --adapter codex --event session.ended --root '/workspace/project'"}]}]}}

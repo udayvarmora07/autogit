@@ -17,6 +17,7 @@ import (
 
 type releaseCompatibilityManifest struct {
 	SchemaVersion      string                        `json:"schema_version"`
+	AdapterRegistry    string                        `json:"adapter_registry_version"`
 	EventSchemaMajors  []string                      `json:"event_schema_majors"`
 	ResultSchemaMajors []string                      `json:"result_schema_majors"`
 	StateSchema        releaseStateCompatibility     `json:"state_schema"`
@@ -47,6 +48,9 @@ func TestReleaseCompatibilityManifestMatchesSupportedContracts(t *testing.T) {
 	}
 	if manifest.SchemaVersion != "autogit.compatibility/1" {
 		t.Fatalf("schema version=%q", manifest.SchemaVersion)
+	}
+	if manifest.AdapterRegistry != adapters.RegistryVersion {
+		t.Fatalf("adapter registry version=%q, want %q", manifest.AdapterRegistry, adapters.RegistryVersion)
 	}
 	if !reflect.DeepEqual(manifest.EventSchemaMajors, []string{"autogit.event/1"}) {
 		t.Fatalf("event schema majors=%v", manifest.EventSchemaMajors)

@@ -1,0 +1,1 @@
+{"description":"sanitized Claude Code hook fixture","hooks":{"TaskCompleted":[{"hooks":[{"type":"command","name":"autogit","command":"autogit hook --adapter claude-code --event task.completed --root '/workspace/project'"}]}]}}

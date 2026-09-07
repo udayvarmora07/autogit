@@ -16,25 +16,20 @@ type AdapterManifest struct {
 	MonotonicSequence bool
 }
 
-var manifests = []AdapterManifest{
-	{Name: "codex", SchemaMajor: "autogit.event/1", ClientVersions: []string{"unknown", "0.x", "1.x", "2.x"}, Contract: "official-hook", InstallSupported: true, TaskBoundaries: "native", QueueState: "unknown", ChangedPaths: "reported", MonotonicSequence: true},
-	{Name: "claude-code", SchemaMajor: "autogit.event/1", ClientVersions: []string{"unknown", "1.x", "2.x"}, Contract: "official-hook", InstallSupported: true, TaskBoundaries: "native", QueueState: "unknown", ChangedPaths: "reported", MonotonicSequence: true},
-	{Name: "cursor", SchemaMajor: "autogit.event/1", ClientVersions: []string{"observation"}, Contract: "synthetic-observation", TaskBoundaries: "synthetic", QueueState: "none", ChangedPaths: "none"},
-	{Name: "gemini-cli", SchemaMajor: "autogit.event/1", ClientVersions: []string{"unknown", "0.x", "1.x", "2.x"}, Contract: "official-hook", InstallSupported: true, TaskBoundaries: "native", QueueState: "unknown", ChangedPaths: "reported", MonotonicSequence: true},
-	{Name: "opencode", SchemaMajor: "autogit.event/1", ClientVersions: []string{"observation"}, Contract: "synthetic-observation", TaskBoundaries: "synthetic", QueueState: "none", ChangedPaths: "derived"},
-	{Name: "commandcode", SchemaMajor: "autogit.event/1", ClientVersions: []string{"observation"}, Contract: "synthetic-observation", TaskBoundaries: "synthetic", QueueState: "unknown", ChangedPaths: "derived"},
-}
-
 func Manifests() []AdapterManifest {
-	out := make([]AdapterManifest, len(manifests))
-	copy(out, manifests)
-	for i := range out {
-		contract := clientContracts[out[i].Name]
-		out[i].ClientVersions = append([]string(nil), contract.versions...)
-		out[i].EventMappings = cloneStringMap(contract.mapping)
-		out[i].ResultExitCodes = map[string]int{"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1}
-		out[i].InstallSupported = contract.install
-		out[i].Contract = contract.contract
+	entries := Registry().Entries
+	out := make([]AdapterManifest, 0, len(entries))
+	for _, entry := range entries {
+		major := ""
+		if len(entry.SchemaMajors) > 0 {
+			major = entry.SchemaMajors[0]
+		}
+		out = append(out, AdapterManifest{Name: entry.Adapter, SchemaMajor: major,
+			ClientVersions: append([]string(nil), entry.ClientVersions...), EventMappings: cloneStringMap(entry.EventMappings),
+			ResultExitCodes: map[string]int{"accepted": 0, "duplicate": 0, "pending": 75, "unsupported": 78, "rejected": 1},
+			Contract:        entry.Contract, InstallSupported: entry.InstallSupported,
+			TaskBoundaries: entry.Capabilities.TaskBoundaries, QueueState: entry.Capabilities.QueueState,
+			ChangedPaths: entry.Capabilities.ChangedPaths, MonotonicSequence: entry.Capabilities.MonotonicSequence})
 	}
 	return out
 }

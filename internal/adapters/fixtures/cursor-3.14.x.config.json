@@ -1,0 +1,1 @@
+{"version":1,"hooks":{"sessionEnd":[{"type":"command","command":"autogit hook --adapter cursor --event session.ended --root '/workspace/project'"}]}}
