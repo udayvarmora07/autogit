@@ -23,10 +23,10 @@ const (
 )
 
 type IsolationCapability struct {
-	Tier      IsolationTier
-	Available bool
-	Enforced  bool
-	Reason    string
+	Tier      IsolationTier `json:"tier"`
+	Available bool          `json:"available"`
+	Enforced  bool          `json:"enforced"`
+	Reason    string        `json:"reason"`
 }
 
 func DefaultIsolationTier() IsolationTier { return TierProcessBounded }

@@ -185,6 +185,20 @@ func OpenContext(ctx context.Context, path string) (*Store, error) {
 	}
 	return newStore(db, path), nil
 }
+
+// OpenReadOnlyContext opens an existing state database without creating files
+// or running migrations. Diagnostics and operation inspection use this path
+// so a read-only command cannot silently repair application state.
+func OpenReadOnlyContext(ctx context.Context, path string) (*Store, error) {
+	if path == "" {
+		return nil, errors.New("state path is empty")
+	}
+	db, err := sharedDB.OpenReadOnly(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return newStore(db, path), nil
+}
 func (s *Store) Close() error { return s.db.Close() }
 
 func newStore(database *sql.DB, path string) *Store {
@@ -604,6 +618,42 @@ func (s *Store) RecordGitReconcile(ctx context.Context, id, reason string) error
 
 func (s *Store) RecordReconcile(ctx context.Context, id, reason string) error {
 	return s.RecordGitReconcile(ctx, id, reason)
+}
+
+// RecordGitCancel and RecordGitUndo are narrow operation-UX transitions. They
+// never alter the immutable commit identity or a user-owned ref.
+func (s *Store) RecordGitCancel(ctx context.Context, id string) error {
+	return s.WithTx(ctx, func(tx *Tx) error {
+		result, err := tx.tx.Exec(`UPDATE git_commit_intents SET state=?,reason_code=?,updated_at=? WHERE id=? AND sha=''`, "CANCELLED", "CANCELLED", time.Now().UnixNano(), id)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return errors.New("commit operation cannot be cancelled")
+		}
+		return nil
+	})
+}
+
+func (s *Store) RecordGitUndo(ctx context.Context, id string) error {
+	return s.WithTx(ctx, func(tx *Tx) error {
+		result, err := tx.tx.Exec(`UPDATE git_commit_intents SET state=?,reason_code=?,updated_at=? WHERE id=? AND sha<>''`, "UNDONE", "UNDONE", time.Now().UnixNano(), id)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return errors.New("commit operation cannot be undone")
+		}
+		return nil
+	})
 }
 
 func stableReconcileCode(reason string) string {

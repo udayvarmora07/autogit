@@ -61,3 +61,30 @@ func BenchmarkCaptureBaseline100KDeletedPaths(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCaptureBaseline1KDeletedPaths(b *testing.B) {
+	root := b.TempDir()
+	indexPath := filepath.Join(root, "index")
+	if err := os.WriteFile(indexPath, []byte("benchmark-index"), 0600); err != nil {
+		b.Fatal(err)
+	}
+	const pathCount = 1000
+	var status strings.Builder
+	status.Grow(pathCount * 24)
+	for i := 0; i < pathCount; i++ {
+		status.WriteString("D  deleted/")
+		value := strconv.Itoa(i)
+		status.WriteString(strings.Repeat("0", 4-len(value)))
+		status.WriteString(value)
+		status.WriteString(".txt\x00")
+	}
+	runner := baselineBenchmarkRunner{head: strings.Repeat("a", 40), indexPath: indexPath, status: status.String()}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		baseline, err := CaptureBaseline(context.Background(), runner, root)
+		if err != nil || len(baseline.Paths) != pathCount {
+			b.Fatalf("baseline paths=%d err=%v", len(baseline.Paths), err)
+		}
+	}
+}

@@ -155,8 +155,9 @@ All items are release blockers.
 - [x] P2-10 Optionally project redacted verification evidence as a head-SHA
   bound Check Run without making it a source of truth. Evidence: [Phase 2
   P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
-- [ ] P2-11 Add an optional, read-only-first MCP surface for status, plan,
+- [x] P2-11 Add an optional, read-only-first MCP surface for status, plan,
   explain, and logs; require separate domain consent for verify/publish.
+  Evidence: [P2-11 and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
 
 ### 2026-09-07 local implementation slice
 
@@ -180,25 +181,33 @@ named-review requirements are executed and reviewed.
 
 ## Phase 3 — product UX and operations
 
-- [ ] P3-01 Refactor the 2,143-line CLI file into command parsers,
+- [x] P3-01 Refactor the 2,143-line CLI file into command parsers,
   application services, presenters, and composition root with golden behavior
-  tests.
-- [ ] P3-02 Add version, full per-command help, examples, shell completions,
-  man pages, prerequisites, and a clean-machine quickstart.
-- [ ] P3-03 Define stable stdout/stderr, human/JSON, exit-code, error-cause,
-  redaction, and remediation contracts; remove duplicated error codes.
-- [ ] P3-04 Expand doctor into an offline capability/health report covering
+  tests. Evidence: [P2-11 and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-02 Add version, full per-command help, examples, shell completions,
+  man pages, prerequisites, and a clean-machine quickstart. Evidence: [P2-11
+  and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-03 Define stable stdout/stderr, human/JSON, exit-code, error-cause,
+  redaction, and remediation contracts; remove duplicated error codes. Evidence:
+  [P2-11 and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-04 Expand doctor into an offline capability/health report covering
   binary, Git, state, isolation, adapters, provider mode, and safe next steps.
-- [ ] P3-05 Add durable operation status, explain, resume, cancel, runlog, and
-  bounded undo for AutoGit-owned effects only.
-- [ ] P3-06 Add previewable config migrations, backups, rollback, and
-  provenance for every owned config fragment.
-- [ ] P3-07 Add local correlated logs/traces/metrics and opt-in OpenTelemetry
-  export with strict field/cardinality/privacy allowlists.
-- [ ] P3-08 Establish and trend p50/p95/p99 budgets for hook, path
+  Evidence: [P2-11 and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-05 Add durable operation status, explain, resume, cancel, runlog, and
+  bounded undo for AutoGit-owned effects only. Evidence: [P2-11 and Phase 3
+  bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-06 Add previewable config migrations, backups, rollback, and
+  provenance for every owned config fragment. Evidence: [P2-11 and Phase 3
+  bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-07 Add local correlated logs/traces/metrics and opt-in OpenTelemetry
+  export with strict field/cardinality/privacy allowlists. Evidence: [P2-11
+  and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-08 Establish and trend p50/p95/p99 budgets for hook, path
   observation, startup, DB growth, verification, and provider operations.
-- [ ] P3-09 Rewrite README/operator docs for installation, trust boundaries,
-  limitations, workflows, recovery, upgrade, uninstall, and support.
+  Evidence: [P2-11 and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
+- [x] P3-09 Rewrite README/operator docs for installation, trust boundaries,
+  limitations, workflows, recovery, upgrade, uninstall, and support. Evidence:
+  [P2-11 and Phase 3 bundle](docs/release-evidence/phase-2-p2-11-phase-3.md).
 
 ## Phase 4 — verification, evals, and continuous quality
 

@@ -1,0 +1,34 @@
+.TH AUTOGIT 1
+.SH NAME
+autogit \- consent-bound local Git control plane
+.SH SYNOPSIS
+.B autogit
+.I COMMAND
+.RI [ options ]
+.SH DESCRIPTION
+AutoGit observes and commits only explicitly scoped, verified work. Provider
+publication and public visibility require separate consent. Read-only commands
+do not initialize state or contact a provider.
+.SH COMMANDS
+.TP
+.B version
+Print build and compatibility identity.
+.TP
+.B doctor
+Print an offline capability and state-health report.
+.TP
+.B status, plan, logs
+Inspect repository lifecycle, candidate, and redacted audit state.
+.TP
+.B init, sync, verify, publish
+Perform explicitly consented local workflow operations.
+.TP
+.B mcp serve
+Run the pinned read-only MCP stdio server.
+.SH OUTPUT
+The default output is JSON with schema version autogit.result/1. Errors are
+reported on stderr with a stable code and a non-zero exit status.
+.SH SAFETY
+AutoGit does not infer ownership from agent narration, force-push, delete user
+refs, or expose source, prompts, credentials, raw paths, or remote URLs in
+default state and diagnostics.

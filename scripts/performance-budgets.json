@@ -1,0 +1,13 @@
+{
+  "schema_version": "autogit.performance/1",
+  "sampling": {"samples": 20, "percentiles": [50, 95, 99]},
+  "budgets": [
+    {"name": "no-candidate-hook", "package": "./internal/app", "benchmark": "BenchmarkHookNoCandidate", "p95_ns": 150000000},
+    {"name": "baseline-1k-paths", "package": "./internal/repository", "benchmark": "BenchmarkCaptureBaseline1KDeletedPaths", "p95_ns": 100000000},
+    {"name": "baseline-100k-paths", "package": "./internal/repository", "benchmark": "BenchmarkCaptureBaseline100KDeletedPaths", "p95_ns": 1000000000},
+    {"name": "state-inspect", "package": "./internal/db", "benchmark": "BenchmarkStateInspect", "p95_ns": 150000000},
+    {"name": "verifier-boundary", "package": "./internal/verification", "benchmark": "BenchmarkTrustedVerificationBoundary", "p95_ns": 100000000},
+    {"name": "provider-push", "package": "./internal/provider", "benchmark": "BenchmarkFakeProviderPush", "p95_ns": 10000000},
+    {"name": "cli-startup-version", "package": "./cmd/autogit", "benchmark": "BenchmarkCLIStartupVersion", "p95_ns": 50000000}
+  ]
+}

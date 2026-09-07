@@ -59,7 +59,12 @@ jobs:
         run: go test -run '^$' -bench '^Benchmark' -benchmem -benchtime=1s -count=5 ./...
       - name: p95 performance gates
         shell: bash
-        run: bash scripts/performance-gate.sh
+        run: AUTOGIT_PERF_OUTPUT=performance-results.tsv bash scripts/performance-gate.sh
+      - name: retain performance budget artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: performance-results-${{ matrix.os }}
+          path: performance-results.tsv
 
   cross-build:
     name: cross-build / ${{ matrix.goos }}-${{ matrix.goarch }}

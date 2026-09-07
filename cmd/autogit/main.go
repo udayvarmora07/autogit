@@ -29,6 +29,7 @@ import (
 	"autogit/internal/historyscan"
 	"autogit/internal/install"
 	"autogit/internal/lifecycle"
+	"autogit/internal/mcp"
 	"autogit/internal/policy"
 	"autogit/internal/provider"
 	"autogit/internal/publication"
@@ -41,69 +42,9 @@ import (
 	localworkflow "autogit/internal/workflow"
 )
 
-type cliError struct{ Code, Message string }
-
-const defaultOperationTimeout = 5 * time.Minute
-
-// These variables are deliberately simple strings so release builds can
-// inject reproducible identity with Go's -ldflags -X mechanism. Development
-// builds retain explicit, non-authoritative defaults.
-var (
-	buildVersion       = "dev"
-	buildCommit        = "unknown"
-	buildDate          = "unknown"
-	buildCompatibility = "autogit.compatibility/1"
-)
-
-func (e cliError) Error() string { return e.Code + ": " + e.Message }
-func stateDir() (string, error) {
-	if p := os.Getenv("AUTOGIT_STATE_DIR"); p != "" {
-		return p, nil
-	}
-	p, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(p, "autogit"), nil
-}
-func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
-		code := "E_INTERNAL"
-		var ce cliError
-		if errors.As(err, &ce) {
-			code = ce.Code
-		}
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"error": map[string]string{"code": code, "message": safeMessage(err.Error())}})
-		os.Exit(1)
-	}
-}
-func safeMessage(s string) string {
-	s = security.Redact(strings.ReplaceAll(s, "\n", " "))
-	if len(s) > 256 {
-		s = s[:256]
-	}
-	return s
-}
-
-func writeVersion(out io.Writer) error {
-	return json.NewEncoder(out).Encode(map[string]string{
-		"schema_version": "autogit.result/1",
-		"version":        buildVersion,
-		"commit":         buildCommit,
-		"build_date":     buildDate,
-		"compatibility":  buildCompatibility,
-	})
-}
-func run(args []string, in io.Reader, out io.Writer) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
-	defer cancel()
-	return runWithContext(ctx, args, in, out)
-}
-
 func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable init status plan hook verify sync publish remote retry logs backup restore integrity repair retain export uninstall config explain\n")
-		return nil
+		return writeHelp(args[1:], out)
 	}
 	if args[0] == "version" || args[0] == "--version" {
 		if len(args) != 1 {
@@ -113,6 +54,15 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	}
 	if args[0] == "hook" {
 		return runHookContext(ctx, args[1:], in, out)
+	}
+	if args[0] == "mcp" {
+		return runMCPContext(ctx, args[1:], in, out)
+	}
+	if args[0] == "completion" {
+		return runCompletion(args[1:], out)
+	}
+	if len(args) == 2 && args[1] == "--help" {
+		return writeHelp([]string{args[0]}, out)
 	}
 	cmd := args[0]
 	if cmd == "install" && hasFlag(args[1:], "--list") {
@@ -146,6 +96,9 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	}
 	if cmd == "logs" {
 		return runLogsContext(ctx, args[1:], dir, out)
+	}
+	if cmd == "operation" {
+		return runOperationContext(ctx, args[1:], dir, out)
 	}
 	if cmd == "config" {
 		return runConfig(args[1:], dir, out)
@@ -266,6 +219,73 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}
+}
+
+func runMCPContext(ctx context.Context, args []string, in io.Reader, out io.Writer) error {
+	if len(args) != 1 || args[0] != "serve" {
+		return cliError{"E_USAGE", "mcp supports only mcp serve"}
+	}
+	dir, err := stateDir()
+	if err != nil {
+		return err
+	}
+	read := func(fn func(context.Context, []string, string, io.Writer) error, arguments map[string]any) (any, error) {
+		var raw bytes.Buffer
+		if err := fn(ctx, mcpArguments(arguments), dir, &raw); err != nil {
+			return nil, err
+		}
+		var value any
+		if err := json.Unmarshal(raw.Bytes(), &value); err != nil {
+			return nil, errors.New("read-only result is not JSON")
+		}
+		return value, nil
+	}
+	server := mcp.New(mcp.Handlers{
+		Status: func(ctx context.Context, arguments map[string]any) (any, error) {
+			return read(runStatusContext, arguments)
+		},
+		Plan: func(ctx context.Context, arguments map[string]any) (any, error) {
+			return read(runPlanContext, arguments)
+		},
+		Explain: func(ctx context.Context, arguments map[string]any) (any, error) {
+			return readConfigForMCP(ctx, arguments, out)
+		},
+		Logs: func(ctx context.Context, arguments map[string]any) (any, error) {
+			return read(runLogsContext, arguments)
+		},
+	})
+	return server.Run(ctx, in, out)
+}
+
+func mcpArguments(arguments map[string]any) []string {
+	args := []string{}
+	if repo, ok := arguments["repo"].(string); ok && repo != "" {
+		args = append(args, "--repo", repo)
+	}
+	if limit, ok := arguments["limit"].(float64); ok {
+		args = append(args, "--limit", strconv.Itoa(int(limit)))
+	}
+	if limit, ok := arguments["limit"].(int); ok {
+		args = append(args, "--limit", strconv.Itoa(limit))
+	}
+	return args
+}
+
+func readConfigForMCP(_ context.Context, arguments map[string]any, out io.Writer) (any, error) {
+	var raw bytes.Buffer
+	args := []string{"explain"}
+	if path, ok := arguments["verifiers"].(string); ok && path != "" {
+		args = append(args, "--verifiers", path)
+	}
+	if err := runConfig(args, "", &raw); err != nil {
+		return nil, err
+	}
+	var value any
+	if err := json.Unmarshal(raw.Bytes(), &value); err != nil {
+		return nil, err
+	}
+	_ = out
+	return value, nil
 }
 
 func runMaintenanceContext(ctx context.Context, cmd string, args []string, dir string, out io.Writer) error {
@@ -512,8 +532,14 @@ func captureRepositorySummary(ctx context.Context, root string) (map[string]any,
 }
 
 func runConfig(args []string, _ string, out io.Writer) error {
-	if len(args) == 0 || args[0] != "explain" {
-		return cliError{"E_USAGE", "config supports explain"}
+	if len(args) == 0 {
+		return cliError{"E_USAGE", "config supports explain, preview, migrate, and rollback"}
+	}
+	if args[0] == "preview" || args[0] == "migrate" || args[0] == "rollback" {
+		return runConfigMigration(args, out)
+	}
+	if args[0] != "explain" {
+		return cliError{"E_USAGE", "config supports explain, preview, migrate, and rollback"}
 	}
 	verifierPath := ""
 	for i := 1; i < len(args); i++ {
@@ -536,8 +562,47 @@ func runConfig(args []string, _ string, out io.Writer) error {
 	return json.NewEncoder(out).Encode(result)
 }
 
+func runConfigMigration(args []string, out io.Writer) error {
+	if len(args) < 1 {
+		return cliError{"E_USAGE", "config operation is required"}
+	}
+	adapter, path, root := flag(args[1:], "--adapter"), flag(args[1:], "--path"), flag(args[1:], "--root")
+	if adapter == "" || path == "" || root == "" {
+		return cliError{"E_SCOPE", "config " + args[0] + " requires --adapter, --path, and --root"}
+	}
+	entry, err := install.ClientInstallationFor(adapter)
+	if err != nil {
+		return cliError{"E_UNSUPPORTED", safeMessage(err.Error())}
+	}
+	if args[0] == "rollback" {
+		if _, err := install.PlanClient(entry, path, []string{root}, root); err != nil {
+			return cliError{"E_CONFIG", safeMessage(err.Error())}
+		}
+		if err := install.Rollback(path, adapter); err != nil {
+			return cliError{"E_ROLLBACK", safeMessage(err.Error())}
+		}
+		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "rollback", "reason_code": "CONFIG_ROLLED_BACK", "adapter": adapter})
+	}
+	plan, err := install.PlanClient(entry, path, []string{root}, root)
+	if err != nil {
+		return cliError{"E_CONFIG", safeMessage(err.Error())}
+	}
+	preview := install.Preview(plan.Plan)
+	if args[0] == "preview" {
+		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "CONFIG_MIGRATION_PREVIEW", "preview": preview})
+	}
+	if err := install.ApplyClient(plan); err != nil {
+		return cliError{"E_CONFIG", safeMessage(err.Error())}
+	}
+	provenance, err := install.ReadProvenance(plan.Plan.Path)
+	if err != nil {
+		return cliError{"E_CONFIG", "configuration provenance could not be read"}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "migrate", "reason_code": "CONFIG_MIGRATED", "preview": preview, "provenance": provenance})
+}
+
 func runDoctorContext(ctx context.Context, dir string, out io.Writer) error {
-	_, gitErr := trustedExecutable("git")
+	gitPath, gitErr := trustedExecutable("git")
 	_, ghErr := trustedExecutable("gh")
 	installations := install.ClientInstallations()
 	installable := 0
@@ -547,6 +612,23 @@ func runDoctorContext(ctx context.Context, dir string, out io.Writer) error {
 		}
 	}
 	stateDatabase, lockStore := inspectDoctorState(ctx, dir)
+	gitVersion := "unavailable"
+	if gitErr == nil {
+		if result, err := (gitport.Runner{Executable: gitPath}).Run(ctx, ".", "--version"); err == nil {
+			gitVersion = strings.TrimSpace(result.Output)
+		}
+	}
+	databaseHealth := any(map[string]any{"available": false})
+	if stateDatabase == "available" {
+		if health, err := sharedDB.Inspect(ctx, filepath.Join(dir, "state.db")); err == nil {
+			databaseHealth = health
+		}
+	}
+	isolation := []verification.IsolationCapability{
+		verification.CapabilityFor(verification.TierProcessBounded),
+		verification.CapabilityFor(verification.TierFilesystemIsolated),
+		verification.CapabilityFor(verification.TierFilesystemNetworkIsolated),
+	}
 	adapterProbes, probeErr := adapters.ProbeAll(ctx, adapters.ProbeOptions{})
 	if probeErr != nil {
 		return cliError{"E_ADAPTER", safeMessage(probeErr.Error())}
@@ -554,8 +636,12 @@ func runDoctorContext(ctx context.Context, dir string, out io.Writer) error {
 	result := map[string]any{
 		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "DOCTOR_OK",
 		"version": buildVersion, "commit": buildCommit, "build_date": buildDate, "compatibility": buildCompatibility,
-		"git_available": gitErr == nil, "gh_available": ghErr == nil, "provider_auth": "not_checked",
-		"state_dir": "configured", "state_database": stateDatabase, "lock_store": lockStore,
+		"runtime":       map[string]string{"go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH},
+		"git_available": gitErr == nil, "git_version": gitVersion, "gh_available": ghErr == nil, "provider_auth": "not_checked",
+		"provider_mode": "typed-rest-with-explicit-identity; gh-bootstrap-optional",
+		"state_dir":     "configured", "state_database": stateDatabase, "lock_store": lockStore,
+		"database_health": databaseHealth, "isolation": isolation,
+		"telemetry":     map[string]any{"mode": os.Getenv("AUTOGIT_TELEMETRY"), "default": "off", "export": "disabled"},
 		"adapter_count": len(installations), "installable_adapter_count": installable,
 		"adapter_registry_version": adapters.RegistryVersion, "adapter_probes": adapterProbes,
 	}
@@ -596,16 +682,16 @@ func inspectDoctorState(ctx context.Context, dir string) (string, string) {
 
 func runInstallList(out io.Writer) error {
 	type discovered struct {
-		Adapter           string                      `json:"adapter"`
-		Installable       bool                        `json:"installable"`
-		Reason            string                      `json:"reason,omitempty"`
-		RegistryVersion   string                      `json:"registry_version"`
-		ContractStatus    adapters.ContractStatus     `json:"contract_status"`
-		FixtureVersion    string                      `json:"fixture_version"`
-		ContractSource    string                      `json:"contract_source,omitempty"`
-		ConfigShape       string                      `json:"config_shape,omitempty"`
-		HookEvent         string                      `json:"hook_event,omitempty"`
-		Capabilities      adapters.CapabilityManifest `json:"capabilities"`
+		Adapter         string                      `json:"adapter"`
+		Installable     bool                        `json:"installable"`
+		Reason          string                      `json:"reason,omitempty"`
+		RegistryVersion string                      `json:"registry_version"`
+		ContractStatus  adapters.ContractStatus     `json:"contract_status"`
+		FixtureVersion  string                      `json:"fixture_version"`
+		ContractSource  string                      `json:"contract_source,omitempty"`
+		ConfigShape     string                      `json:"config_shape,omitempty"`
+		HookEvent       string                      `json:"hook_event,omitempty"`
+		Capabilities    adapters.CapabilityManifest `json:"capabilities"`
 	}
 	entries := install.ClientInstallations()
 	result := make([]discovered, 0, len(entries))

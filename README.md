@@ -4,9 +4,73 @@ AutoGit is a consent-based Git automation tool for AI-assisted development.
 It preserves useful work automatically while preventing unrelated, unverified,
 or sensitive changes from being published.
 
-This directory contains the AutoGit v1 design. The currently installed Bash
-prototype remains under `~/.agents/hooks` and is treated as a behavioral
+This repository contains the AutoGit v1 Go engine. The currently installed
+Bash prototype remains under `~/.agents/hooks` and is treated as a behavioral
 reference until the v1 engine can replace it safely.
+
+## Installation and prerequisites
+
+Build from a clean checkout with Go 1.26.7 and a system Git executable:
+
+```sh
+go build -trimpath -o autogit ./cmd/autogit
+./autogit version
+./autogit doctor
+```
+
+GitHub provider workflows additionally require the explicit typed REST
+configuration described in [`docs/provider-support.md`](docs/provider-support.md).
+The optional `gh` bootstrap path is not an identity or authorization boundary.
+
+## Safe workflow
+
+Start with `autogit init --repo DIR --local` for a local-only repository, or
+provide the complete private provider destination and consent flags. Use
+`status`, `plan`, `logs`, `doctor`, `config explain`, and `integrity` for
+read-only inspection. They do not create state, modify the shared index, move
+refs, or contact a provider.
+
+An explicit `sync --complete` requires a session handoff, an exact candidate,
+and trusted verifiers. It creates only an AutoGit-owned local ref. `publish`
+and public visibility are separate operations with exact destination, SHA, ref,
+and consent checks. `operation status|explain|resume|cancel|runlog|undo`
+provides bounded recovery UX; `undo` can affect only an AutoGit-owned ref that
+still names its recorded commit.
+
+Run `autogit help COMMAND` for complete command usage and examples. Shell
+completion scripts and a man page are in [`docs/completions`](docs/completions)
+and [`docs/man/autogit.1`](docs/man/autogit.1). The clean-machine walkthrough
+is [`docs/quickstart.md`](docs/quickstart.md).
+
+## Trust boundaries and limitations
+
+AutoGit is local-first and private by default. It does not persist prompts,
+transcripts, diffs, source bytes, raw paths, credentials, or remote URLs in
+default state and diagnostics. Hook/client input, repository files, Git
+configuration, verifiers, and provider responses are untrusted. Verification
+reports its achieved isolation tier; process-bounded execution is not a
+filesystem or network sandbox. Platform-specific availability is reported by
+`doctor`.
+
+The optional `autogit mcp serve` command speaks the pinned MCP
+`2025-06-18` stdio protocol and exposes only redacted read-only status, plan,
+configuration explain, and logs tools. MCP annotations never grant consent;
+verify and publish remain outside the default MCP surface.
+
+## Recovery, upgrade, and uninstall
+
+Before maintenance, create a validated backup with `autogit backup
+--output FILE`. Inspect with `integrity`; restore only a validated backup with
+`restore`. `repair` is explicit and non-destructive. Adapter configuration
+changes support `config preview`, `config migrate`, and `config rollback`; only
+AutoGit-owned fragments are changed, with an atomic backup and provenance
+record. `uninstall` removes only an owned adapter fragment and preserves user
+settings.
+
+Operational procedures, incident response, rollback, and support boundaries
+are documented in [`docs/release-runbook.md`](docs/release-runbook.md). The
+project remains NO-GO for alpha until the release gates in
+[`todo.md`](todo.md) are evidenced on the advertised native platforms.
 
 ## Phase 0 status
 

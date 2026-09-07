@@ -16,6 +16,14 @@ durable no-duplicate reconciliation, requires explicit App-token
 repository/permission scope, and runs the opt-in canary through the typed REST
 provider; the exact version/Enterprise policy is in [provider support policy](provider-support.md).
 
+The next local execution slice, P2-11 and P3-01 through P3-09, is implemented
+in the pinned stdlib MCP boundary, CLI composition/presentation layers,
+operation recovery UX, configuration provenance, local telemetry, performance
+budgets, and operator documentation. Exact files and verification commands are
+retained in [the P2-11 and Phase 3 evidence bundle](release-evidence/phase-2-p2-11-phase-3.md).
+The Phase 2/3 release gates remain open until native artifact, provider,
+support-owner, and signed-release evidence is separately executed.
+
 ## 1. Executive decision
 
 AutoGit already has an unusually strong safety-oriented foundation: explicit

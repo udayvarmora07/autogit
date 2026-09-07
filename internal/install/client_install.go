@@ -121,7 +121,7 @@ func ApplyClient(p ClientInstallPlan) error {
 	if !p.Installation.Supported {
 		return ErrUnsupported
 	}
-	return Apply(p.Plan)
+	return ApplyWithProvenance(p.Plan)
 }
 
 func canonicalProjectRoot(root string) (string, error) {
@@ -216,7 +216,7 @@ func UninstallClient(entry ClientInstallation, path string, roots []string, proj
 		return err
 	}
 	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Original: original, Desired: desired, Exists: true, Mode: info.Mode(), Changed: true, resolvedDir: resolvedInstallDir(filepath.Dir(clean))}
-	return Apply(p)
+	return RemoveWithProvenance(p)
 }
 
 func addClientHook(obj map[string]any, entry ClientInstallation, command string) error {
