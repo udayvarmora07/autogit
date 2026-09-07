@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -43,6 +44,16 @@ type cliError struct{ Code, Message string }
 
 const defaultOperationTimeout = 5 * time.Minute
 
+// These variables are deliberately simple strings so release builds can
+// inject reproducible identity with Go's -ldflags -X mechanism. Development
+// builds retain explicit, non-authoritative defaults.
+var (
+	buildVersion       = "dev"
+	buildCommit        = "unknown"
+	buildDate          = "unknown"
+	buildCompatibility = "autogit.compatibility/1"
+)
+
 func (e cliError) Error() string { return e.Code + ": " + e.Message }
 func stateDir() (string, error) {
 	if p := os.Getenv("AUTOGIT_STATE_DIR"); p != "" {
@@ -72,6 +83,16 @@ func safeMessage(s string) string {
 	}
 	return s
 }
+
+func writeVersion(out io.Writer) error {
+	return json.NewEncoder(out).Encode(map[string]string{
+		"schema_version": "autogit.result/1",
+		"version":        buildVersion,
+		"commit":         buildCommit,
+		"build_date":     buildDate,
+		"compatibility":  buildCompatibility,
+	})
+}
 func run(args []string, in io.Reader, out io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
 	defer cancel()
@@ -82,6 +103,12 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		_, _ = io.WriteString(out, "autogit commands: install doctor enable disable init status plan hook verify sync publish remote retry logs uninstall config explain\n")
 		return nil
+	}
+	if args[0] == "version" || args[0] == "--version" {
+		if len(args) != 1 {
+			return cliError{"E_USAGE", "version does not accept arguments"}
+		}
+		return writeVersion(out)
 	}
 	if args[0] == "hook" {
 		return runHookContext(ctx, args[1:], in, out)
@@ -180,7 +207,10 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		if err != nil {
 			return cliError{"E_SCOPE", err.Error()}
 		}
-		p := loadPolicy(dir, info.RepoID)
+		p, policyErr := loadPolicy(dir, info.RepoID)
+		if policyErr != nil {
+			return policyErr
+		}
 		if cmd == "disable" {
 			p = policy.Policy{Tracking: "no", Version: p.Version + 1}
 		} else {
@@ -216,7 +246,10 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		if (cmd == "status" || cmd == "plan") && repoID == "" {
 			return cliError{"E_SCOPE", "--repo is required for read-only inspection"}
 		}
-		p := loadPolicy(dir, repoID)
+		p, policyErr := loadPolicy(dir, repoID)
+		if policyErr != nil {
+			return policyErr
+		}
 		result := map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "STATUS", "policy": p}
 		if repoID != "" {
 			result["repo_id"] = repoID
@@ -310,7 +343,10 @@ func runPlanContext(ctx context.Context, args []string, dir string, out io.Write
 	if err != nil {
 		return cliError{"E_SCOPE", err.Error()}
 	}
-	p := loadPolicy(dir, info.RepoID)
+	p, err := loadPolicy(dir, info.RepoID)
+	if err != nil {
+		return err
+	}
 	summary, err := captureRepositorySummary(ctx, info.Root)
 	if err != nil {
 		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
@@ -375,6 +411,7 @@ func runDoctorContext(ctx context.Context, dir string, out io.Writer) error {
 	stateDatabase, lockStore := inspectDoctorState(ctx, dir)
 	result := map[string]any{
 		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "DOCTOR_OK",
+		"version": buildVersion, "commit": buildCommit, "build_date": buildDate, "compatibility": buildCompatibility,
 		"git_available": gitErr == nil, "gh_available": ghErr == nil, "provider_auth": "not_checked",
 		"state_dir": "configured", "state_database": stateDatabase, "lock_store": lockStore,
 		"adapter_count": len(installations), "installable_adapter_count": installable,
@@ -795,19 +832,33 @@ func runInitContext(ctx context.Context, options initOptions, dir string, out io
 		return cliError{"E_SCOPE", err.Error()}
 	}
 	p := initPolicy(options)
-	// Persist consent before Git initialization so a crash cannot leave a new
-	// repository without the decision that authorized the mutation.
-	if err := savePolicy(dir, repoID, p); err != nil {
+	// Persist consent as a locked pending record before Git initialization. The
+	// active policy is promoted only after Git and identity verification finish,
+	// so a crash or failed init cannot leave usable stale consent behind.
+	if err := savePendingPolicy(dir, repoID, p); err != nil {
 		return err
 	}
 	if _, err := repository.Initialize(ctx, gitport.Runner{Executable: gitPath}, root, options.Branch); err != nil {
-		return cliError{"E_GIT", safeMessage(err.Error())}
+		return rollbackInitializationConsent(dir, repoID, cliError{"E_GIT", safeMessage(err.Error())})
 	}
 	info, err := repository.DiscoverWithKeyContext(ctx, root, key)
 	if err != nil || info.RepoID != repoID {
-		return cliError{"E_STATE", "initialized repository identity could not be confirmed"}
+		return rollbackInitializationConsent(dir, repoID, cliError{"E_STATE", "initialized repository identity could not be confirmed"})
+	}
+	if err := savePolicy(dir, repoID, p); err != nil {
+		return err
+	}
+	if err := clearPendingPolicy(dir, repoID); err != nil {
+		return cliError{"E_STATE", "initialization consent could not be finalized"}
 	}
 	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "notify", "reason_code": "REPOSITORY_INITIALIZED", "repo_id": info.RepoID, "branch": options.Branch, "tracking": p.Tracking, "visibility": p.Visibility})
+}
+
+func rollbackInitializationConsent(dir, repositoryID string, cause error) error {
+	if err := clearPendingPolicy(dir, repositoryID); err != nil {
+		return errors.Join(cause, fmt.Errorf("clear initialization consent: %w", err))
+	}
+	return cause
 }
 
 func initTrackingMode(options initOptions) string {
@@ -822,6 +873,40 @@ func initPolicy(options initOptions) policy.Policy {
 		return policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}
 	}
 	return policy.Policy{Tracking: "yes", Visibility: options.Visibility, Provider: options.Provider, Owner: options.Owner, Destination: options.Owner + "/" + options.Name, Workflow: "safe", PublicConsent: options.PublicConsent, Version: 1}
+}
+
+func pendingPolicyPath(dir, id string) string {
+	return policyPath(dir, id) + ".pending"
+}
+
+func savePendingPolicy(dir, id string, p policy.Policy) error {
+	if id == "" || p.Version < 1 {
+		return cliError{"E_STATE", "initialization consent is invalid"}
+	}
+	if err := policy.Validate(p); err != nil {
+		return cliError{"E_STATE", "initialization consent is invalid"}
+	}
+	lockPath := filepath.Base(policyPath(dir, id)) + ".lock"
+	return securefs.WithExclusiveLockWithin(dir, lockPath, func() error {
+		pending := filepath.Base(pendingPolicyPath(dir, id))
+		if _, err := securefs.ReadWithin(dir, pending, 1<<20); err == nil {
+			return cliError{"E_CONFLICT", "initialization consent is already pending"}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return cliError{"E_STATE", "pending initialization consent is unavailable"}
+		}
+		b, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+		return securefs.AtomicWriteWithin(dir, pending, b, 0600)
+	})
+}
+
+func clearPendingPolicy(dir, id string) error {
+	lockPath := filepath.Base(policyPath(dir, id)) + ".lock"
+	return securefs.WithExclusiveLockWithin(dir, lockPath, func() error {
+		return securefs.RemoveWithin(dir, filepath.Base(pendingPolicyPath(dir, id)))
+	})
 }
 
 func runRemoteContext(ctx context.Context, args []string, dir string, out io.Writer) error {
@@ -845,7 +930,10 @@ func runRemoteContext(ctx context.Context, args []string, dir string, out io.Wri
 		return err
 	}
 	defer db.Close()
-	p := loadPolicy(dir, info.RepoID)
+	p, err := loadPolicy(dir, info.RepoID)
+	if err != nil {
+		return err
+	}
 	if !p.TrackingEnabled() {
 		return cliError{"E_CONSENT", "tracking consent is required before repository creation"}
 	}
@@ -919,7 +1007,10 @@ func runPublishContext(ctx context.Context, args []string, dir string, out io.Wr
 	if err := verifyStoredCommit(ctx, info.Root, intent); err != nil {
 		return cliError{"E_STATE", safeMessage(err.Error())}
 	}
-	p := loadPolicy(dir, info.RepoID)
+	p, err := loadPolicy(dir, info.RepoID)
+	if err != nil {
+		return err
+	}
 	if !p.TrackingEnabled() {
 		return cliError{"E_CONSENT", "tracking consent is required before publication"}
 	}
@@ -1261,7 +1352,10 @@ func runSyncComplete(ctx context.Context, options syncOptions, dir string, info 
 	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
 		return cliError{"E_SCOPE", "sync session does not match repository or client"}
 	}
-	effectivePolicy := loadPolicy(dir, info.RepoID)
+	effectivePolicy, err := loadPolicy(dir, info.RepoID)
+	if err != nil {
+		return err
+	}
 	registry, err := loadWorkflowRegistry(dir, effectivePolicy, options.Verifiers)
 	if err != nil {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
@@ -1547,7 +1641,10 @@ func runVerifyContext(ctx context.Context, args []string, dir string, out io.Wri
 	if durable.RepositoryID != info.RepoID || durable.ClientID != options.Client {
 		return cliError{"E_SCOPE", "verify session does not match repository or client"}
 	}
-	effectivePolicy := loadPolicy(dir, info.RepoID)
+	effectivePolicy, err := loadPolicy(dir, info.RepoID)
+	if err != nil {
+		return err
+	}
 	registry, err := loadWorkflowRegistry(dir, effectivePolicy, options.Verifiers)
 	if err != nil {
 		return cliError{"E_VERIFIER_CONFIG", safeMessage(err.Error())}
@@ -1656,7 +1753,11 @@ func runRetryContext(ctx context.Context, args []string, dir string, out io.Writ
 	publication := provider.GH{Runner: ghRunner, Pusher: pusher}
 	coord := retryCoordinator(db, publication, options.ID)
 	retryErr := coord.RetryPush(ctx, options.ID)
-	if factErr := emitStoredPushDomainFacts(ctx, db, filepath.Join(dir, "state.db"), loadPolicy(dir, info.RepoID), info, options.ID, retryErr); factErr != nil {
+	effectivePolicy, policyErr := loadPolicy(dir, info.RepoID)
+	if policyErr != nil {
+		return policyErr
+	}
+	if factErr := emitStoredPushDomainFacts(ctx, db, filepath.Join(dir, "state.db"), effectivePolicy, info, options.ID, retryErr); factErr != nil {
 		return cliError{"E_STATE", safeMessage(factErr.Error())}
 	}
 	if retryErr != nil {
@@ -1802,7 +1903,11 @@ func runHookContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 		return err
 	}
 	defer s.Close()
-	a := app.New(s, loadPolicy(dir, stringValue(e.Scope["repo_id"])), nil)
+	effectivePolicy, policyErr := loadPolicy(dir, stringValue(e.Scope["repo_id"]))
+	if policyErr != nil {
+		return policyErr
+	}
+	a := app.New(s, effectivePolicy, nil)
 	a.IdentityKey = append([]byte(nil), key...)
 	// Event receipts/projections and repository session evidence have separate
 	// package-owned ports, even though they share the same private SQLite file.
@@ -2056,28 +2161,58 @@ func installTrustedVerifierConfig(dir, repositoryID, source string) (string, err
 	return relative, nil
 }
 
-func loadPolicy(dir, id string) policy.Policy {
+func loadPolicy(dir, id string) (policy.Policy, error) {
 	if id == "" {
-		return policy.Policy{}
+		return policy.Policy{}, nil
 	}
 	b, err := securefs.ReadWithin(dir, filepath.Base(policyPath(dir, id)), 1<<20)
 	if err != nil {
-		return policy.Policy{}
+		if errors.Is(err, os.ErrNotExist) {
+			return policy.Policy{}, nil
+		}
+		return policy.Policy{}, cliError{"E_STATE", "policy file is unavailable"}
 	}
 	var p policy.Policy
-	_ = json.Unmarshal(b, &p)
-	return p
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&p); err != nil {
+		return policy.Policy{}, cliError{"E_STATE", "policy file is corrupt"}
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return policy.Policy{}, cliError{"E_STATE", "policy file is corrupt"}
+	}
+	if p.Version < 1 || policy.Validate(p) != nil {
+		return policy.Policy{}, cliError{"E_STATE", "policy file is invalid"}
+	}
+	return p, nil
 }
 func stringValue(v any) string { s, _ := v.(string); return s }
 func savePolicy(dir, id string, p policy.Policy) error {
-	b, err := json.Marshal(p)
-	if err != nil {
-		return err
+	if id == "" || p.Version < 1 {
+		return cliError{"E_STATE", "policy identity or revision is invalid"}
 	}
-	if err := securefs.AtomicWriteWithin(dir, filepath.Base(policyPath(dir, id)), b, 0600); err != nil {
-		return fmt.Errorf("save policy: %w", err)
+	if err := policy.Validate(p); err != nil {
+		return cliError{"E_STATE", "policy is invalid"}
 	}
-	return nil
+	lockPath := filepath.Base(policyPath(dir, id)) + ".lock"
+	return securefs.WithExclusiveLockWithin(dir, lockPath, func() error {
+		current, err := loadPolicy(dir, id)
+		if err != nil {
+			return err
+		}
+		if p.Version != current.Version+1 {
+			return cliError{"E_CONFLICT", "policy revision is stale or skipped"}
+		}
+		b, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+		if err := securefs.AtomicWriteWithin(dir, filepath.Base(policyPath(dir, id)), b, 0600); err != nil {
+			return fmt.Errorf("save policy: %w", err)
+		}
+		return nil
+	})
 }
 
 func loadIdentityKey(dir string) ([]byte, error) {

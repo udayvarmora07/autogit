@@ -85,7 +85,7 @@ func Plan(spec ConfigSpec, roots []string) (InstallPlan, error) {
 		}
 		p.Exists = true
 		p.Mode = info.Mode()
-		p.Original, err = os.ReadFile(path)
+		p.Original, err = os.ReadFile(path) // #nosec G304 -- checkedPath and ownership/symlink checks establish the config boundary.
 		if err != nil {
 			return InstallPlan{}, err
 		}
@@ -348,7 +348,7 @@ func removeLine(adapter string, original []byte) ([]byte, error) {
 
 func lineMarker(adapter string) string { return "# autogit:managed_by=autogit;adapter=" + adapter }
 func writeExclusive(path string, data []byte, mode os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) // #nosec G304 -- path was validated against an approved client config root.
 	if err != nil {
 		return err
 	}
@@ -367,7 +367,7 @@ func backupID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 func syncDir(path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- caller supplies a validated installation directory.
 	if err != nil {
 		return nil
 	}

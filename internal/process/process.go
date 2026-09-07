@@ -45,7 +45,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if max <= 0 {
 		max = DefaultMaxOutput
 	}
-	command := exec.Command(options.Executable, options.Args...)
+	command := exec.Command(options.Executable, options.Args...) // #nosec G204 -- executable and argv are validated by the owning boundary.
 	command.Dir = options.Dir
 	if options.Env != nil {
 		command.Env = append([]string(nil), options.Env...)

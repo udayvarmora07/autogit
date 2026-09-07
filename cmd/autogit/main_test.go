@@ -86,6 +86,9 @@ func TestDoctorReportsOperationalDependencySurface(t *testing.T) {
 	if _, ok := result["provider_auth"].(string); !ok {
 		t.Fatalf("doctor provider auth diagnostic=%v", result["provider_auth"])
 	}
+	if result["compatibility"] != "autogit.compatibility/1" || result["version"] == nil || result["commit"] == nil || result["build_date"] == nil {
+		t.Fatalf("doctor build identity=%v", result)
+	}
 	if entries, err := os.ReadDir(stateRoot); err != nil {
 		t.Fatal(err)
 	} else if len(entries) != 0 {
@@ -418,11 +421,162 @@ func TestInitCreatesGitAndRecordsConsentBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPolicy(stateRoot, info.RepoID); !got.TrackingEnabled() || !got.LocalOnly {
-		t.Fatalf("policy=%+v output=%s", got, out.String())
+	if got, err := loadPolicy(stateRoot, info.RepoID); err != nil || !got.TrackingEnabled() || !got.LocalOnly {
+		t.Fatalf("policy=%+v err=%v output=%s", got, err, out.String())
 	}
 	if !strings.Contains(out.String(), "REPOSITORY_INITIALIZED") || !strings.Contains(out.String(), "trunk") {
 		t.Fatalf("output=%s", out.String())
+	}
+}
+
+func TestLoadPolicyReportsCorruptionInsteadOfDisablingConsentSilently(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	repoID := "sha256:" + strings.Repeat("a", 64)
+	path := policyPath(stateRoot, repoID)
+	if err := os.WriteFile(path, []byte(`{"tracking":`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadPolicy(stateRoot, repoID)
+	if err == nil || got.Tracking != "" || !strings.Contains(err.Error(), "policy") {
+		t.Fatalf("loadPolicy=%+v err=%v, want visible corruption", got, err)
+	}
+}
+
+func TestSavePolicyRequiresTheNextRevision(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	repoID := "sha256:" + strings.Repeat("b", 64)
+	base := policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}
+	if err := savePolicy(stateRoot, repoID, base); err != nil {
+		t.Fatal(err)
+	}
+	for _, revision := range []int{1, 3} {
+		stale := base
+		stale.Version = revision
+		if err := savePolicy(stateRoot, repoID, stale); err == nil || !strings.Contains(err.Error(), "revision") {
+			t.Fatalf("revision %d save error=%v, want revision conflict", revision, err)
+		}
+	}
+	next := base
+	next.Version = 2
+	if err := savePolicy(stateRoot, repoID, next); err != nil {
+		t.Fatalf("next revision rejected: %v", err)
+	}
+}
+
+func TestConcurrentPolicyWritesAllowOnlyOneNextRevision(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	repoID := "sha256:" + strings.Repeat("e", 64)
+	base := policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}
+	if err := savePolicy(stateRoot, repoID, base); err != nil {
+		t.Fatal(err)
+	}
+	next := base
+	next.Version = 2
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			results <- savePolicy(stateRoot, repoID, next)
+		}()
+	}
+	close(start)
+	first, second := <-results, <-results
+	if (first == nil) == (second == nil) {
+		t.Fatalf("concurrent saves returned %v and %v, want one success and one conflict", first, second)
+	}
+}
+
+func TestPolicyLockRejectsAReplacementSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated Windows privileges in some environments")
+	}
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	repoID := "sha256:" + strings.Repeat("f", 64)
+	lockPath := policyPath(stateRoot, repoID) + ".lock"
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, lockPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := savePolicy(stateRoot, repoID, policy.Policy{Tracking: "local", LocalOnly: true, Visibility: "private", Workflow: "safe", Version: 1}); err == nil {
+		t.Fatal("policy write followed replacement lock symlink")
+	}
+	if got, err := os.ReadFile(outside); err != nil || string(got) != "outside" {
+		t.Fatalf("outside lock target changed=%q err=%v", got, err)
+	}
+}
+
+func TestFailedInitializationLeavesTrackingDisabled(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTOGIT_STATE_DIR", stateRoot)
+	fakeBin := t.TempDir()
+	fakeGit := filepath.Join(fakeBin, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nexit 42\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin)
+	root := t.TempDir()
+	var out bytes.Buffer
+	if err := run([]string{"init", "--repo", root, "--local"}, strings.NewReader(""), &out); err == nil {
+		t.Fatal("failed initialization was accepted")
+	}
+	key, err := os.ReadFile(filepath.Join(stateRoot, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID, err := repository.FutureRepositoryID(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadPolicy(stateRoot, repoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TrackingEnabled() {
+		t.Fatalf("policy after failed init=%+v, want no active tracking consent", got)
+	}
+	if _, err := os.Stat(filepath.Join(stateRoot, filepath.Base(policyPath(stateRoot, repoID))+".pending")); !os.IsNotExist(err) {
+		t.Fatalf("pending initialization consent remained: %v", err)
+	}
+}
+
+func TestVersionReportsInjectedBuildIdentityWithoutCreatingState(t *testing.T) {
+	t.Setenv("AUTOGIT_STATE_DIR", t.TempDir())
+	var out bytes.Buffer
+	if err := run([]string{"version"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["version"] == nil || got["commit"] == nil || got["build_date"] == nil || got["compatibility"] != "autogit.compatibility/1" {
+		t.Fatalf("version output=%v", got)
+	}
+	entries, err := os.ReadDir(os.Getenv("AUTOGIT_STATE_DIR"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("version created state: %v", entries)
 	}
 }
 

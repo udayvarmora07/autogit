@@ -329,7 +329,7 @@ func prepareWritablePath(path string) (string, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	} else {
-		file, createErr := os.OpenFile(absolute, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+		file, createErr := os.OpenFile(absolute, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- absolute is canonicalized and existing ancestors are verified before creation.
 		if createErr != nil && !errors.Is(createErr, fs.ErrExist) {
 			return "", createErr
 		}

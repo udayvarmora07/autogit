@@ -1,8 +1,12 @@
 # AutoGit v1 event contract
 
-Status: Proposed for Phase 0  
+Status: Accepted for the Phase 0 implementation baseline; release gates remain open
 Schema: [`schemas/event-v1.schema.json`](../schemas/event-v1.schema.json)  
 Namespace: `autogit.event/1`
+
+Acceptance owner: Uday Varmora
+Acceptance date: 2026-09-07
+Acceptance record: [`acceptance-record.md`](acceptance-record.md)
 
 ## Scope
 

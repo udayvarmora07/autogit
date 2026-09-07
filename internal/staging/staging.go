@@ -381,7 +381,7 @@ func CaptureObservedFilesWithOptions(root string, paths []string, options Captur
 		if !sameFileObservation(info, beforeRead) || !beforeRead.Mode().IsRegular() {
 			return nil, fmt.Errorf("capture %q changed during capture", name)
 		}
-		file, err := os.Open(absolute)
+		file, err := os.Open(absolute) // #nosec G304 -- absolute is built from a validated repository root and validated relative path.
 		if err != nil {
 			return nil, fmt.Errorf("capture %q: %w", name, err)
 		}

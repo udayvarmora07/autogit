@@ -5,7 +5,7 @@ package historyscan
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- required to validate legacy Git SHA-1 object IDs.
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -768,7 +768,7 @@ func parseMode(m string) uint32 { n, _ := strconv.ParseUint(m, 8, 32); return ui
 func sameObjectID(oid string, b []byte) bool {
 	var h hash.Hash
 	if len(oid) == 40 {
-		h = sha1.New()
+		h = sha1.New() // #nosec G401 -- Git repositories may legitimately use SHA-1 object format.
 	} else if len(oid) == 64 {
 		h = sha256.New()
 	} else {

@@ -181,6 +181,64 @@ func TestSessionStartedIngressDoesNotAcceptWhenBaselineCaptureFails(t *testing.T
 	}
 }
 
+func TestDuplicateSessionStartedSkipsBaselineAfterRepositoryMutation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := repository.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	baseline := repository.Baseline{
+		Head:         "0123456789012345678901234567890123456789",
+		IndexDigest:  "sha256:" + strings.Repeat("1", 64),
+		StatusDigest: "sha256:" + strings.Repeat("2", 64),
+		PathsDigest:  "sha256:" + strings.Repeat("3", 64),
+	}
+	captures := 0
+	a := New(s, policy.Policy{Tracking: "local", LocalOnly: true}, nil)
+	a.Resolver = func(string) (repository.Info, error) { return repository.Discover(root) }
+	a.Baselines = &session.Service{
+		Runner: appBaselineRunner{},
+		Store:  &appBaselineStore{},
+		Capture: func(context.Context, repository.Runner, string) (repository.Baseline, error) {
+			captures++
+			return baseline, nil
+		},
+	}
+	input := hookEvent("01J7N6X8P5K2V4W6NQ8M9ABCDG", "session.started", "replay-start", `,"session_id":"replay-session"`, "", "")
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(input), &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["scope"].(map[string]any)["repo_id"] = info.RepoID
+	raw["scope"].(map[string]any)["worktree_id"] = info.WorktreeID
+	raw["project"] = map[string]any{"candidate_root": root}
+	inputBytes, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Hook(context.Background(), inputBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "changed-after-start.txt"), []byte("changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Hook(context.Background(), inputBytes)
+	if err != nil {
+		t.Fatalf("replayed session.started: %v", err)
+	}
+	if got.Disposition != string(events.Duplicate) || captures != 1 {
+		t.Fatalf("replay result=%+v baseline captures=%d, want duplicate and one capture", got, captures)
+	}
+}
+
 func TestTaskCompletionClaimPromotesOnlyToCoreCompletionCandidate(t *testing.T) {
 	s, err := events.OpenStore(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {

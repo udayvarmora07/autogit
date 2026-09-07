@@ -1,8 +1,12 @@
 # AutoGit v1 deterministic lifecycle
 
-Status: Proposed for Phase 0 acceptance  
+Status: Accepted for the Phase 0 implementation baseline; release gates remain open
 Contract: [`event-contract.md`](event-contract.md)  
 Schema: [`../schemas/event-v1.schema.json`](../schemas/event-v1.schema.json)
+
+Acceptance owner: Uday Varmora
+Acceptance date: 2026-09-07
+Acceptance record: [`acceptance-record.md`](acceptance-record.md)
 
 AutoGit persists separate repository, session, task, candidate change,
 verification, commit, push, and prompt records. A model stop, an adapter claim,

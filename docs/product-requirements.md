@@ -1,7 +1,11 @@
 # AutoGit v1 product requirements
 
-Status: Draft for Phase 0 acceptance  
+Status: Accepted for the Phase 0 implementation baseline; release gates remain open
 Last updated: 2026-09-01
+
+Acceptance owner: Uday Varmora
+Acceptance date: 2026-09-07
+Acceptance record: [`acceptance-record.md`](acceptance-record.md)
 
 ## 1. Problem statement
 

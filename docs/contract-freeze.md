@@ -1,7 +1,11 @@
 # AutoGit v1 contract freeze record
 
-Status: implementation baseline recorded; product acceptance review pending  
+Status: accepted implementation baseline; release gates remain open
 Last updated: 2026-09-07
+
+Acceptance owner: Uday Varmora
+Acceptance date: 2026-09-07
+Acceptance record: [`acceptance-record.md`](acceptance-record.md)
 
 This record resolves terminology and compatibility assumptions used by the Go
 v1 implementation. It is evidence for Phase 0 review; it does not claim that

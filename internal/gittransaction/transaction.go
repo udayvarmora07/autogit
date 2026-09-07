@@ -781,7 +781,7 @@ func observe(ctx context.Context, g Runner, root string) (parent, index string, 
 	if !filepath.IsAbs(index) {
 		index = filepath.Join(root, index)
 	}
-	indexBytes, e = os.ReadFile(index)
+	indexBytes, e = os.ReadFile(index) // #nosec G304 -- index is Git's validated path within the canonical repository.
 	if e != nil && !os.IsNotExist(e) {
 		return "", "", nil, e
 	}
@@ -796,7 +796,7 @@ func ensureUnchanged(ctx context.Context, g Runner, root, parent, index string, 
 	if current != parent {
 		return errors.New("repository HEAD changed during transaction")
 	}
-	after, err := os.ReadFile(index)
+	after, err := os.ReadFile(index) // #nosec G304 -- index is Git's validated path within the canonical repository.
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}

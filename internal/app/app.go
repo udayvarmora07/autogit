@@ -138,6 +138,13 @@ func (a *App) hook(ctx context.Context, input []byte, allowDomain bool) (Result,
 		if candidateRoot == "" {
 			return Result{}, &events.Error{Code: "E_SCOPE", Message: "session baseline requires an event project root"}
 		}
+		receipt, lookupErr := a.Store.LookupReceipt(ctx, e)
+		if lookupErr != nil {
+			return Result{}, lookupErr
+		}
+		if receipt.Disposition != "" {
+			return Result{SchemaVersion: "autogit.result/1", EventID: e.EventID, Disposition: string(events.Duplicate), StateRevision: receipt.StateRevision, Action: "none", ReasonCode: "DUPLICATE"}, nil
+		}
 		if _, err := a.CaptureSessionBaseline(ctx, session.Request{
 			SessionID:    stringValue(e.Scope["session_id"]),
 			RepositoryID: stringValue(e.Scope["repo_id"]),

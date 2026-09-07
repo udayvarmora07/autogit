@@ -2,7 +2,7 @@
 
 Source of truth: [world-class implementation plan](docs/implementation-plan.md)
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 Release posture: NO-GO for private alpha
 
 This tracker contains remaining work, not the project's historical changelog.
@@ -50,19 +50,25 @@ All items are release blockers.
 - [x] P0-05 Add command/effect deadlines, cancellation budgets, bounded
   database waits, and full process-tree termination on every supported OS.
   Evidence: [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
-- [ ] P0-06 Make duplicate session.started receipt handling happen before
+- [x] P0-06 Make duplicate session.started receipt handling happen before
   baseline capture, or atomically couple first acceptance and baseline state.
-- [ ] P0-07 Make initialization consent transactional and policy persistence
+  Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] P0-07 Make initialization consent transactional and policy persistence
   locked, no-follow, atomic, fsynced, revision-aware, and corruption-visible.
-- [ ] P0-08 Fix all current staticcheck findings, including ignored/overwritten
+  Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] P0-08 Fix all current staticcheck findings, including ignored/overwritten
   errors in Git transaction code and dead CLI/repository code.
-- [ ] P0-08 Triage the three current gosec G703 path findings and all excluded
+  Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] P0-08 Triage the three current gosec G703 path findings and all excluded
   rule classes; replace broad exclusions with narrow documented suppressions
   backed by tests.
-- [ ] P0-09 Record owner/date acceptance for requirements, lifecycle, event
+  Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] P0-09 Record owner/date acceptance for requirements, lifecycle, event
   contract, threat model, compatibility window, and release terminology.
-- [ ] P0-10 Reject non-empty/stale release output and inject reproducible
+  Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] P0-10 Reject non-empty/stale release output and inject reproducible
   version, commit, build date, and compatibility identity into binaries.
+  Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
 - [ ] Phase 0 gate: all analysis/build/test/performance checks pass on native
   Linux, macOS, and Windows with zero unresolved critical/high findings.
 
@@ -227,11 +233,16 @@ All items are release blockers.
 - [ ] PR-003 State/policy filesystem trust boundary.
 - [ ] PR-004 Hardened Git init and worktree discovery.
 - [ ] PR-005 Operation deadlines and descendant termination.
-- [ ] PR-006 Session-start replay idempotency.
-- [ ] PR-007 Transactional consent and durable policy file.
-- [ ] PR-008 Staticcheck and gosec closure.
-- [ ] PR-009 Release output hygiene and binary identity.
-- [ ] PR-010 Contract acceptance plus new architecture decisions.
+- [x] PR-006 Session-start replay idempotency. Evidence: [Phase 0
+  P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] PR-007 Transactional consent and durable policy file. Evidence: [Phase 0
+  P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] PR-008 Staticcheck and gosec closure. Evidence: [Phase 0
+  P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] PR-009 Release output hygiene and binary identity. Evidence: [Phase 0
+  P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
+- [x] PR-010 Contract acceptance plus new architecture decisions. Evidence:
+  [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
 - [ ] PR-011 Backup/restore/integrity/retention.
 - [ ] PR-012 Verification isolation capability baseline.
 

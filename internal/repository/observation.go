@@ -444,7 +444,7 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 	if !filepath.IsAbs(indexPath) {
 		indexPath = filepath.Join(abs, indexPath)
 	}
-	indexBytes, err := os.ReadFile(indexPath)
+	indexBytes, err := os.ReadFile(indexPath) // #nosec G304 -- Git returned the index path and the repository boundary validates it before use.
 	if err != nil && !os.IsNotExist(err) {
 		return Baseline{}, fmt.Errorf("read index: %w", err)
 	}
@@ -517,7 +517,7 @@ func CaptureBaselineWithOptions(ctx context.Context, runner Runner, root string,
 	if finalIndexPath != indexPath {
 		return Baseline{}, errors.New("repository index changed during baseline capture")
 	}
-	finalIndexBytes, err := os.ReadFile(finalIndexPath)
+	finalIndexBytes, err := os.ReadFile(finalIndexPath) // #nosec G304 -- Git returned the index path and the repository boundary validates it before use.
 	if err != nil && !os.IsNotExist(err) {
 		return Baseline{}, fmt.Errorf("re-read index: %w", err)
 	}
@@ -796,7 +796,7 @@ func captureBaselineFileInternal(root, name string, maxFileSize int64, beforeRea
 	if err != nil || !sameFileObservation(info, before) || !before.Mode().IsRegular() {
 		return FileObservation{}, fmt.Errorf("observe %q changed during capture", name)
 	}
-	file, err := os.Open(absolute)
+	file, err := os.Open(absolute) // #nosec G304 -- absolute is built from a validated repository root and validated relative path.
 	if err != nil {
 		return FileObservation{}, fmt.Errorf("observe %q: %w", name, err)
 	}

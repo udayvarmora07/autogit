@@ -1,7 +1,11 @@
 # AutoGit v1 test strategy
 
-Status: Draft for Phase 0 acceptance  
+Status: Accepted for the Phase 0 implementation baseline; release gates remain open
 Last updated: 2026-09-05
+
+Acceptance owner: Uday Varmora
+Acceptance date: 2026-09-07
+Acceptance record: [`acceptance-record.md`](acceptance-record.md)
 
 ## 1. Purpose and test contract
 

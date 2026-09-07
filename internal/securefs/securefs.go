@@ -130,7 +130,48 @@ func AtomicWriteWithin(root, relative string, data []byte, mode fs.FileMode) err
 	if err := stateRoot.Rename(tmpRelative, relative); err != nil {
 		return err
 	}
+	if err := syncDirectory(stateRoot, filepath.Dir(relative)); err != nil {
+		return err
+	}
 	return verifyPrivateRootFile(stateRoot, relative)
+}
+
+// WithExclusiveLockWithin runs fn while holding an operating-system file
+// lock anchored beneath root. The lock file is itself protected by the same
+// no-follow and ownership checks as other state files.
+func WithExclusiveLockWithin(root, relative string, fn func() error) error {
+	if fn == nil {
+		return errors.New("locked operation is required")
+	}
+	relative, err := cleanRelative(relative)
+	if err != nil {
+		return err
+	}
+	stateRoot, absolute, err := openStateRoot(root, true)
+	if err != nil {
+		return err
+	}
+	defer stateRoot.Close()
+	if err := ensurePrivateParents(stateRoot, absolute, relative); err != nil {
+		return err
+	}
+	if err := verifyDestination(stateRoot, relative); err != nil {
+		return err
+	}
+	lockFile, err := openLockFile(stateRoot, relative)
+	if err != nil {
+		return err
+	}
+	unlock, err := acquireFileLock(lockFile)
+	if err != nil {
+		_ = lockFile.Close()
+		return err
+	}
+	defer func() {
+		_ = unlock()
+		_ = lockFile.Close()
+	}()
+	return fn()
 }
 
 // WriteExclusiveWithin creates a state file exactly once, with no-follow
@@ -161,6 +202,33 @@ func WriteExclusiveWithin(root, relative string, data []byte, mode fs.FileMode) 
 		return err
 	}
 	return file.Close()
+}
+
+// RemoveWithin removes one state-root child without following a symlink and
+// syncs its parent directory so the deletion survives a power loss.
+func RemoveWithin(root, relative string) error {
+	relative, err := cleanRelative(relative)
+	if err != nil {
+		return err
+	}
+	stateRoot, _, err := openStateRoot(root, false)
+	if err != nil {
+		return err
+	}
+	defer stateRoot.Close()
+	if err := verifyRelativePath(stateRoot, relative, false); err != nil {
+		return err
+	}
+	if err := verifyDestination(stateRoot, relative); err != nil {
+		return err
+	}
+	if err := stateRoot.Remove(relative); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return syncDirectory(stateRoot, filepath.Dir(relative))
 }
 
 // EnsurePrivateRoot creates a state directory when needed and tightens an
@@ -474,6 +542,10 @@ func createTemp(root *os.Root, parent, prefix string, mode fs.FileMode) (*os.Fil
 		return file, relative, nil
 	}
 	return nil, "", errors.New("could not create a unique temporary state file")
+}
+
+func openLockFile(root *os.Root, relative string) (*os.File, error) {
+	return openLockFilePlatform(root, relative)
 }
 
 func readLimited(file *os.File, max int64, path string) ([]byte, error) {

@@ -125,12 +125,14 @@ jobs:
       - name: govulncheck
         shell: bash
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - name: staticcheck
+        shell: bash
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
       - name: gosec
         shell: bash
-        # These rules flag deliberate security boundaries: validated argv
-        # execution, bounded path reads, restrictive chmod, Git's SHA-1
-        # object format, and cleanup/diagnostic constants.
-        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.22.8 -exclude=G101,G104,G204,G302,G304,G401,G505 ./...
+        # Deliberate findings are suppressed at the exact validated boundary
+        # with an owner-facing rationale; broad rule exclusions are forbidden.
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 ./...
       - name: secret scan
         shell: bash
         run: |

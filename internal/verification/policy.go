@@ -599,7 +599,7 @@ func minInt(a, b int) int {
 }
 
 func executableFingerprint(path string) (string, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- path is selected by the trusted verifier boundary and identity-checked by the caller.
 	if err != nil {
 		return "", err
 	}

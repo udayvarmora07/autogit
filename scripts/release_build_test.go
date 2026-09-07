@@ -8,6 +8,7 @@ import (
 	"debug/elf"
 	"debug/pe"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,6 +101,53 @@ func TestReleaseBuildRejectsUnsupportedTargetBeforeBuilding(t *testing.T) {
 	}
 	if !bytes.Contains(result, []byte("unsupported release target: plan9/amd64")) {
 		t.Fatalf("unsupported target result=%q", result)
+	}
+}
+
+func TestReleaseBuildRejectsNonEmptyOutputDirectory(t *testing.T) {
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := t.TempDir()
+	stale := filepath.Join(output, "stale-artifact")
+	if err := os.WriteFile(stale, []byte("must remain"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "scripts/release-build.sh", "--target", "linux/amd64", "--output", output)
+	cmd.Dir = repoRoot
+	result, err := cmd.CombinedOutput()
+	if err == nil || !bytes.Contains(result, []byte("output directory must be empty")) {
+		t.Fatalf("non-empty output result=%v output=%s", err, result)
+	}
+	if got, err := os.ReadFile(stale); err != nil || string(got) != "must remain" {
+		t.Fatalf("stale output changed=%q err=%v", got, err)
+	}
+}
+
+func TestReleaseBuildEmbedsReproducibleIdentity(t *testing.T) {
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := t.TempDir()
+	cmd := exec.Command("bash", "scripts/release-build.sh", "--target", "linux/amd64", "--output", output)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "AUTOGIT_VERSION=1.2.3", "AUTOGIT_COMMIT="+strings.Repeat("d", 40), "SOURCE_DATE_EPOCH=1700000000", "AUTOGIT_COMPATIBILITY=autogit.compatibility/1")
+	if result, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("release build: %v\n%s", err, result)
+	}
+	result := exec.Command(filepath.Join(output, "autogit-linux-amd64"), "version")
+	versionOutput, err := result.CombinedOutput()
+	if err != nil {
+		t.Fatalf("version command: %v\n%s", err, versionOutput)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(versionOutput, &got); err != nil {
+		t.Fatalf("version JSON: %v output=%s", err, versionOutput)
+	}
+	if got["version"] != "1.2.3" || got["commit"] != strings.Repeat("d", 40) || got["build_date"] != "2023-11-14T22:13:20Z" || got["compatibility"] != "autogit.compatibility/1" {
+		t.Fatalf("embedded identity=%v", got)
 	}
 }
 

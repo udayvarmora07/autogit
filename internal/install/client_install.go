@@ -83,7 +83,7 @@ func PlanClient(entry ClientInstallation, path string, roots []string, projectRo
 		}
 		p.Exists = true
 		p.Mode = info.Mode()
-		p.Original, err = os.ReadFile(clean)
+		p.Original, err = os.ReadFile(clean) // #nosec G304 -- clean is constrained to the caller-approved config root.
 		if err != nil {
 			return ClientInstallPlan{}, err
 		}
@@ -201,7 +201,7 @@ func UninstallClient(entry ClientInstallation, path string, roots []string, proj
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return ErrScope
 	}
-	original, err := os.ReadFile(clean)
+	original, err := os.ReadFile(clean) // #nosec G304 -- clean is constrained to the caller-approved config root.
 	if err != nil {
 		return err
 	}

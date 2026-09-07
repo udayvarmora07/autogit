@@ -564,6 +564,46 @@ func nextReceiptRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// LookupReceipt checks the durable identity gate without invoking a
+// projector. Session-start callers use it before repository observation so a
+// replay cannot repeat baseline capture after the worktree has changed.
+// A zero Receipt means neither the event ID nor its idempotency key exists.
+func (s *Store) LookupReceipt(ctx context.Context, e Event) (Receipt, error) {
+	if s == nil || s.db == nil {
+		return Receipt{}, errors.New("event store is not configured")
+	}
+	key := stringValue(e.Idempotency["key"])
+	var byID Receipt
+	var id, digest string
+	errID := s.db.QueryRowContext(ctx, `SELECT event_id,payload_digest,disposition,revision FROM event_receipts WHERE event_id=?`, e.EventID).Scan(&id, &digest, &byID.Disposition, &byID.Revision)
+	if errID != nil && !errors.Is(errID, sql.ErrNoRows) {
+		return Receipt{}, errID
+	}
+	var byKey Receipt
+	var keyID, keyDigest string
+	errKey := s.db.QueryRowContext(ctx, `SELECT event_id,payload_digest,disposition,revision FROM event_receipts WHERE idempotency_key=?`, key).Scan(&keyID, &keyDigest, &byKey.Disposition, &byKey.Revision)
+	if errKey != nil && !errors.Is(errKey, sql.ErrNoRows) {
+		return Receipt{}, errKey
+	}
+	if errors.Is(errID, sql.ErrNoRows) && errors.Is(errKey, sql.ErrNoRows) {
+		return Receipt{}, nil
+	}
+	if errID != nil || errKey != nil || id != e.EventID || keyID != e.EventID || digest != e.Digest || keyDigest != e.Digest || byID.Disposition != byKey.Disposition || byID.Revision != byKey.Revision {
+		return Receipt{}, schema("E_IDEMPOTENCY_CONFLICT", "event identity was reused with different content")
+	}
+	if byID.Disposition == Pending {
+		return byID, nil
+	}
+	var stateRevision int64
+	if err := s.db.QueryRowContext(ctx, `SELECT revision FROM lifecycle_projections WHERE repository_id=?`, stringValue(e.Scope["repo_id"])).Scan(&stateRevision); errors.Is(err, sql.ErrNoRows) {
+		return Receipt{}, schema("E_PROJECTION_MIGRATION", "receipt exists without lifecycle projection; rebuild is required")
+	} else if err != nil {
+		return Receipt{}, err
+	}
+	byID.StateRevision = stateRevision
+	return byID, nil
+}
+
 // AcceptAndProject validates receipt identity and invokes projector while the
 // receipt, causal buffer, and bounded projection are held in one transaction.
 // A projector error rolls back every write, including an otherwise accepted

@@ -121,7 +121,7 @@ func DiscoverWithKeyContext(ctx context.Context, candidate string, key []byte) (
 		// Linked worktrees point at $COMMON/worktrees/<name>. Resolve their
 		// commondir marker so repository identity is shared while worktree
 		// identity remains distinct.
-		if b, readErr := os.ReadFile(filepath.Join(common, "commondir")); readErr == nil {
+		if b, readErr := os.ReadFile(filepath.Join(common, "commondir")); readErr == nil { // #nosec G703 -- common is resolved Git metadata and the target is constrained below.
 			cd := strings.TrimSpace(string(b))
 			if cd != "" {
 				if !filepath.IsAbs(cd) {

@@ -206,7 +206,7 @@ func prepareHygiene(root string) (hygienePlan, error) {
 		if info.Size() > maxGeneratedHygieneBytes {
 			return hygienePlan{}, errors.New(".gitignore exceeds size limit")
 		}
-		ignore.Original, err = os.ReadFile(ignorePath)
+		ignore.Original, err = os.ReadFile(ignorePath) // #nosec G304 -- path is a fixed child of the canonical initialization root.
 		if err != nil {
 			return hygienePlan{}, err
 		}
@@ -261,7 +261,7 @@ func prepareHygiene(root string) (hygienePlan, error) {
 		if info.Size() > maxGeneratedHygieneBytes {
 			return hygienePlan{}, errors.New("README.md exceeds size limit")
 		}
-		readme.Original, err = os.ReadFile(readmePath)
+		readme.Original, err = os.ReadFile(readmePath) // #nosec G304 -- path is a fixed child of the canonical initialization root.
 		if err != nil {
 			return hygienePlan{}, err
 		}

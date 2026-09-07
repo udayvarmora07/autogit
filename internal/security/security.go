@@ -22,9 +22,9 @@ type Finding struct {
 }
 
 const (
-	ReasonSecretFilename   = "SEC_SECRET_FILENAME"
-	ReasonSecretPattern    = "SEC_SECRET_PATTERN"
-	ReasonSecretEntropy    = "SEC_SECRET_ENTROPY"
+	ReasonSecretFilename   = "SEC_SECRET_FILENAME" // #nosec G101 -- stable redaction reason code, not a credential.
+	ReasonSecretPattern    = "SEC_SECRET_PATTERN"  // #nosec G101 -- stable redaction reason code, not a credential.
+	ReasonSecretEntropy    = "SEC_SECRET_ENTROPY"  // #nosec G101 -- stable redaction reason code, not a credential.
 	ReasonConflictMarker   = "SEC_CONFLICT_MARKER"
 	ReasonBinaryContent    = "SEC_BINARY_CONTENT"
 	ReasonDuplicatePath    = "SEC_DUPLICATE_PATH"
