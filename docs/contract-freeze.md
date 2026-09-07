@@ -1,7 +1,7 @@
 # AutoGit v1 contract freeze record
 
 Status: implementation baseline recorded; product acceptance review pending  
-Last updated: 2026-09-05
+Last updated: 2026-09-07
 
 This record resolves terminology and compatibility assumptions used by the Go
 v1 implementation. It is evidence for Phase 0 review; it does not claim that
@@ -86,7 +86,9 @@ The remaining review/release gates are recorded in
 [`docs/implementation-plan.md`](implementation-plan.md) and are not silently
 closed by this contract record: acceptance approval of the frozen contract,
 the disposable provider canary, and alpha/beta promotion. Hosted native OS
-evidence is recorded in [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757).
+evidence is recorded in [CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903),
+with the P0-01 through P0-05 implementation mapping in
+[`docs/release-evidence/phase-0-p0-01-p0-05.md`](release-evidence/phase-0-p0-01-p0-05.md).
 Implicit message/verifier inference remains intentionally unsupported without
 an explicit trusted profile; it is a policy boundary, not
 permission to infer completion. The protected

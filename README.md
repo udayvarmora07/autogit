@@ -100,8 +100,8 @@ creates a commit intent or AutoGit ref.
 Fresh repository-wide `go test ./...`, `go vet ./...`, `go build ./...`, and
 Linux arm64, Darwin arm64, and Windows amd64 cross-build smoke checks pass
 locally. Hosted native Linux, macOS, and Windows execution, including the
-native p95 gates, passed in [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
-for commit `76dfbee`. This closes the native-OS gate only. The repository does
+native p95 gates, passed in [CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903)
+for commit `bbf2e37`. This closes the native-OS gate only. The repository does
 not contain the prototype shell scripts used for the documented 177-case
 baseline. Phase 0 acceptance, live execution of the disposable provider
 canary, and publication/alpha/beta release gates remain open. The canary is

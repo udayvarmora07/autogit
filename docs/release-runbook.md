@@ -1,20 +1,23 @@
 # AutoGit v1 release and rollback runbook
 
 Status: implementation artifact; alpha/beta approval pending  
-Last updated: 2026-09-05
+Last updated: 2026-09-07
 
 This runbook covers the bounded private-alpha and public-beta gates. It does
 not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
 
-[CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757)
-completed successfully for commit `76dfbee08aa42d25a39f0231d876f03e7724a83e`.
+[CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903)
+(attempt 2) completed successfully for commit
+`bbf2e371f1d0fa592ac18a323c1b3df3133a57be`.
 Its native Linux, macOS, and Windows jobs passed tests, builds, deterministic
 test-floor checks, benchmark sampling, and p95 gates; security analysis and
 all three cross-build jobs also passed. This closes the native-OS gate only.
-Phase 0 acceptance, the live disposable-provider canary, and alpha/beta
-promotion remain pending.
+The implementation evidence for P0-01 through P0-05 is recorded in
+[`docs/release-evidence/phase-0-p0-01-p0-05.md`](release-evidence/phase-0-p0-01-p0-05.md).
+Phase 0 acceptance for the remaining items, the live disposable-provider
+canary, and alpha/beta promotion remain pending.
 
 ## Release evidence checklist
 
@@ -30,7 +33,7 @@ command output, and redacted artifact links for each item:
 3. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
 4. [Recorded] The native Linux, macOS, and Windows matrix passed in
-   [CI run 34044266757](https://github.com/udayvarmora07/autogit/actions/runs/34044266757),
+   [CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903),
    including benchmark, p95-gate, and build steps. Cross-build output alone is
    not native evidence.
 5. The same run passed the native p95 gates. Retain the run logs with the

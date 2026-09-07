@@ -33,18 +33,23 @@ gates below.
 
 All items are release blockers.
 
-- [ ] P0-01 Upgrade modernc.org/sqlite to a current release containing SQLite
+- [x] P0-01 Upgrade modernc.org/sqlite to a current release containing SQLite
   3.51.3 or later, pin compatible transitive dependencies, assert the embedded
   SQLite version, and pass migration/WAL/concurrency/crash tests natively.
-- [ ] P0-02 Consolidate events and job state behind one database opener,
+  Evidence: [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] P0-02 Consolidate events and job state behind one database opener,
   migration owner, pragma contract, and connection policy.
-- [ ] P0-03 Protect state root, DB/WAL/SHM, identity key, policy, verifier
+  Evidence: [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] P0-03 Protect state root, DB/WAL/SHM, identity key, policy, verifier
   config, and temp files from symlinks, traversal, replacement, wrong
   ownership, and permissive modes; add adversarial native tests.
-- [ ] P0-04 Use the hardened bounded Git runner for init and linked-worktree
+  Evidence: [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] P0-04 Use the hardened bounded Git runner for init and linked-worktree
   discovery; prove hostile Git config cannot execute hooks/helpers/SSH/prompts.
-- [ ] P0-05 Add command/effect deadlines, cancellation budgets, bounded
+  Evidence: [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
+- [x] P0-05 Add command/effect deadlines, cancellation budgets, bounded
   database waits, and full process-tree termination on every supported OS.
+  Evidence: [Phase 0 P0-01–P0-05 bundle](docs/release-evidence/phase-0-p0-01-p0-05.md).
 - [ ] P0-06 Make duplicate session.started receipt handling happen before
   baseline capture, or atomically couple first acceptance and baseline state.
 - [ ] P0-07 Make initialization consent transactional and policy persistence
