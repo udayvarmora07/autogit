@@ -716,7 +716,9 @@ func TestCreateUsesExactSnapshotWithoutCleanFilterOrHook(t *testing.T) {
 	git(t, repo, "config", "user.name", "AutoGit Test")
 	git(t, repo, "config", "user.email", "autogit@example.test")
 	writeFile(t, filepath.Join(repo, "a.txt"), "base\n")
+	writeFile(t, filepath.Join(repo, ".gitattributes"), "*.txt filter=hostile\n")
 	git(t, repo, "add", "--", "a.txt")
+	git(t, repo, "add", "--", ".gitattributes")
 	git(t, repo, "commit", "-m", "chore: baseline")
 	marker := filepath.Join(t.TempDir(), "filter-ran")
 	git(t, repo, "config", "filter.hostile.clean", "sh -c 'echo ran > "+marker+"; tr a-z A-Z'")
@@ -734,6 +736,50 @@ func TestCreateUsesExactSnapshotWithoutCleanFilterOrHook(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("hostile clean filter ran: %v", err)
+	}
+}
+
+func TestPrepareRetainsSparseExcludedParentEntriesInCandidateTree(t *testing.T) {
+	repo := newRepo(t)
+	git(t, repo, "config", "user.name", "AutoGit Test")
+	git(t, repo, "config", "user.email", "autogit@example.test")
+	writeFile(t, filepath.Join(repo, "visible.txt"), "visible base\n")
+	writeFile(t, filepath.Join(repo, "hidden.txt"), "hidden base\n")
+	git(t, repo, "add", "--", "visible.txt", "hidden.txt")
+	git(t, repo, "commit", "-m", "chore: sparse baseline")
+	sparseInit := exec.Command("git", "sparse-checkout", "init", "--no-cone")
+	sparseInit.Dir = repo
+	if output, err := sparseInit.CombinedOutput(); err != nil {
+		t.Skipf("Git sparse-checkout is unavailable: %v: %s", err, output)
+	}
+	sparseSet := exec.Command("git", "sparse-checkout", "set", "--no-cone", "visible.txt")
+	sparseSet.Dir = repo
+	if output, err := sparseSet.CombinedOutput(); err != nil {
+		t.Skipf("Git sparse-checkout is unavailable: %v: %s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "hidden.txt")); !os.IsNotExist(err) {
+		t.Fatalf("sparse checkout did not exclude hidden.txt: %v", err)
+	}
+
+	prepared, err := New(SystemRunner{}, &memoryIntentStore{}).Prepare(context.Background(), Request{
+		ID: "sparse-candidate", RepoDir: repo,
+		Snapshot: []SnapshotEntry{{Path: "visible.txt", Content: []byte("visible candidate\n"), Mode: 0644}},
+		Message:  "feat: sparse candidate", PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := git(t, repo, "show", prepared.TreeOID()+":hidden.txt"); got != "hidden base" {
+		t.Fatalf("sparse-excluded parent entry=%q", got)
+	}
+	if got := git(t, repo, "show", prepared.TreeOID()+":visible.txt"); got != "visible candidate" {
+		t.Fatalf("candidate entry=%q", got)
+	}
+	if err := CompareTreeToSnapshot(context.Background(), SystemRunner{}, repo, prepared.TreeOID(), []SnapshotEntry{
+		{Path: "hidden.txt", Content: []byte("hidden base\n"), Mode: 0644},
+		{Path: "visible.txt", Content: []byte("visible candidate\n"), Mode: 0644},
+	}, 1<<20); err != nil {
+		t.Fatalf("sparse candidate tree differed from Git tree: %v", err)
 	}
 }
 

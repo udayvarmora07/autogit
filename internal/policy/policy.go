@@ -56,12 +56,14 @@ func Merge(base, project Policy) Policy {
 	}
 	return base
 }
-func (p Policy) ProviderAllowed() bool { return p.Tracking != "no" && !p.LocalOnly && p.Provider != "" }
+func (p Policy) ProviderAllowed() bool {
+	return p.Tracking == "yes" && !p.LocalOnly && p.Provider != ""
+}
 func (p Policy) CanPublishPublic() bool {
-	return p.Tracking != "no" && p.Visibility == "public" && p.PublicConsent && !p.LocalOnly
+	return p.Tracking == "yes" && p.Visibility == "public" && p.PublicConsent && !p.LocalOnly
 }
 func (p Policy) TrackingEnabled() bool {
-	return p.Tracking == "yes" || p.Tracking == "local" || p.Tracking == "public"
+	return p.Tracking == "yes" || p.Tracking == "local"
 }
 
 func Validate(p Policy) error {

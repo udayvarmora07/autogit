@@ -87,8 +87,9 @@ All items are release blockers.
 - [x] P1-04 Define and implement verification isolation tiers: none,
   process-bounded, filesystem-isolated, filesystem-and-network-isolated, and
   remote-hermetic. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
-- [ ] P1-04 Enforce and test descendant cleanup, CPU/memory/file/process
+- [x] P1-04 Enforce and test descendant cleanup, CPU/memory/file/process
   limits, filesystem allowlists, and network denial for advertised tiers.
+  Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
   AppContainer/job controls, and an honest macOS fallback.
 - [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
@@ -97,17 +98,17 @@ All items are release blockers.
 - [x] P1-05 Include scanner version, coverage, truncation/limit state, redacted
   fingerprints, and provider push-protection guidance in preflight evidence.
   Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
-- [ ] P1-06 Differentially test tree creation for attributes, filters, LFS,
+- [x] P1-06 Differentially test tree creation for attributes, filters, LFS,
   sparse indexes/checkouts, submodules, worktrees, unusual modes, Unicode,
-  newline, control, and option-like paths.
-- [ ] P1-07 Add SHA-1 and SHA-256 repository fixtures and remove remaining
-  object-ID-length assumptions.
-- [ ] P1-08 Bind verifier/config validation to the executed object/identity
-  where supported and report residual TOCTOU limitations elsewhere.
-- [ ] P1-09 Remove or define the inconsistent public tracking policy value and
-  property-test policy merge/validation.
-- [ ] P1-10 Guarantee status, plan, config explain, and non-repair doctor are
-  filesystem- and network-read-only.
+  newline, control, and option-like paths. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
+- [x] P1-07 Add SHA-1 and SHA-256 repository fixtures and remove remaining
+  object-ID-length assumptions. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
+- [x] P1-08 Bind verifier/config validation to the executed object/identity
+  where supported and report residual TOCTOU limitations elsewhere. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
+- [x] P1-09 Remove or define the inconsistent public tracking policy value and
+  property-test policy merge/validation. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
+- [x] P1-10 Guarantee status, plan, config explain, and non-repair doctor are
+  filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
   native platforms.

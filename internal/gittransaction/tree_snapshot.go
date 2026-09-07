@@ -1,6 +1,7 @@
 package gittransaction
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -83,6 +84,53 @@ func SnapshotAtCommit(ctx context.Context, runner Runner, root, commit string, m
 		return nil, errors.New("commit tree is empty")
 	}
 	return entries, nil
+}
+
+// CompareTreeToSnapshot verifies that a Git tree contains exactly the
+// immutable entries presented to the verification boundary. It is used by
+// differential tests and by callers that need proof that Git's object view
+// did not reinterpret filters, modes, paths, or object content.
+func CompareTreeToSnapshot(ctx context.Context, runner Runner, root, tree string, expected []SnapshotEntry, maxTotalBytes int64) error {
+	if !oidRE.MatchString(tree) {
+		return errors.New("expected tree snapshot contains an invalid tree")
+	}
+	actual, err := SnapshotAtCommit(ctx, runner, root, tree, maxTotalBytes)
+	if err != nil {
+		return err
+	}
+	if len(expected) == 0 {
+		return errors.New("expected tree snapshot is empty")
+	}
+	want := make(map[string]SnapshotEntry, len(expected))
+	for _, entry := range expected {
+		if entry.Delete || safeTreePath(entry.Path) != nil {
+			return errors.New("expected tree snapshot contains an invalid entry")
+		}
+		if _, exists := want[entry.Path]; exists {
+			return fmt.Errorf("expected tree snapshot contains duplicate path %q", entry.Path)
+		}
+		want[entry.Path] = SnapshotEntry{Path: entry.Path, Content: append([]byte(nil), entry.Content...), Mode: entry.Mode}
+	}
+	if len(want) != len(actual) {
+		return fmt.Errorf("tree snapshot entry count mismatch: got %d want %d", len(actual), len(want))
+	}
+	for _, entry := range actual {
+		wantEntry, exists := want[entry.Path]
+		if !exists {
+			return fmt.Errorf("tree snapshot contains unexpected path %q", entry.Path)
+		}
+		if normalizedTreeMode(entry.Mode) != normalizedTreeMode(wantEntry.Mode) || !bytes.Equal(entry.Content, wantEntry.Content) {
+			return fmt.Errorf("tree snapshot differs at %q", entry.Path)
+		}
+	}
+	return nil
+}
+
+func normalizedTreeMode(mode os.FileMode) os.FileMode {
+	if mode&os.ModeType == os.ModeSymlink || mode.Perm()&0111 != 0 {
+		return mode & (os.ModeType | 0777)
+	}
+	return 0644
 }
 
 type treeSnapshotBoundedRunner interface {

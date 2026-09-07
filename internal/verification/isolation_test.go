@@ -2,8 +2,11 @@ package verification
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +23,12 @@ func TestIsolationCapabilitiesAreExplicitAndFailClosed(t *testing.T) {
 			t.Fatalf("incomplete capability for %q: %+v", tier, capability)
 		}
 	}
-	if _, err := RequireCapability(TierFilesystemNetworkIsolated); err == nil {
+	capability := CapabilityFor(TierFilesystemNetworkIsolated)
+	if runtime.GOOS == "linux" && process.NamespaceSandboxAvailable() {
+		if !capability.Available || !capability.Enforced {
+			t.Fatalf("Linux namespace tier was not advertised as enforced: %+v", capability)
+		}
+	} else if _, err := RequireCapability(TierFilesystemNetworkIsolated); err == nil {
 		t.Fatal("unavailable filesystem/network tier accepted")
 	}
 }
@@ -48,11 +56,100 @@ func TestTrustedRegistryRecordsAchievedProcessBoundedTier(t *testing.T) {
 	if err != nil || !result.Passed || result.Evidence[0].IsolationTier != TierProcessBounded {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
+	if result.Evidence[0].ExecutableBinding != "digest-rechecked-path" {
+		t.Fatalf("recording runner binding=%q", result.Evidence[0].ExecutableBinding)
+	}
 }
 
 func TestProcessResourceLimitsDoNotChangeUnboundedCompatibility(t *testing.T) {
 	result, err := process.Run(context.Background(), process.Options{Executable: "true", Limits: process.ResourceLimits{CPUTime: time.Second, MemoryBytes: 64 << 20, FileBytes: 1 << 20, Processes: 8}})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("bounded process result=%+v err=%v", result, err)
+	}
+}
+
+func TestVerifierUsesFilesystemIsolatedRunnerForConfiguredTier(t *testing.T) {
+	if runtime.GOOS != "linux" || !process.NamespaceSandboxAvailable() {
+		t.Skip("Linux bubblewrap sandbox unavailable")
+	}
+	work := t.TempDir()
+	allowed := filepath.Join(work, "allowed.txt")
+	denied := filepath.Join(t.TempDir(), "denied.txt")
+	if err := os.WriteFile(allowed, []byte("allowed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(denied, []byte("denied"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewVerifierRegistry([]TrustedVerifierSpec{{
+		Name: "isolated", Version: "1", Applicable: true,
+		Argv:          []string{executable, "-test.run=^TestVerifierSandboxProbe$"},
+		IsolationTier: TierFilesystemIsolated, FilesystemAllowlist: []string{work},
+		Environment: map[string]string{
+			"AUTOGIT_VERIFIER_SANDBOX": "1", "AUTOGIT_VERIFIER_ALLOWED": allowed, "AUTOGIT_VERIFIER_DENIED": denied,
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := func(ch byte) string { return "sha256:" + strings.Repeat(string(ch), 64) }
+	request := TrustedRequest{CandidateDigest: digest('a'), BaseDigest: digest('b'), PolicyDigest: digest('c'), GuardDigest: digest('d'), Dir: work}
+	result, err := registry.Verify(context.Background(), VerificationPolicy{Visibility: "private"}, request, ExecRunner{})
+	if err != nil || !result.Passed || result.Evidence[0].IsolationTier != TierFilesystemIsolated {
+		t.Fatalf("isolated verifier result=%+v err=%v", result, err)
+	}
+	if result.Evidence[0].ExecutableBinding != "opened-executable-descriptor" {
+		t.Fatalf("isolated verifier binding=%q", result.Evidence[0].ExecutableBinding)
+	}
+}
+
+func TestVerifierEvidenceReportsDescriptorBindingWhenRunnerSupportsIt(t *testing.T) {
+	if runtime.GOOS != "linux" || !process.ExecutableBindingAvailable() {
+		t.Skip("opened executable descriptors are implemented on Linux only")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewVerifierRegistry([]TrustedVerifierSpec{{
+		Name: "descriptor", Version: "1", Applicable: true,
+		Argv: []string{executable, "-test.run=^TestVerifierSandboxProbe$"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := func(ch byte) string { return "sha256:" + strings.Repeat(string(ch), 64) }
+	request := TrustedRequest{CandidateDigest: digest('a'), BaseDigest: digest('b'), PolicyDigest: digest('c'), GuardDigest: digest('d'), Dir: t.TempDir()}
+	result, err := registry.Verify(context.Background(), VerificationPolicy{Visibility: "private"}, request, ExecRunner{})
+	if err != nil || !result.Passed || result.Evidence[0].ExecutableBinding != "opened-executable-descriptor" {
+		t.Fatalf("descriptor evidence=%+v err=%v", result, err)
+	}
+}
+
+func TestVerifierSandboxProbe(t *testing.T) {
+	if os.Getenv("AUTOGIT_VERIFIER_SANDBOX") != "1" {
+		return
+	}
+	allowed, err := os.ReadFile(os.Getenv("AUTOGIT_VERIFIER_ALLOWED"))
+	if err != nil || string(allowed) != "allowed" {
+		t.Fatalf("allowed file unavailable: %q %v", allowed, err)
+	}
+	if _, err := os.ReadFile(os.Getenv("AUTOGIT_VERIFIER_DENIED")); err == nil {
+		t.Fatal("verifier filesystem sandbox exposed an unallowlisted file")
+	}
+}
+
+func TestRegistryRejectsIsolationControlsOnProcessBoundedTier(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewVerifierRegistry([]TrustedVerifierSpec{{Name: "bad", Version: "1", Applicable: true, Argv: []string{executable}, FilesystemAllowlist: []string{t.TempDir()}}})
+	if err == nil || errors.Is(err, context.Canceled) {
+		t.Fatalf("process-bounded verifier accepted namespace controls: %v", err)
 	}
 }

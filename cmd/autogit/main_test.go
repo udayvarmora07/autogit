@@ -366,6 +366,66 @@ func TestPlanDoesNotCreateStateBeforeInitialization(t *testing.T) {
 	}
 }
 
+func TestStatusIsFilesystemReadOnlyWithMissingAndExistingState(t *testing.T) {
+	stateDir := filepath.Join(t.TempDir(), "state")
+	t.Setenv("AUTOGIT_STATE_DIR", stateDir)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", "--initial-branch", "main", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("baseline\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", "--", "tracked.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", root, "-c", "user.name=AutoGit", "-c", "user.email=autogit@example.test", "commit", "-qm", "feat: baseline").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"status", "--repo", root}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("status without state: %v output=%s", err, out.String())
+	}
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Fatalf("status created state directory: %v", err)
+	}
+	if err := os.Mkdir(stateDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := state.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	databasePath := filepath.Join(stateDir, "state.db")
+	before, err := os.ReadFile(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeInfo, err := os.Stat(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := run([]string{"status", "--repo", root}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("status with state: %v output=%s", err, out.String())
+	}
+	after, err := os.ReadFile(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInfo, err := os.Stat(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || !beforeInfo.ModTime().Equal(afterInfo.ModTime()) {
+		t.Fatal("status mutated the existing state database")
+	}
+}
+
 func gitOutput(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
@@ -1547,6 +1607,12 @@ func TestLogsUnknownArgumentDoesNotCreateState(t *testing.T) {
 func TestLogsReturnsNewestRedactedFactsForRepository(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "identity.key"), bytes.Repeat([]byte{'k'}, 32), 0600); err != nil {
+		t.Fatal(err)
+	}
 	root := t.TempDir()
 	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
@@ -1600,6 +1666,12 @@ func TestLogsReturnsNewestRedactedFactsForRepository(t *testing.T) {
 func TestLogsScopesRepositoriesOrdersNewestAndHonorsLimitAcrossRestart(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("AUTOGIT_STATE_DIR", state)
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "identity.key"), bytes.Repeat([]byte{'k'}, 32), 0600); err != nil {
+		t.Fatal(err)
+	}
 	rootA, rootB := t.TempDir(), t.TempDir()
 	for _, root := range []string{rootA, rootB} {
 		if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {

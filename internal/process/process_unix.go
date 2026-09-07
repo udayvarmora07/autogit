@@ -9,7 +9,7 @@ import (
 
 type supervisor struct{}
 
-func newSupervisor(command *exec.Cmd) (*supervisor, error) {
+func newSupervisor(command *exec.Cmd, _ ...ResourceLimits) (*supervisor, error) {
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return &supervisor{}, nil
 }
@@ -20,6 +20,7 @@ func (*supervisor) Terminate(command *exec.Cmd) error {
 	if command == nil || command.Process == nil {
 		return nil
 	}
+	_ = terminateDescendants(command.Process.Pid)
 	if err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL); err == nil {
 		return nil
 	}

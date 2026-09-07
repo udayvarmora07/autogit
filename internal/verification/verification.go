@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -153,12 +154,54 @@ func (e ExecRunner) RunBoundedWithLimits(ctx context.Context, dir string, env ma
 	if max <= 0 {
 		max = 1 << 20
 	}
-	return e.runWithLimits(ctx, dir, env, max, limits, args...)
+	return e.runWithLimitsAndIsolation(ctx, dir, env, max, limits, process.IsolationOptions{}, args...)
 }
 func (e ExecRunner) run(ctx context.Context, dir string, env map[string]string, max int, args ...string) (Result, error) {
-	return e.runWithLimits(ctx, dir, env, max, process.ResourceLimits{}, args...)
+	return e.runWithLimitsAndIsolation(ctx, dir, env, max, process.ResourceLimits{}, process.IsolationOptions{}, args...)
 }
-func (ExecRunner) runWithLimits(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, args ...string) (Result, error) {
+func (e ExecRunner) RunBoundedWithLimitsAndIsolation(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, isolation process.IsolationOptions, args ...string) (Result, error) {
+	if max <= 0 {
+		max = e.MaxOutput
+	}
+	if max <= 0 {
+		max = 1 << 20
+	}
+	return e.runWithLimitsAndIsolation(ctx, dir, env, max, limits, isolation, args...)
+}
+func (e ExecRunner) RunBoundedWithLimitsAndIdentity(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, expectedDigest string, args ...string) (Result, error) {
+	return e.runWithLimitsAndIdentityAndIsolation(ctx, dir, env, max, limits, expectedDigest, process.IsolationOptions{}, args...)
+}
+func (e ExecRunner) RunBoundedWithLimitsAndIdentityAndIsolation(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, expectedDigest string, isolation process.IsolationOptions, args ...string) (Result, error) {
+	return e.runWithLimitsAndIdentityAndIsolation(ctx, dir, env, max, limits, expectedDigest, isolation, args...)
+}
+func (e ExecRunner) runWithLimitsAndIdentityAndIsolation(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, expectedDigest string, isolation process.IsolationOptions, args ...string) (Result, error) {
+	if len(args) == 0 || !filepath.IsAbs(args[0]) {
+		return Result{}, errors.New("verifier executable must be an absolute trusted path")
+	}
+	file, err := os.Open(args[0])
+	if err != nil {
+		return Result{}, fmt.Errorf("open verifier executable: %w", err)
+	}
+	defer file.Close()
+	actual, err := fingerprintExecutableFile(file)
+	if err != nil {
+		return Result{}, fmt.Errorf("fingerprint verifier executable: %w", err)
+	}
+	if expectedDigest != "" && actual != expectedDigest {
+		return Result{}, fmt.Errorf("%w: executable identity changed", errTrustedExecutable)
+	}
+	if max <= 0 {
+		max = e.MaxOutput
+	}
+	if max <= 0 {
+		max = 1 << 20
+	}
+	return e.runWithLimitsAndIsolationFile(ctx, dir, env, max, limits, isolation, args, file)
+}
+func (ExecRunner) runWithLimitsAndIsolation(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, isolation process.IsolationOptions, args ...string) (Result, error) {
+	return (ExecRunner{}).runWithLimitsAndIsolationFile(ctx, dir, env, max, limits, isolation, args, nil)
+}
+func (ExecRunner) runWithLimitsAndIsolationFile(ctx context.Context, dir string, env map[string]string, max int, limits process.ResourceLimits, isolation process.IsolationOptions, args []string, executableFile *os.File) (Result, error) {
 	if len(args) == 0 {
 		return Result{}, errors.New("empty verifier argv")
 	}
@@ -174,7 +217,7 @@ func (ExecRunner) runWithLimits(ctx context.Context, dir string, env map[string]
 	for _, k := range keys {
 		commandEnv = append(commandEnv, k+"="+env[k])
 	}
-	processResult, err := process.Run(ctx, process.Options{Executable: args[0], Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true, Limits: limits})
+	processResult, err := process.Run(ctx, process.Options{Executable: args[0], ExecutableFile: executableFile, Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true, Limits: limits, FilesystemAllowlist: isolation.FilesystemAllowlist, NetworkDisabled: isolation.NetworkDisabled})
 	if processResult.Truncated || errors.Is(err, process.ErrOutputLimit) {
 		return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode}, fmt.Errorf("verification output exceeded limit")
 	}

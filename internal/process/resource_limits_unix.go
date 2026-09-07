@@ -39,3 +39,5 @@ func applyResourceLimits(pid int, limits ResourceLimits) error {
 	}
 	return nil
 }
+
+func platformValidateResourceLimits(_ ResourceLimits) error { return nil }

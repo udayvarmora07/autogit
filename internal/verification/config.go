@@ -29,18 +29,20 @@ type verifierConfig struct {
 }
 
 type verifierConfigEntry struct {
-	Name          string            `json:"name"`
-	Version       string            `json:"version"`
-	Argv          []string          `json:"argv"`
-	Applicable    *bool             `json:"applicable"`
-	TimeoutMS     *int64            `json:"timeout_ms"`
-	MaxOutput     *int              `json:"max_output"`
-	Environment   map[string]string `json:"environment"`
-	IsolationTier string            `json:"isolation_tier"`
-	CPUTimeMS     *int64            `json:"cpu_time_ms"`
-	MemoryBytes   *uint64           `json:"memory_bytes"`
-	FileBytes     *uint64           `json:"file_bytes"`
-	Processes     *uint64           `json:"processes"`
+	Name                string            `json:"name"`
+	Version             string            `json:"version"`
+	Argv                []string          `json:"argv"`
+	Applicable          *bool             `json:"applicable"`
+	TimeoutMS           *int64            `json:"timeout_ms"`
+	MaxOutput           *int              `json:"max_output"`
+	Environment         map[string]string `json:"environment"`
+	IsolationTier       string            `json:"isolation_tier"`
+	CPUTimeMS           *int64            `json:"cpu_time_ms"`
+	MemoryBytes         *uint64           `json:"memory_bytes"`
+	FileBytes           *uint64           `json:"file_bytes"`
+	Processes           *uint64           `json:"processes"`
+	FilesystemAllowlist []string          `json:"filesystem_allowlist"`
+	NetworkDisabled     bool              `json:"network_disabled"`
 }
 
 // LoadRegistry parses a trusted verifier configuration and returns the same
@@ -125,6 +127,7 @@ func LoadRegistry(raw []byte, max int64) (*VerifierRegistry, error) {
 			Applicable: applicable, Timeout: timeout, MaxOutput: maxOutput,
 			Environment:   cloneEnvironment(entry.Environment),
 			IsolationTier: IsolationTier(entry.IsolationTier), ResourceLimits: limits,
+			FilesystemAllowlist: cloneStrings(entry.FilesystemAllowlist), NetworkDisabled: entry.NetworkDisabled,
 		})
 	}
 	return NewVerifierRegistry(specs)

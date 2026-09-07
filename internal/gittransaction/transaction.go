@@ -692,7 +692,7 @@ func validateSnapshot(root string, requested []SnapshotEntry) ([]SnapshotEntry, 
 	paths := make([]string, 0, len(requested))
 	for _, input := range requested {
 		p := input.Path
-		if p == "" || strings.ContainsAny(p, "\x00\r\n\\") || filepath.IsAbs(p) {
+		if safeTreePath(p) != nil || filepath.IsAbs(p) {
 			return nil, nil, errors.New("unsafe owned path")
 		}
 		clean := filepath.Clean(filepath.FromSlash(p))

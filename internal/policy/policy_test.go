@@ -42,7 +42,40 @@ func TestValidateRejectsUnknownPolicyValues(t *testing.T) {
 	if err := Validate(Policy{Tracking: "maybe"}); err == nil {
 		t.Fatal("unknown tracking accepted")
 	}
+	if err := Validate(Policy{Tracking: "public"}); err == nil {
+		t.Fatal("deprecated public tracking value accepted")
+	}
 	if err := Validate(Policy{Visibility: "world"}); err == nil {
 		t.Fatal("unknown visibility accepted")
+	}
+}
+
+func TestTrackingPredicatesHaveExplicitThreeStateSemantics(t *testing.T) {
+	tests := []struct {
+		name       string
+		tracking   string
+		enabled    bool
+		providerOK bool
+		publicOK   bool
+	}{
+		{name: "unset", tracking: "", enabled: false, providerOK: false, publicOK: false},
+		{name: "yes", tracking: "yes", enabled: true, providerOK: true, publicOK: true},
+		{name: "local", tracking: "local", enabled: true, providerOK: false, publicOK: false},
+		{name: "no", tracking: "no", enabled: false, providerOK: false, publicOK: false},
+		{name: "deprecated-public", tracking: "public", enabled: false, providerOK: false, publicOK: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			p := Policy{Tracking: test.tracking, Provider: "github", Visibility: "public", PublicConsent: true}
+			if got := p.TrackingEnabled(); got != test.enabled {
+				t.Fatalf("TrackingEnabled()=%v, want %v", got, test.enabled)
+			}
+			if got := p.ProviderAllowed(); got != test.providerOK {
+				t.Fatalf("ProviderAllowed()=%v, want %v", got, test.providerOK)
+			}
+			if got := p.CanPublishPublic(); got != test.publicOK {
+				t.Fatalf("CanPublishPublic()=%v, want %v", got, test.publicOK)
+			}
+		})
 	}
 }

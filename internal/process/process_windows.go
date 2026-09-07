@@ -12,13 +12,28 @@ import (
 
 type supervisor struct{ job windows.Handle }
 
-func newSupervisor(*exec.Cmd) (*supervisor, error) {
+func newSupervisor(_ *exec.Cmd, requested ...ResourceLimits) (*supervisor, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	limits := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
 	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if len(requested) > 0 {
+		configured := requested[0]
+		if configured.CPUTime > 0 {
+			limits.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_PROCESS_TIME
+			limits.BasicLimitInformation.PerProcessUserTimeLimit = configured.CPUTime.Nanoseconds() / 100
+		}
+		if configured.MemoryBytes > 0 {
+			limits.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_JOB_MEMORY
+			limits.JobMemoryLimit = uintptr(configured.MemoryBytes)
+		}
+		if configured.Processes > 0 {
+			limits.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+			limits.BasicLimitInformation.ActiveProcessLimit = uint32(configured.Processes)
+		}
+	}
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
 		_ = windows.CloseHandle(job)
 		return nil, err

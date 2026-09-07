@@ -141,6 +141,12 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 	if cmd == "plan" {
 		return runPlanContext(ctx, args[1:], dir, out)
 	}
+	if cmd == "status" {
+		return runStatusContext(ctx, args[1:], dir, out)
+	}
+	if cmd == "logs" {
+		return runLogsContext(ctx, args[1:], dir, out)
+	}
 	if cmd == "config" {
 		return runConfig(args[1:], dir, out)
 	}
@@ -170,21 +176,6 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 			return cliError{"E_USAGE", "doctor does not accept arguments"}
 		}
 		return runDoctorContext(ctx, dir, out)
-	}
-	if cmd == "logs" {
-		root := flag(args[1:], "--repo")
-		if err := validateLogsArgs(args[1:]); err != nil {
-			return err
-		}
-		// Resolve the repository before creating the state directory. This keeps
-		// malformed or out-of-scope read-only requests side-effect free.
-		key, _, keyErr := identityKeyForRead(dir)
-		if keyErr != nil {
-			return keyErr
-		}
-		if _, discoverErr := repository.DiscoverWithKeyContext(ctx, root, key); discoverErr != nil {
-			return cliError{"E_SCOPE", discoverErr.Error()}
-		}
 	}
 	if err = securefs.EnsurePrivateRoot(dir); err != nil {
 		return err
@@ -231,46 +222,6 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 			return err
 		}
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "POLICY_UPDATED", "repo_id": info.RepoID})
-	case "status":
-		verifierPath := flag(args[1:], "--verifiers")
-		if verifierPath != "" {
-			return cliError{"E_USAGE", "--verifiers is supported by config explain"}
-		}
-		root := flag(args[1:], "--repo")
-		var repoID string
-		var info repository.Info
-		if root != "" {
-			var discoverErr error
-			info, discoverErr = repository.DiscoverWithKeyContext(ctx, root, identityKey)
-			if discoverErr != nil {
-				return cliError{"E_SCOPE", discoverErr.Error()}
-			}
-			repoID = info.RepoID
-		}
-		if (cmd == "status" || cmd == "plan") && repoID == "" {
-			return cliError{"E_SCOPE", "--repo is required for read-only inspection"}
-		}
-		p, policyErr := loadPolicy(dir, repoID)
-		if policyErr != nil {
-			return policyErr
-		}
-		result := map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "STATUS", "policy": p}
-		if repoID != "" {
-			result["repo_id"] = repoID
-		}
-		if cmd == "status" {
-			projection, projectionErr := lifecycleStatus(ctx, s, repoID)
-			if projectionErr != nil {
-				return projectionErr
-			}
-			result["lifecycle"] = projection
-			summary, summaryErr := captureRepositorySummary(ctx, info.Root)
-			if summaryErr != nil {
-				return cliError{"E_REPOSITORY", safeMessage(summaryErr.Error())}
-			}
-			result["repository"] = summary
-		}
-		return json.NewEncoder(out).Encode(result)
 	case "install", "uninstall":
 		adapterName, configPath, root := flag(args[1:], "--adapter"), flag(args[1:], "--path"), flag(args[1:], "--root")
 		if adapterName == "" || configPath == "" || root == "" {
@@ -301,24 +252,6 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 			return cliError{"E_INSTALL", uninstallErr.Error()}
 		}
 		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": strings.ToUpper(cmd) + "_APPLIED"})
-	case "logs":
-		root := flag(args[1:], "--repo")
-		info, discoverErr := repository.DiscoverWithKeyContext(ctx, root, identityKey)
-		if discoverErr != nil {
-			return cliError{"E_SCOPE", discoverErr.Error()}
-		}
-		limit := 50
-		if raw, provided := flagValue(args[1:], "--limit"); provided {
-			limit, _ = strconv.Atoi(raw)
-		}
-		logs, logsErr := s.Logs(ctx, info.RepoID, limit)
-		if logsErr != nil {
-			if code := events.CodeOf(logsErr); code != "" {
-				return cliError{code, logsErr.Error()}
-			}
-			return logsErr
-		}
-		return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "LOGS", "logs": logs})
 	default:
 		return cliError{"E_USAGE", "unknown command"}
 	}
@@ -464,6 +397,96 @@ func runPlanContext(ctx context.Context, args []string, dir string, out io.Write
 			"provider_allowed": p.ProviderAllowed(), "public_consent": p.PublicConsent,
 		},
 	})
+}
+
+func runStatusContext(ctx context.Context, args []string, dir string, out io.Writer) error {
+	root := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] != "--repo" {
+			return cliError{"E_USAGE", "status supports only --repo"}
+		}
+		if root != "" || i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(strings.TrimSpace(args[i+1]), "-") {
+			return cliError{"E_USAGE", "--repo requires one value"}
+		}
+		root = args[i+1]
+		i++
+	}
+	if root == "" {
+		return cliError{"E_SCOPE", "--repo is required for read-only inspection"}
+	}
+	key, _, err := identityKeyForRead(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKeyContext(ctx, root, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	p, err := loadPolicy(dir, info.RepoID)
+	if err != nil {
+		return err
+	}
+	projection := emptyLifecycleSummary()
+	statePath := filepath.Join(dir, "state.db")
+	if _, statErr := os.Lstat(statePath); statErr == nil {
+		store, openErr := events.OpenStoreReadOnlyContext(ctx, statePath)
+		if openErr != nil {
+			return cliError{"E_STATE", "cannot read lifecycle projection"}
+		}
+		defer store.Close()
+		projection, err = lifecycleStatus(ctx, store, info.RepoID)
+		if err != nil {
+			return err
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return cliError{"E_STATE", "cannot read lifecycle projection"}
+	}
+	summary, err := captureRepositorySummary(ctx, info.Root)
+	if err != nil {
+		return cliError{"E_REPOSITORY", safeMessage(err.Error())}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{
+		"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "STATUS", "repo_id": info.RepoID,
+		"policy": p, "lifecycle": projection, "repository": summary,
+	})
+}
+
+func runLogsContext(ctx context.Context, args []string, dir string, out io.Writer) error {
+	if err := validateLogsArgs(args); err != nil {
+		return err
+	}
+	root := flag(args, "--repo")
+	key, _, err := identityKeyForRead(dir)
+	if err != nil {
+		return err
+	}
+	info, err := repository.DiscoverWithKeyContext(ctx, root, key)
+	if err != nil {
+		return cliError{"E_SCOPE", err.Error()}
+	}
+	limit := 50
+	if raw, provided := flagValue(args, "--limit"); provided {
+		limit, _ = strconv.Atoi(raw)
+	}
+	logs := []events.AuditLog{}
+	statePath := filepath.Join(dir, "state.db")
+	if _, statErr := os.Lstat(statePath); statErr == nil {
+		store, openErr := events.OpenStoreReadOnlyContext(ctx, statePath)
+		if openErr != nil {
+			return cliError{"E_STATE", "cannot read logs"}
+		}
+		defer store.Close()
+		logs, err = store.Logs(ctx, info.RepoID, limit)
+		if err != nil {
+			if code := events.CodeOf(err); code != "" {
+				return cliError{code, err.Error()}
+			}
+			return err
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return cliError{"E_STATE", "cannot read logs"}
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"schema_version": "autogit.result/1", "disposition": "accepted", "action": "none", "reason_code": "LOGS", "logs": logs})
 }
 
 func captureRepositorySummary(ctx context.Context, root string) (map[string]any, error) {
@@ -2105,9 +2128,12 @@ type lifecycleSummary struct {
 }
 
 func lifecycleStatus(ctx context.Context, s *events.Store, repositoryID string) (lifecycleSummary, error) {
+	if s == nil {
+		return emptyLifecycleSummary(), nil
+	}
 	data, revision, err := s.LifecycleProjectionContext(ctx, repositoryID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return lifecycleSummary{Exists: false, Revision: 0, Tasks: stateCounts{States: map[string]int{}}, Candidates: stateCounts{States: map[string]int{}}, Verifications: stateCounts{States: map[string]int{}}, Commits: stateCounts{States: map[string]int{}}, Pushes: stateCounts{States: map[string]int{}}}, nil
+		return emptyLifecycleSummary(), nil
 	}
 	if err != nil {
 		return lifecycleSummary{}, cliError{"E_STATE", "cannot read lifecycle projection"}
@@ -2126,6 +2152,10 @@ func lifecycleStatus(ctx context.Context, s *events.Store, repositoryID string) 
 		Commits:       stateCountsFromCommits(state.Commits),
 		Pushes:        stateCountsFromPushes(state.Pushes),
 	}, nil
+}
+
+func emptyLifecycleSummary() lifecycleSummary {
+	return lifecycleSummary{Tasks: stateCounts{States: map[string]int{}}, Candidates: stateCounts{States: map[string]int{}}, Verifications: stateCounts{States: map[string]int{}}, Commits: stateCounts{States: map[string]int{}}, Pushes: stateCounts{States: map[string]int{}}}
 }
 
 func boolCount(ok bool) int {

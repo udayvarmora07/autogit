@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,16 +22,18 @@ import (
 // TrustedVerifierSpec is trusted repository configuration. Adapter payloads
 // cannot construct or select one of these specifications.
 type TrustedVerifierSpec struct {
-	Name             string
-	Version          string
-	Argv             []string
-	Applicable       bool
-	Timeout          time.Duration
-	MaxOutput        int
-	Environment      map[string]string
-	ExecutableDigest string
-	IsolationTier    IsolationTier
-	ResourceLimits   process.ResourceLimits
+	Name                string
+	Version             string
+	Argv                []string
+	Applicable          bool
+	Timeout             time.Duration
+	MaxOutput           int
+	Environment         map[string]string
+	ExecutableDigest    string
+	IsolationTier       IsolationTier
+	ResourceLimits      process.ResourceLimits
+	FilesystemAllowlist []string
+	NetworkDisabled     bool
 }
 
 // VerificationPolicy is the repository's effective verification policy.
@@ -76,8 +79,14 @@ func NewVerifierRegistry(specs []TrustedVerifierSpec) (*VerifierRegistry, error)
 		if _, err := RequireCapability(in.IsolationTier); err != nil {
 			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
 		}
-		if in.ResourceLimits == (process.ResourceLimits{}) && in.IsolationTier == TierProcessBounded {
-			in.ResourceLimits = defaultVerifierResourceLimits()
+		if err := validateIsolationOptions(in.IsolationTier, in.FilesystemAllowlist, in.NetworkDisabled); err != nil {
+			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
+		}
+		if in.ResourceLimits == (process.ResourceLimits{}) && in.IsolationTier != TierNone {
+			in.ResourceLimits = defaultVerifierResourceLimits(in.IsolationTier)
+		}
+		if err := process.ValidateResourceLimits(in.ResourceLimits); err != nil {
+			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
 		}
 		if !filepath.IsAbs(in.Argv[0]) {
 			return nil, fmt.Errorf("verifier %q: executable must be absolute", in.Name)
@@ -88,11 +97,18 @@ func NewVerifierRegistry(specs []TrustedVerifierSpec) (*VerifierRegistry, error)
 		if err := rejectFinalSymlink(in.Argv[0]); err != nil {
 			return nil, fmt.Errorf("verifier %q: %w", in.Name, err)
 		}
-		if digest, err := executableFingerprint(in.Argv[0]); err == nil {
-			in.ExecutableDigest = digest
+		canonicalExecutable, err := canonicalTrustedExecutable(in.Argv[0])
+		if err != nil {
+			return nil, fmt.Errorf("verifier %q: executable identity cannot be established: %w", in.Name, err)
 		}
+		digest, err := executableFingerprint(canonicalExecutable)
+		if err != nil {
+			return nil, fmt.Errorf("verifier %q: executable identity cannot be established: %w", in.Name, err)
+		}
+		in.ExecutableDigest = digest
 		in.Argv = append([]string(nil), in.Argv...)
 		in.Environment = cloneEnvironment(in.Environment)
+		in.FilesystemAllowlist = cloneStrings(in.FilesystemAllowlist)
 		copySpecs[i] = in
 	}
 	sort.Slice(copySpecs, func(i, j int) bool { return copySpecs[i].Name < copySpecs[j].Name })
@@ -213,10 +229,13 @@ type TrustedEvidence struct {
 	StderrDigest      string
 	EvidenceDigest    string
 	IsolationTier     IsolationTier
+	// ExecutableBinding distinguishes opened-object execution from the
+	// digest-rechecked path fallback used by incompatible launchers/platforms.
+	ExecutableBinding string
 }
 
 func (e TrustedEvidence) ValidForTrusted(candidate, base, policy, guard, verifierSet string) bool {
-	return e.Passed && e.IsolationTier != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
+	return e.Passed && e.IsolationTier != "" && e.ExecutableBinding != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
 }
 
 type VerificationResult struct {
@@ -345,6 +364,17 @@ func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedReq
 	if max <= 0 {
 		max = 1 << 20
 	}
+	isolatedTier := spec.IsolationTier == TierFilesystemIsolated || spec.IsolationTier == TierFilesystemNetworkIsolated
+	e.ExecutableBinding = "digest-rechecked-path"
+	if process.ExecutableBindingAvailable() {
+		if isolatedTier {
+			if _, identityOK := runner.(isolatedIdentityRunner); identityOK {
+				e.ExecutableBinding = "opened-executable-descriptor"
+			}
+		} else if _, identityOK := runner.(identityBoundRunner); identityOK {
+			e.ExecutableBinding = "opened-executable-descriptor"
+		}
+	}
 	type runResponse struct {
 		result Result
 		err    error
@@ -353,7 +383,21 @@ func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedReq
 	go func() {
 		var res Result
 		var runErr error
-		if br, ok := runner.(boundedRunner); ok {
+		isolation := process.IsolationOptions{FilesystemAllowlist: cloneStrings(spec.FilesystemAllowlist), NetworkDisabled: spec.NetworkDisabled}
+		if isolatedTier {
+			// The candidate working directory is always the minimum readable
+			// scope; extra trusted paths remain explicit configuration.
+			isolation.FilesystemAllowlist = append(isolation.FilesystemAllowlist, req.Dir)
+		}
+		if isolatedIdentity, identityOK := runner.(isolatedIdentityRunner); identityOK && process.ExecutableBindingAvailable() && isolatedTier {
+			res, runErr = isolatedIdentity.RunBoundedWithLimitsAndIdentityAndIsolation(commandCtx, req.Dir, env, max, spec.ResourceLimits, spec.ExecutableDigest, isolation, append([]string(nil), spec.Argv...)...)
+		} else if identity, identityOK := runner.(identityBoundRunner); identityOK && process.ExecutableBindingAvailable() && !isolatedTier {
+			res, runErr = identity.RunBoundedWithLimitsAndIdentity(commandCtx, req.Dir, env, max, spec.ResourceLimits, spec.ExecutableDigest, append([]string(nil), spec.Argv...)...)
+		} else if isolated, isolationOK := runner.(isolatedRunner); isolationOK && (isolatedTier || isolation.NetworkDisabled) {
+			res, runErr = isolated.RunBoundedWithLimitsAndIsolation(commandCtx, req.Dir, env, max, spec.ResourceLimits, isolation, append([]string(nil), spec.Argv...)...)
+		} else if isolatedTier || isolation.NetworkDisabled {
+			runErr = errors.New("configured verifier isolation requires an isolation-capable runner")
+		} else if br, ok := runner.(boundedRunner); ok {
 			if resourceRunner, resourceOK := runner.(resourceBoundedRunner); resourceOK {
 				res, runErr = resourceRunner.RunBoundedWithLimits(commandCtx, req.Dir, env, max, spec.ResourceLimits, append([]string(nil), spec.Argv...)...)
 			} else {
@@ -431,6 +475,18 @@ var verifierNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var envNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var errTrustedExecutable = errors.New("trusted executable invalid")
 
+type isolatedRunner interface {
+	RunBoundedWithLimitsAndIsolation(context.Context, string, map[string]string, int, process.ResourceLimits, process.IsolationOptions, ...string) (Result, error)
+}
+
+type identityBoundRunner interface {
+	RunBoundedWithLimitsAndIdentity(context.Context, string, map[string]string, int, process.ResourceLimits, string, ...string) (Result, error)
+}
+
+type isolatedIdentityRunner interface {
+	RunBoundedWithLimitsAndIdentityAndIsolation(context.Context, string, map[string]string, int, process.ResourceLimits, string, process.IsolationOptions, ...string) (Result, error)
+}
+
 func validateEnvironment(env map[string]string) error {
 	for k, v := range env {
 		if !envNameRE.MatchString(k) || strings.ContainsAny(v, "\x00\r\n") || unsafeEnvironmentName(k) || k == "PATH" || k == "LANG" || k == "LC_ALL" || strings.HasPrefix(k, "GIT_") {
@@ -464,6 +520,43 @@ func controlledEnvironment(spec TrustedVerifierSpec, executable string) map[stri
 		env[k] = v
 	}
 	return env
+}
+
+func validateIsolationOptions(tier IsolationTier, allowlist []string, networkDisabled bool) error {
+	switch tier {
+	case TierNone, TierProcessBounded:
+		if len(allowlist) != 0 || networkDisabled {
+			return errors.New("filesystem and network controls require an isolated tier")
+		}
+	case TierFilesystemIsolated, TierFilesystemNetworkIsolated:
+		capability, err := RequireCapability(tier)
+		if err != nil {
+			return err
+		}
+		if !capability.Available || !capability.Enforced {
+			return errors.New(capability.Reason)
+		}
+		if tier == TierFilesystemNetworkIsolated && !networkDisabled {
+			return errors.New("filesystem/network tier requires network denial")
+		}
+		for _, path := range allowlist {
+			if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path || path == string(filepath.Separator) {
+				return errors.New("filesystem allowlist paths must be absolute, clean, and non-root")
+			}
+			parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+			if err != nil {
+				return fmt.Errorf("filesystem allowlist parent: %w", err)
+			}
+			candidate := filepath.Join(parent, filepath.Base(path))
+			info, err := os.Lstat(candidate)
+			if err != nil || info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+				return fmt.Errorf("filesystem allowlist path %q is not a trusted regular file or directory", path)
+			}
+		}
+	default:
+		return errors.New("unknown verifier isolation tier")
+	}
+	return nil
 }
 
 func canonicalTrustedExecutable(path string) (string, error) {
@@ -556,16 +649,18 @@ func outputLimitError(err error) bool {
 }
 
 type canonicalSpec struct {
-	Name             string                 `json:"name"`
-	Version          string                 `json:"version"`
-	Argv             []string               `json:"argv"`
-	Applicable       bool                   `json:"applicable"`
-	Timeout          int64                  `json:"timeout_ns"`
-	MaxOutput        int                    `json:"max_output"`
-	Environment      map[string]string      `json:"environment,omitempty"`
-	ExecutableDigest string                 `json:"executable_digest,omitempty"`
-	IsolationTier    IsolationTier          `json:"isolation_tier"`
-	ResourceLimits   process.ResourceLimits `json:"resource_limits"`
+	Name                string                 `json:"name"`
+	Version             string                 `json:"version"`
+	Argv                []string               `json:"argv"`
+	Applicable          bool                   `json:"applicable"`
+	Timeout             int64                  `json:"timeout_ns"`
+	MaxOutput           int                    `json:"max_output"`
+	Environment         map[string]string      `json:"environment,omitempty"`
+	ExecutableDigest    string                 `json:"executable_digest,omitempty"`
+	IsolationTier       IsolationTier          `json:"isolation_tier"`
+	ResourceLimits      process.ResourceLimits `json:"resource_limits"`
+	FilesystemAllowlist []string               `json:"filesystem_allowlist,omitempty"`
+	NetworkDisabled     bool                   `json:"network_disabled,omitempty"`
 }
 type registryCanonical struct {
 	Version string          `json:"version"`
@@ -579,7 +674,7 @@ type verifierSetCanonical struct {
 func canonicalSpecs(specs []TrustedVerifierSpec) []canonicalSpec {
 	out := make([]canonicalSpec, len(specs))
 	for i, s := range specs {
-		out[i] = canonicalSpec{Name: s.Name, Version: s.Version, Argv: append([]string(nil), s.Argv...), Applicable: s.Applicable, Timeout: s.Timeout.Nanoseconds(), MaxOutput: s.MaxOutput, Environment: cloneEnvironment(s.Environment), ExecutableDigest: s.ExecutableDigest, IsolationTier: s.IsolationTier, ResourceLimits: s.ResourceLimits}
+		out[i] = canonicalSpec{Name: s.Name, Version: s.Version, Argv: append([]string(nil), s.Argv...), Applicable: s.Applicable, Timeout: s.Timeout.Nanoseconds(), MaxOutput: s.MaxOutput, Environment: cloneEnvironment(s.Environment), ExecutableDigest: s.ExecutableDigest, IsolationTier: s.IsolationTier, ResourceLimits: s.ResourceLimits, FilesystemAllowlist: cloneStrings(s.FilesystemAllowlist), NetworkDisabled: s.NetworkDisabled}
 	}
 	return out
 }
@@ -598,9 +693,13 @@ func cloneEnvironment(in map[string]string) map[string]string {
 	}
 	return out
 }
+
+func cloneStrings(in []string) []string { return append([]string(nil), in...) }
+
 func cloneSpec(in TrustedVerifierSpec) TrustedVerifierSpec {
 	in.Argv = append([]string(nil), in.Argv...)
 	in.Environment = cloneEnvironment(in.Environment)
+	in.FilesystemAllowlist = cloneStrings(in.FilesystemAllowlist)
 	return in
 }
 
@@ -627,6 +726,24 @@ func minInt(a, b int) int {
 func executableFingerprint(path string) (string, error) {
 	b, err := os.ReadFile(path) // #nosec G304 -- path is selected by the trusted verifier boundary and identity-checked by the caller.
 	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(h[:]), nil
+}
+
+func fingerprintExecutableFile(file *os.File) (string, error) {
+	if file == nil {
+		return "", errors.New("executable file is required")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	b, err := io.ReadAll(file)
+	if err != nil {
+		return "", err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
 	h := sha256.Sum256(b)

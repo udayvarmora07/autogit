@@ -4,10 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"autogit/internal/process"
 )
 
 func testDigest(ch byte) string { return "sha256:" + strings.Repeat(string(ch), 64) }
@@ -162,6 +165,13 @@ func TestTrustedVerifyRejectsShellAndSymlinkExecutables(t *testing.T) {
 	}
 }
 
+func TestRegistryRejectsMissingExecutableIdentity(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-verifier")
+	if _, err := NewVerifierRegistry([]TrustedVerifierSpec{{Name: "missing", Version: "1", Argv: []string{missing}, Applicable: true}}); err == nil {
+		t.Fatal("missing trusted executable accepted")
+	}
+}
+
 func TestTrustedVerifyScrubsEnvironmentBoundsFailureMetadataAndHonorsCancellation(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -246,6 +256,35 @@ func TestTrustedVerifyReportsPerCommandTimeout(t *testing.T) {
 	got, err := reg.Verify(context.Background(), VerificationPolicy{Visibility: "public"}, req, &trustedBlockingRunner{})
 	if err != nil || got.Decision != DecisionFailed || got.Reason != ReasonVerificationTimeout || !got.Evidence[0].TimedOut {
 		t.Fatalf("timeout result=%#v err=%v", got, err)
+	}
+}
+
+func TestExecRunnerBindsExecutionToTheVerifiedExecutableObject(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("descriptor-backed execution is implemented on Linux only")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "verifier")
+	contents, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, contents, 0700); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := executableFingerprint(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := (ExecRunner{}).RunBoundedWithLimitsAndIdentity(context.Background(), dir, nil, 4096, process.ResourceLimits{}, digest, path, "-test.run=^$")
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("bound executable failed: result=%+v err=%v", result, err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 97\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (ExecRunner{}).RunBoundedWithLimitsAndIdentity(context.Background(), dir, nil, 4096, process.ResourceLimits{}, digest, path, "-test.run=^$"); err == nil {
+		t.Fatal("executable replacement was accepted")
 	}
 }
 

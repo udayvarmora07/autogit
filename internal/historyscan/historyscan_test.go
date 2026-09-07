@@ -39,6 +39,25 @@ func TestHistoryScanFindsSecretRemovedFromCandidate(t *testing.T) {
 	}
 }
 
+func TestHistoryScanSupportsSHA256Repository(t *testing.T) {
+	repo := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", "-b", "main", "--object-format=sha256", repo).CombinedOutput(); err != nil {
+		t.Skipf("Git does not support SHA-256 repositories: %v: %s", err, output)
+	}
+	writeFile(t, repo, "safe.txt", "safe\n")
+	commit(t, repo, "sha256")
+	candidate := head(t, repo)
+	if len(candidate) != 64 {
+		t.Fatalf("candidate SHA=%q, want 64 hex characters", candidate)
+	}
+	got, err := New(nil).Scan(context.Background(), Request{
+		RepoRoot: repo, CandidateSHA: candidate, PolicyDigest: "sha256:" + strings.Repeat("a", 64),
+	})
+	if err != nil || got.Blocked {
+		t.Fatalf("SHA-256 history scan failed: %#v err=%v", got, err)
+	}
+}
+
 func TestHistoryScanDoesNotInspectUnrelatedRef(t *testing.T) {
 	repo := newRepo(t)
 	writeFile(t, repo, "safe.txt", "safe\n")

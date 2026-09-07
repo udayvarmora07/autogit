@@ -564,6 +564,20 @@ func OpenStoreContext(ctx context.Context, path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// OpenStoreReadOnlyContext opens an existing event store without creating
+// files, applying migrations, or enabling writable SQLite pragmas. It is for
+// status, logs, and other inspection-only command paths.
+func OpenStoreReadOnlyContext(ctx context.Context, path string) (*Store, error) {
+	if path == "" {
+		return nil, errors.New("state path is required")
+	}
+	db, err := sharedDB.OpenReadOnly(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
 func nextReceiptRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
 	if _, err := tx.ExecContext(ctx, `UPDATE event_revision_sequence SET revision=revision+1 WHERE id=1`); err != nil {
 		return 0, err
