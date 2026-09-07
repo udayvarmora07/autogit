@@ -8,6 +8,11 @@ This repository contains the AutoGit v1 Go engine. The currently installed
 Bash prototype remains under `~/.agents/hooks` and is treated as a behavioral
 reference until the v1 engine can replace it safely.
 
+AutoGit is released under the [Apache License 2.0](LICENSE). Security reports,
+supported versions, and response expectations are in [SECURITY.md](SECURITY.md);
+contribution and dependency policies are in [CONTRIBUTING.md](CONTRIBUTING.md)
+and [`docs/dependency-policy.md`](docs/dependency-policy.md).
+
 ## Installation and prerequisites
 
 Build from a clean checkout with Go 1.26.7 and a system Git executable:

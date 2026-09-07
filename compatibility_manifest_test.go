@@ -10,18 +10,21 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
+	"time"
 
 	"autogit/internal/adapters"
+	"autogit/internal/compatibility"
 	"autogit/internal/state"
 )
 
 type releaseCompatibilityManifest struct {
-	SchemaVersion      string                        `json:"schema_version"`
-	AdapterRegistry    string                        `json:"adapter_registry_version"`
-	EventSchemaMajors  []string                      `json:"event_schema_majors"`
-	ResultSchemaMajors []string                      `json:"result_schema_majors"`
-	StateSchema        releaseStateCompatibility     `json:"state_schema"`
-	Adapters           []adapters.CapabilityManifest `json:"adapters"`
+	SchemaVersion      string                          `json:"schema_version"`
+	AdapterRegistry    string                          `json:"adapter_registry_version"`
+	EventSchemaMajors  []string                        `json:"event_schema_majors"`
+	ResultSchemaMajors []string                        `json:"result_schema_majors"`
+	StateSchema        releaseStateCompatibility       `json:"state_schema"`
+	SupportWindows     map[string]compatibility.Window `json:"support_windows"`
+	Adapters           []adapters.CapabilityManifest   `json:"adapters"`
 }
 
 type releaseStateCompatibility struct {
@@ -63,6 +66,9 @@ func TestReleaseCompatibilityManifestMatchesSupportedContracts(t *testing.T) {
 	}
 	if manifest.StateSchema.Upgrade != "forward-only" || manifest.StateSchema.FutureVersion != "reject" {
 		t.Fatalf("state schema policy=%+v", manifest.StateSchema)
+	}
+	if report, err := compatibility.Validate(compatibility.Manifest{SchemaVersion: manifest.SchemaVersion, SupportWindows: manifest.SupportWindows}, time.Now().UTC(), 0); err != nil || report.Due() {
+		t.Fatalf("support windows report=%+v err=%v", report, err)
 	}
 	names := adapters.SupportedNames()
 	if len(manifest.Adapters) != len(names) {

@@ -271,6 +271,18 @@ named-review requirements are executed and reviewed.
   restore/reproducibility evidence, support/deprecation policy, and signed
   evidence manifest for the exact release tag.
 
+### 2026-09-08 local implementation slice
+
+The next ten actionable work packages (P4-01 through P4-08 and P5-01 through
+P5-02) now have local implementations and a retained evidence bundle in
+[phase-4-quality.md](docs/release-evidence/phase-4-quality.md): named test
+tiers, ShellCheck/failure tests, built-artifact smoke, expanded fuzz/property
+boundaries, deterministic chaos cases, final-state scenario evaluation,
+compatibility expiry automation, machine-readable evidence, governance files,
+and dependency/security workflows. Their checkboxes remain open until the
+plan's native, exact-tag, fuzz-quota, provider, signing, and named-review
+acceptance evidence is executed.
+
 ## Immediate PR queue
 
 - [x] PR-001 SQLite engine upgrade and embedded-version/WAL tests. Evidence:

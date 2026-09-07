@@ -1,0 +1,9 @@
+{
+  "schema_version": "autogit.dependency-licenses/1",
+  "policy": "Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MIT, MPL-2.0, public-domain",
+  "direct": [
+    {"module": "github.com/santhosh-tekuri/jsonschema/v6", "version": "v6.0.3", "spdx": ["Apache-2.0"]},
+    {"module": "modernc.org/sqlite", "version": "v1.58.0", "spdx": ["BSD-3-Clause", "MIT", "public-domain"]}
+  ],
+  "transitive": "Enumerate from the exact go.mod/go.sum graph during release SBOM generation."
+}

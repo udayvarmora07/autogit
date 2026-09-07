@@ -56,7 +56,7 @@ cleanup() {
   return "$test_status"
 }
 
-trap 'status=$?; trap - EXIT; cleanup "$status"' EXIT
+trap 'trap - EXIT; cleanup "$?"' EXIT
 
 export AUTOGIT_GITHUB_CANARY=1
 export AUTOGIT_CANARY_NAME="$name"

@@ -12,6 +12,15 @@
     "upgrade": "forward-only",
     "future_version": "reject"
   },
+  "support_windows": {
+    "go": {"minimum": "1.26.0", "review_by": "2027-03-01"},
+    "git": {"minimum": "2.39.0", "review_by": "2027-03-01"},
+    "sqlite": {"minimum": "3.51.3", "review_by": "2027-03-01"},
+    "github_rest": {"api_version": "2026-03-10", "review_by": "2027-03-10"},
+    "mcp": {"spec_version": "2025-06-18", "review_by": "2027-06-18"},
+    "event_schema": {"schema_major": "autogit.event/1", "review_by": "2027-03-01"},
+    "result_schema": {"schema_major": "autogit.result/1", "review_by": "2027-03-01"}
+  },
   "adapters": [
     {
       "adapter": "codex",

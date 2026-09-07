@@ -1,0 +1,195 @@
+{
+  "schema_version": "autogit.release-evidence/1",
+  "commit": "9bb7432242e7b87dca1e5f4db7b4a21b6b99f0c0",
+  "working_tree": "dirty",
+  "generated_at": "2026-09-07T19:16:46.185907138Z",
+  "go_version": "go1.26.7",
+  "platform": "linux/amd64",
+  "suites": [
+    {
+      "name": "compatibility",
+      "status": "passed"
+    },
+    {
+      "name": "presubmit",
+      "status": "passed"
+    },
+    {
+      "name": "scenario",
+      "status": "passed"
+    },
+    {
+      "name": "shell",
+      "status": "passed"
+    }
+  ],
+  "controls": [
+    {
+      "id": "P4-01",
+      "status": "implemented",
+      "requirements": [
+        "NFR-TST-001",
+        "NFR-REL-001"
+      ],
+      "commands": [
+        "bash scripts/test-suites.sh presubmit",
+        "bash scripts/test-suites.sh core",
+        "bash scripts/test-suites.sh race",
+        "bash scripts/test-suites.sh soak",
+        "bash scripts/test-suites.sh fuzz",
+        "bash scripts/test-suites.sh canary",
+        "bash scripts/test-suites.sh release"
+      ],
+      "threats": [
+        "RISK-SLOW-FEEDBACK",
+        "GATE-006"
+      ]
+    },
+    {
+      "id": "P4-02",
+      "status": "implemented",
+      "requirements": [
+        "NFR-SEC-001",
+        "NFR-REL-001"
+      ],
+      "commands": [
+        "bash scripts/check-shell.sh",
+        "go test ./scripts -run TestShellScripts"
+      ],
+      "threats": [
+        "NFR-SEC-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "P4-03",
+      "status": "implemented",
+      "requirements": [
+        "NFR-POR-001",
+        "NFR-COM-001"
+      ],
+      "commands": [
+        "bash scripts/artifact-smoke.sh --binary PATH",
+        "go test -tags release_integration ./scripts -run TestReleaseBuild"
+      ],
+      "threats": [
+        "RISK-RELEASE-IDENTITY",
+        "NFR-POR-001"
+      ]
+    },
+    {
+      "id": "P4-04",
+      "status": "implemented",
+      "requirements": [
+        "FR-SEC-001",
+        "NFR-TST-001"
+      ],
+      "commands": [
+        "bash scripts/test-suites.sh fuzz",
+        "go test ./..."
+      ],
+      "threats": [
+        "GATE-004",
+        "GATE-005"
+      ]
+    },
+    {
+      "id": "P4-05",
+      "status": "implemented",
+      "requirements": [
+        "FR-OPS-001",
+        "NFR-REL-001"
+      ],
+      "commands": [
+        "go test ./internal/provider -run TestRESTNetworkStall",
+        "go test ./internal/provider -run TestRESTPartialResponse",
+        "go test ./..."
+      ],
+      "threats": [
+        "RISK-DEPENDENCY-FAILURE",
+        "GATE-006"
+      ]
+    },
+    {
+      "id": "P4-06",
+      "status": "implemented",
+      "requirements": [
+        "FR-GIT-001",
+        "FR-PUB-001"
+      ],
+      "commands": [
+        "bash scripts/scenario-eval.sh --binary PATH",
+        "go test ./scripts -run TestScenarioEvaluation"
+      ],
+      "threats": [
+        "GATE-003",
+        "GATE-005"
+      ]
+    },
+    {
+      "id": "P4-07",
+      "status": "implemented",
+      "requirements": [
+        "FR-ADP-001",
+        "NFR-COM-001"
+      ],
+      "commands": [
+        "bash scripts/check-compatibility.sh",
+        "go test ./internal/compatibility"
+      ],
+      "threats": [
+        "RISK-CLIENT-DRIFT",
+        "RISK-API-DRIFT"
+      ]
+    },
+    {
+      "id": "P4-08",
+      "status": "implemented",
+      "requirements": [
+        "NFR-TST-001",
+        "NFR-OBS-001"
+      ],
+      "commands": [
+        "go run ./cmd/autogit-evidence --results-dir DIR --output FILE"
+      ],
+      "threats": [
+        "GATE-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "P5-01",
+      "status": "implemented",
+      "requirements": [
+        "NFR-POR-001"
+      ],
+      "commands": [
+        "test -f LICENSE",
+        "test -f SECURITY.md",
+        "test -f CONTRIBUTING.md",
+        "test -f CODE_OF_CONDUCT.md",
+        "test -f CODEOWNERS",
+        "test -f CHANGELOG.md"
+      ],
+      "threats": [
+        "RISK-RELEASE-IDENTITY"
+      ]
+    },
+    {
+      "id": "P5-02",
+      "status": "implemented",
+      "requirements": [
+        "NFR-SEC-001",
+        "NFR-COM-001"
+      ],
+      "commands": [
+        "bash scripts/check-dependencies.sh",
+        "actionlint .github/workflows/*.yml"
+      ],
+      "threats": [
+        "NFR-SUP-001",
+        "RISK-SUPPLY-CHAIN"
+      ]
+    }
+  ]
+}

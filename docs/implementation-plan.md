@@ -1,7 +1,7 @@
 # AutoGit world-class implementation plan
 
 Status: Active; release posture is NO-GO for private alpha
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
@@ -23,6 +23,14 @@ budgets, and operator documentation. Exact files and verification commands are
 retained in [the P2-11 and Phase 3 evidence bundle](release-evidence/phase-2-p2-11-phase-3.md).
 The Phase 2/3 release gates remain open until native artifact, provider,
 support-owner, and signed-release evidence is separately executed.
+
+The 2026-09-08 local execution slice adds the named Phase 4 verification tiers,
+artifact and final-state scenario evaluators, compatibility-window expiry
+automation, machine-readable evidence generation, and the Phase 5 governance,
+dependency, CodeQL, and Scorecard controls. The corresponding local evidence
+is in [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Native
+artifact coverage, full fuzz quotas, live provider execution, signing, and
+named review remain release evidence rather than claims made by this slice.
 
 ## 1. Executive decision
 

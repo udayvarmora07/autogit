@@ -1,0 +1,32 @@
+name: AutoGit compatibility window
+
+on:
+  schedule:
+    - cron: '41 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: compatibility contract and expiry review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AUTOGIT_CREATE_COMPATIBILITY_ISSUE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: check advertised support windows
+        shell: bash
+        run: |
+          export AUTOGIT_COMPATIBILITY_ISSUE_FILE="$RUNNER_TEMP/autogit-compatibility-expiry.md"
+          bash scripts/check-compatibility.sh

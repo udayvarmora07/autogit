@@ -124,10 +124,10 @@ documented >=609 deterministic floor from that stream. This count is a release
 floor, not evidence for the separate native-OS, provider-canary, performance
 threshold, or phase-promotion gates. The randomized crash/concurrency
 requirement is
-covered locally by the seeded 1,000-schedule subprocess matrices documented in
-the implementation plan; race-enabled CI uses a bounded representative sample
-for the newly added persistence matrices because instrumented subprocesses are
-slower.
+covered by the explicit `go test -tags soak ./...` suite. Presubmit and merge
+use a bounded representative sample, while race-enabled CI uses a bounded
+representative sample for the persistence matrices because instrumented
+subprocesses are slower.
 
 ## 5. Test design by risk
 
