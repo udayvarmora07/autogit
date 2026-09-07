@@ -139,17 +139,22 @@ All items are release blockers.
 - [x] P2-05 Make each client config edit schema-specific, ownership-aware,
   atomic, backed up, reversible, and safe under concurrent user edits.
   Evidence: [Phase 2 P2-01–P2-05 bundle](docs/release-evidence/phase-2-p2-01-p2-05.md).
-- [ ] P2-06 Implement a typed GitHub REST transport with an explicit API
+- [x] P2-06 Implement a typed GitHub REST transport with an explicit API
   version, bounded/redacted bodies, pagination, request IDs, retry-after/rate
-  limits, conditional reads, and durable reconciliation.
-- [ ] P2-07 Bind provider host/account/owner identity explicitly and test
+  limits, conditional reads, and durable reconciliation. Evidence: [Phase 2
+  P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
+- [x] P2-07 Bind provider host/account/owner identity explicitly and test
   GH_TOKEN, GITHUB_TOKEN, multi-account, revoked/expired, wrong-owner, and
-  wrong-host cases.
-- [ ] P2-08 Add least-privileged GitHub App installation-token support while
-  retaining gh as an optional local bootstrap/user-auth adapter.
-- [ ] P2-09 Define and test a GitHub Enterprise Server support/version policy.
-- [ ] P2-10 Optionally project redacted verification evidence as a head-SHA
-  bound Check Run without making it a source of truth.
+  wrong-host cases. Evidence: [Phase 2 P2-06–P2-10
+  bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
+- [x] P2-08 Add least-privileged GitHub App installation-token support while
+  retaining gh as an optional local bootstrap/user-auth adapter. Evidence:
+  [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
+- [x] P2-09 Define and test a GitHub Enterprise Server support/version policy.
+  Evidence: [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
+- [x] P2-10 Optionally project redacted verification evidence as a head-SHA
+  bound Check Run without making it a source of truth. Evidence: [Phase 2
+  P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
 - [ ] P2-11 Add an optional, read-only-first MCP surface for status, plan,
   explain, and logs; require separate domain consent for verify/publish.
 
@@ -160,15 +165,18 @@ contract evidence in [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-
 durable no-duplicate reconciliation, least-privilege in-memory GitHub App
 installation tokens, Enterprise version negotiation, and an optional redacted
 head-SHA Check Run projection. The support window is documented in
-[provider support policy](docs/provider-support.md). The private disposable
-provider requirement is now evidenced in the bundle by an exact
-owner/name/visibility/ref/SHA canary and verified cleanup. Their boxes remain
-open until the remaining permission-review, native-artifact, and named-review
-requirements are actually executed and reviewed.
+[provider support policy](docs/provider-support.md). The five task boxes are
+complete against the linked implementation and acceptance evidence. The
+private disposable provider requirement is also evidenced by an exact
+owner/name/visibility/ref/SHA canary and verified cleanup. The separate Phase
+2 release gate remains open until exact App permission, native-artifact, and
+named-review requirements are executed and reviewed.
 
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.
+  The canary subcondition is satisfied by the linked P2-06–P2-10 evidence;
+  adapter-native evidence and review remain outstanding.
 
 ## Phase 3 — product UX and operations
 
