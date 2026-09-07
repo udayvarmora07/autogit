@@ -141,6 +141,23 @@ func TestReadWithinRejectsSymlinkedStateRootAncestor(t *testing.T) {
 	}
 }
 
+func TestReadWithinAllowsDarwinCanonicalTemporaryAlias(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin system aliases only")
+	}
+	root, err := os.MkdirTemp(filepath.Join(string(filepath.Separator), "tmp"), "autogit-securefs-alias-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	if err := os.WriteFile(filepath.Join(root, "identity.key"), []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadWithin(root, "identity.key", 1024); err != nil {
+		t.Fatalf("canonical Darwin temporary alias rejected: %v", err)
+	}
+}
+
 func TestReadWithinRejectsExistingFileUnderSymlinkedStateRootAncestor(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated Windows privileges in some environments")

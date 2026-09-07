@@ -265,6 +265,9 @@ func verifyPathAncestors(path string) error {
 		if err == nil {
 			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 				if info.Mode()&os.ModeSymlink != 0 {
+					if isDarwinSystemAlias(current) {
+						continue
+					}
 					return fmt.Errorf("%w: state-root ancestor is unsafe", ErrUnsafePath)
 				}
 				// A regular file can only be the requested root itself; the
@@ -282,6 +285,29 @@ func verifyPathAncestors(path string) error {
 			return nil
 		}
 	}
+}
+
+func isDarwinSystemAlias(path string) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+
+	clean := filepath.Clean(path)
+	switch clean {
+	case "/tmp", "/var", "/etc":
+	default:
+		return false
+	}
+
+	target, err := os.Readlink(clean)
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(clean), target)
+	}
+	expected := filepath.Join(string(filepath.Separator), "private", strings.TrimPrefix(clean, string(filepath.Separator)))
+	return filepath.Clean(target) == expected
 }
 
 func nearestExistingAncestor(path string) (string, error) {
