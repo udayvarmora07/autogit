@@ -24,9 +24,15 @@ func BenchmarkHookNoCandidate(b *testing.B) {
 		rawEvents[i] = []byte(fmt.Sprintf(`{"schema_version":"autogit.event/1","event_class":"ingress","event_id":"%s","event_type":"session.idle","occurred_at":"2026-09-05T00:00:00Z","producer":{"kind":"adapter","adapter":"codex","version":"1","installation_id":"benchmark","instance_id":"benchmark"},"scope":{"repo_id":"%s","session_id":"benchmark-session"},"ordering":{"stream_id":"benchmark-stream"},"idempotency":{"key":"idle-%d"},"payload":{}}`, eventID, repoID, i))
 	}
 	b.ReportAllocs()
+	// Compile the embedded schema and perform the first receipt transaction
+	// before timing. The performance gate measures steady-state hook latency;
+	// cold process/schema startup is covered by the CLI startup budget.
+	if _, hookErr := application.Hook(context.Background(), rawEvents[0]); hookErr != nil {
+		b.Fatalf("warm-up hook error=%v", hookErr)
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, hookErr := application.Hook(context.Background(), rawEvents[i%len(rawEvents)])
+		result, hookErr := application.Hook(context.Background(), rawEvents[(i+1)%len(rawEvents)])
 		if hookErr != nil || result.Action != "none" && result.Action != "notify" {
 			b.Fatalf("no-candidate hook result=%+v err=%v", result, hookErr)
 		}
