@@ -17,6 +17,8 @@ AutoGit provides a standard-library-only typed REST boundary in
 
 - The API version, HTTPS base URL, host, authenticated account, and owner are
   explicit constructor inputs.
+- The transport pins the current `2026-03-10` REST version; changing it is a
+  compatibility event requiring an upstream breaking-change review.
 - The transport accepts an explicit in-memory token source only. It never reads
   `GH_TOKEN`, `GITHUB_TOKEN`, `gh` config, or other ambient credentials.
 - Every request uses direct HTTP, bounded response reads, GitHub request IDs,
@@ -29,6 +31,8 @@ AutoGit provides a standard-library-only typed REST boundary in
   AutoGit state.
 - Enterprise hosts must negotiate a version inside the configured support
   window. Public `github.com` does not require an Enterprise version header.
+  The exact window and release evidence are maintained in
+  [provider support policy](../provider-support.md).
 - Check Runs are an optional, bounded projection tied to an exact head SHA.
   They do not replace AutoGit's durable evidence or consent model.
 - The existing `gh` adapter remains an optional bootstrap path until the

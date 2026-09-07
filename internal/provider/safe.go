@@ -158,6 +158,10 @@ type SystemRunner struct {
 	Executable string
 	WorkingDir string
 	MaxOutput  int
+	// ExtraEnv is an explicit, per-run environment allowlist. It exists for
+	// credentialed Git pushes that cannot use ambient credential helpers; only
+	// the narrowly validated GIT_HTTP_EXTRAHEADER form is accepted.
+	ExtraEnv []string
 }
 
 // CommandRunner is an explicit alias for callers that prefer the command
@@ -185,7 +189,11 @@ func (r SystemRunner) Run(ctx context.Context, dir string, args ...string) (Resu
 	if max <= 0 {
 		max = maxOutput
 	}
-	processResult, runErr := process.Run(ctx, process.Options{Executable: executable, Dir: workingDir, Env: controlledCommandEnv(), Args: args, MaxOutput: max})
+	env, err := controlledCommandEnvWithExplicit(os.Environ(), r.ExtraEnv)
+	if err != nil {
+		return Result{}, err
+	}
+	processResult, runErr := process.Run(ctx, process.Options{Executable: executable, Dir: workingDir, Env: env, Args: args, MaxOutput: max})
 	result := Result{Output: processResult.Output}
 	if processResult.Truncated || errors.Is(runErr, process.ErrOutputLimit) {
 		result.Err = ErrOutputLimit
@@ -242,11 +250,19 @@ func canonicalWorkingDir(dir string) (string, error) {
 	return canon, nil
 }
 
-func controlledCommandEnv() []string {
-	return controlledCommandEnvFrom(os.Environ())
+func controlledCommandEnvFrom(environ []string) []string {
+	return controlledCommandEnvFromExtra(environ, nil)
 }
 
-func controlledCommandEnvFrom(environ []string) []string {
+func controlledCommandEnvWithExplicit(environ, extra []string) ([]string, error) {
+	validated, err := validateExplicitCommandEnv(extra)
+	if err != nil {
+		return nil, err
+	}
+	return controlledCommandEnvFromExtra(environ, validated), nil
+}
+
+func controlledCommandEnvFromExtra(environ, extra []string) []string {
 	out := make([]string, 0, 12)
 	for _, item := range environ {
 		key := item
@@ -270,7 +286,20 @@ func controlledCommandEnvFrom(environ []string) []string {
 		// stop for an interactive login prompt.
 		"GH_PROMPT_DISABLED=1",
 	)
+	out = append(out, extra...)
 	return out
+}
+
+func validateExplicitCommandEnv(extra []string) ([]string, error) {
+	validated := make([]string, 0, len(extra))
+	for _, item := range extra {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || key != "GIT_HTTP_EXTRAHEADER" || value == "" || len(value) > maxTokenBytes+64 || strings.ContainsAny(value, "\r\n") || !strings.HasPrefix(value, "Authorization: Bearer ") || !validToken(strings.TrimPrefix(value, "Authorization: Bearer ")) {
+			return nil, errors.New("invalid explicit command environment")
+		}
+		validated = append(validated, item)
+	}
+	return validated, nil
 }
 
 // boundedOutput remains a small testable compatibility helper for callers

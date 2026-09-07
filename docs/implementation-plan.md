@@ -9,7 +9,11 @@ Current execution slice (2026-09-07): the local implementation for P2-06
 through P2-10 is present in `internal/provider/github_rest.go` with deterministic
 contract tests and a retained evidence bundle. This does not change the
 release posture or waive the live disposable-provider, permission, native
-platform, and named-reviewer requirements.
+platform, and named-reviewer requirements. The boundary now pins REST API
+version `2026-03-10`, exercises durable no-duplicate reconciliation, requires
+explicit App-token repository/permission scope, and runs the opt-in canary
+through the typed REST provider; the exact version/Enterprise policy is in
+[provider support policy](provider-support.md).
 
 ## 1. Executive decision
 

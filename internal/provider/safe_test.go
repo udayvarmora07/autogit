@@ -153,6 +153,22 @@ func TestSystemRunnerScrubsAmbientProviderAndGitEnvironment(t *testing.T) {
 	}
 }
 
+func TestSystemRunnerAcceptsOnlyExplicitBearerHeaderForCredentialedPush(t *testing.T) {
+	valid, err := controlledCommandEnvWithExplicit([]string{"PATH=/trusted/bin"}, []string{"GIT_HTTP_EXTRAHEADER=Authorization: Bearer explicit-token"})
+	if err != nil || !strings.Contains(strings.Join(valid, "\n"), "GIT_HTTP_EXTRAHEADER=Authorization: Bearer explicit-token") {
+		t.Fatalf("explicit header=%v err=%v", valid, err)
+	}
+	for _, extra := range [][]string{
+		{"GH_TOKEN=ambient-token"},
+		{"GIT_HTTP_EXTRAHEADER=Authorization: Bearer bad\nvalue"},
+		{"GIT_HTTP_EXTRAHEADER=Basic secret"},
+	} {
+		if _, err := controlledCommandEnvWithExplicit(nil, extra); err == nil {
+			t.Fatalf("unsafe explicit environment accepted: %#v", extra)
+		}
+	}
+}
+
 type argRunner struct {
 	args    []string
 	calls   [][]string

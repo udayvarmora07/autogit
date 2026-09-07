@@ -156,9 +156,11 @@ All items are release blockers.
 ### 2026-09-07 local implementation slice
 
 P2-06 through P2-10 now have a typed local implementation and deterministic
-contract evidence in [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md): bounded REST transport, explicit host/account/owner binding,
-in-memory GitHub App installation tokens, Enterprise version negotiation, and
-an optional redacted head-SHA Check Run projection. Their boxes remain open
+contract evidence in [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md): current-version bounded REST transport, explicit host/account/owner binding,
+durable no-duplicate reconciliation, least-privilege in-memory GitHub App
+installation tokens, Enterprise version negotiation, and an optional redacted
+head-SHA Check Run projection. The support window is documented in
+[provider support policy](docs/provider-support.md). Their boxes remain open
 until the bundle's live disposable-provider, permission-review, and native
 artifact requirements are actually executed and reviewed.
 

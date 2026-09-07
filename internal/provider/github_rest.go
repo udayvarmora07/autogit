@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -21,14 +22,21 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"autogit/internal/security"
 )
 
 const (
-	GitHubRESTAPIVersion = "2022-11-28"
+	// GitHub's current REST API version as of 2026-09-07. Keep this explicit
+	// and review it before the documented support window closes.
+	GitHubRESTAPIVersion = "2026-03-10"
 	defaultRESTBodyLimit = int64(1 << 20)
 	defaultRESTUserAgent = "autogit-provider/1"
+	maxAppRepositories   = 500
+	maxTokenBytes        = 8192
+	maxPaginationPages   = 1000
+	checkRunURLLimit     = 2048
 )
 
 var (
@@ -48,7 +56,7 @@ type TokenSource interface {
 type staticTokenSource string
 
 func (s staticTokenSource) Token(context.Context) (string, error) {
-	if strings.TrimSpace(string(s)) == "" || strings.ContainsAny(string(s), "\r\n") {
+	if !validToken(string(s)) {
 		return "", ErrAuth
 	}
 	return string(s), nil
@@ -87,6 +95,13 @@ var DefaultEnterpriseVersionPolicy = EnterpriseVersionPolicy{
 	MinimumMajor:   3,
 	MaximumMajor:   4,
 	RequireVersion: true,
+}
+
+func validateEnterpriseVersionPolicy(policy EnterpriseVersionPolicy) error {
+	if policy.MinimumMajor <= 0 || policy.MaximumMajor < policy.MinimumMajor || policy.MaximumMajor > 99 {
+		return errors.New("invalid Enterprise version policy")
+	}
+	return nil
 }
 
 // GitHubRESTConfig configures the typed GitHub REST boundary. BaseURL is the
@@ -137,6 +152,9 @@ func NewGitHubREST(config GitHubRESTConfig) (*GitHubREST, error) {
 	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil {
 		return nil, errors.New("invalid GitHub REST base URL")
 	}
+	if base.RawQuery != "" || base.Fragment != "" {
+		return nil, errors.New("GitHub REST base URL cannot contain query or fragment")
+	}
 	if base.Scheme != "https" && !config.AllowInsecureHTTP {
 		return nil, errors.New("GitHub REST requires HTTPS")
 	}
@@ -167,6 +185,9 @@ func NewGitHubREST(config GitHubRESTConfig) (*GitHubREST, error) {
 	} else {
 		tokens = StaticToken(config.Token)
 	}
+	if bound, ok := tokens.(interface{ ProviderHost() string }); ok && !strings.EqualFold(bound.ProviderHost(), host) {
+		return nil, ErrInvalidProviderIdentity
+	}
 	if config.MaxResponseBytes <= 0 {
 		config.MaxResponseBytes = defaultRESTBodyLimit
 	}
@@ -179,6 +200,9 @@ func NewGitHubREST(config GitHubRESTConfig) (*GitHubREST, error) {
 	policy := config.EnterprisePolicy
 	if policy.MinimumMajor == 0 && policy.MaximumMajor == 0 && !policy.RequireVersion {
 		policy = DefaultEnterpriseVersionPolicy
+	}
+	if err := validateEnterpriseVersionPolicy(policy); err != nil {
+		return nil, err
 	}
 	return &GitHubREST{
 		baseURL: base, apiVersion: apiVersion, identity: config.Identity,
@@ -299,6 +323,9 @@ func (g *GitHubREST) GetRepository(ctx context.Context, owner, name, etag string
 	if err != nil {
 		return Repository{}, meta, err
 	}
+	if payload.FullName != owner+"/"+name || !validVisibility(payload.Visibility) {
+		return Repository{}, meta, &ProviderError{Kind: KindPostcondition, Err: ErrPostcondition}
+	}
 	return Repository{FullName: payload.FullName, Visibility: payload.Visibility}, meta, nil
 }
 
@@ -322,10 +349,45 @@ func (g *GitHubREST) ListRepositories(ctx context.Context, owner string, page, p
 	}
 	repositories := make([]Repository, 0, len(payload))
 	for _, item := range payload {
+		if !repositoryBelongsToOwner(item.FullName, owner) || !validVisibility(item.Visibility) {
+			return nil, PageInfo{}, meta, &ProviderError{Kind: KindPostcondition, Err: ErrPostcondition}
+		}
 		repositories = append(repositories, Repository{FullName: item.FullName, Visibility: item.Visibility})
 	}
 	return repositories, parsePageInfo(meta.Next, meta.Previous), meta, nil
 }
+
+// ListAllRepositories follows only the server-advertised numeric next-page
+// links and has a hard page ceiling. It returns the last page's safe metadata;
+// response bodies and raw links are never retained by this helper.
+func (g *GitHubREST) ListAllRepositories(ctx context.Context, owner string, perPage int) ([]Repository, RESTResponse, error) {
+	var all []Repository
+	page := 1
+	var last RESTResponse
+	for count := 0; count < maxPaginationPages; count++ {
+		repositories, info, meta, err := g.ListRepositories(ctx, owner, page, perPage)
+		if err != nil {
+			return nil, meta, err
+		}
+		all = append(all, repositories...)
+		last = meta
+		if !info.HasNext {
+			return all, last, nil
+		}
+		if info.NextPage <= page {
+			return nil, meta, errors.New("provider pagination did not advance")
+		}
+		page = info.NextPage
+	}
+	return nil, last, errors.New("provider pagination exceeded limit")
+}
+
+func repositoryBelongsToOwner(fullName, owner string) bool {
+	parts := strings.Split(fullName, "/")
+	return len(parts) == 2 && strings.EqualFold(parts[0], owner) && validSimpleIdentity(parts[1])
+}
+
+func validVisibility(value string) bool { return value == "private" || value == "public" }
 
 func parsePageInfo(next, previous string) PageInfo {
 	return PageInfo{NextPage: linkPage(next), PreviousPage: linkPage(previous), HasNext: next != "", HasPrevious: previous != ""}
@@ -389,7 +451,7 @@ func (g *GitHubREST) Create(ctx context.Context, request RemoteRequest) (string,
 	if _, err := g.do(ctx, http.MethodPost, endpoint, "", payload, &created); err != nil {
 		return "", err
 	}
-	if created.FullName != request.Owner+"/"+request.Name || created.Visibility != request.Visibility {
+	if created.FullName != request.Owner+"/"+request.Name || created.Name != "" && created.Name != request.Name || !validVisibility(created.Visibility) || created.Visibility != request.Visibility {
 		return "", &ProviderError{Kind: KindPostcondition, Err: ErrPostcondition}
 	}
 	return created.FullName, nil
@@ -577,8 +639,11 @@ func (g *GitHubREST) PublishCheckRun(ctx context.Context, projection CheckRunPro
 	if projection.Owner != g.identity.Owner || !validSimpleIdentity(projection.Repository) || !validSHA(projection.HeadSHA) || !validEvidenceID(projection.EvidenceID) {
 		return CheckRunResult{}, errors.New("invalid check run identity")
 	}
-	if projection.Name == "" || len(projection.Name) > 100 || !validCheckStatus(projection.Status, projection.Conclusion) {
+	if !validText(projection.Name, 100) || !validCheckStatus(projection.Status, projection.Conclusion) {
 		return CheckRunResult{}, errors.New("invalid check run status")
+	}
+	if !validText(projection.Title, 255) || !validText(projection.Summary, 4096) {
+		return CheckRunResult{}, errors.New("invalid check run output")
 	}
 	if projection.DetailsURL != "" {
 		details, err := url.Parse(projection.DetailsURL)
@@ -612,15 +677,16 @@ func (g *GitHubREST) PublishCheckRun(ctx context.Context, projection CheckRunPro
 		},
 	}
 	var response struct {
-		ID      int64  `json:"id"`
-		URL     string `json:"html_url"`
-		HeadSHA string `json:"head_sha"`
+		ID         int64  `json:"id"`
+		URL        string `json:"html_url"`
+		HeadSHA    string `json:"head_sha"`
+		ExternalID string `json:"external_id"`
 	}
 	meta, err := g.do(ctx, http.MethodPost, "repos/"+url.PathEscape(projection.Owner)+"/"+url.PathEscape(projection.Repository)+"/check-runs", "", payload, &response)
 	if err != nil {
 		return CheckRunResult{}, err
 	}
-	if response.ID <= 0 || response.HeadSHA != projection.HeadSHA {
+	if response.ID <= 0 || response.HeadSHA != projection.HeadSHA || response.ExternalID != projection.EvidenceID || !validHTTPSURL(response.URL, checkRunURLLimit) {
 		return CheckRunResult{}, ErrPostcondition
 	}
 	return CheckRunResult{ID: response.ID, URL: response.URL, HeadSHA: response.HeadSHA, RequestID: meta.RequestID}, nil
@@ -652,16 +718,28 @@ func validCheckStatus(status, conclusion string) bool {
 }
 
 func validateAnnotation(annotation CheckAnnotation) error {
-	if annotation.Path == "" || len(annotation.Path) > 512 || path.IsAbs(annotation.Path) || path.Clean(annotation.Path) != annotation.Path || strings.HasPrefix(annotation.Path, "../") || annotation.Path == ".." || annotation.StartLine <= 0 || annotation.EndLine < annotation.StartLine || annotation.EndLine > 1<<20 {
+	if annotation.Path == "" || len(annotation.Path) > 512 || path.IsAbs(annotation.Path) || path.Clean(annotation.Path) != annotation.Path || strings.HasPrefix(annotation.Path, "../") || annotation.Path == ".." || strings.ContainsAny(annotation.Path, "\\\x00") || annotation.StartLine <= 0 || annotation.EndLine < annotation.StartLine || annotation.EndLine > 1<<20 {
 		return errors.New("invalid check run annotation path or line")
 	}
 	if annotation.Level != "failure" && annotation.Level != "warning" && annotation.Level != "notice" {
 		return errors.New("invalid check run annotation level")
 	}
-	if annotation.Message == "" || len(annotation.Message) > 512 || annotation.Title == "" || len(annotation.Title) > 100 || strings.ContainsAny(annotation.Message+annotation.Title, "\r\n") {
+	if !validText(annotation.Message, 512) || !validText(annotation.Title, 100) {
 		return errors.New("invalid check run annotation text")
 	}
 	return nil
+}
+
+func validText(value string, maxBytes int) bool {
+	return value != "" && len(value) <= maxBytes && utf8.ValidString(value) && !strings.ContainsAny(value, "\r\n")
+}
+
+func validHTTPSURL(value string, maxBytes int) bool {
+	if value == "" || len(value) > maxBytes {
+		return false
+	}
+	u, err := url.Parse(value)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }
 
 func boundedRedacted(value string, max int) string {
@@ -672,25 +750,38 @@ func boundedRedacted(value string, max int) string {
 		}
 		return r
 	}, value)
-	if len(value) > max {
-		return value[:max]
+	if max <= 0 {
+		return ""
 	}
-	return value
+	if len(value) <= max {
+		return value
+	}
+	var bounded strings.Builder
+	bounded.Grow(max)
+	for _, r := range value {
+		width := utf8.RuneLen(r)
+		if width < 0 || bounded.Len()+width > max {
+			break
+		}
+		bounded.WriteRune(r)
+	}
+	return bounded.String()
 }
 
 func (g *GitHubREST) do(ctx context.Context, method, endpoint, etag string, input, output any) (RESTResponse, error) {
 	if ctx == nil {
 		return RESTResponse{}, errors.New("provider context is required")
 	}
-	if endpoint == "" || strings.HasPrefix(endpoint, "/") || strings.Contains(endpoint, "..") {
+	if endpoint == "" || strings.HasPrefix(endpoint, "/") {
 		return RESTResponse{}, errors.New("invalid provider endpoint")
 	}
 	relative, err := url.Parse(endpoint)
-	if err != nil || relative.IsAbs() || relative.Host != "" {
+	if err != nil || relative.IsAbs() || relative.Host != "" || relative.User != nil || relative.Path == "" || path.Clean(relative.Path) != relative.Path || strings.Contains(relative.Path, "..") {
 		return RESTResponse{}, errors.New("invalid provider endpoint")
 	}
 	requestURL := *g.baseURL
-	requestURL.Path = path.Join(g.baseURL.Path, relative.Path)
+	requestURL.Path = strings.TrimRight(g.baseURL.Path, "/") + "/" + strings.TrimLeft(relative.Path, "/")
+	requestURL.RawPath = strings.TrimRight(g.baseURL.EscapedPath(), "/") + "/" + strings.TrimLeft(relative.EscapedPath(), "/")
 	requestURL.RawQuery = relative.RawQuery
 	var body io.Reader
 	if input != nil {
@@ -698,7 +789,7 @@ func (g *GitHubREST) do(ctx context.Context, method, endpoint, etag string, inpu
 		if err != nil {
 			return RESTResponse{}, fmt.Errorf("encode provider request: %w", err)
 		}
-		body = strings.NewReader(string(encoded))
+		body = bytes.NewReader(encoded)
 	}
 	token, err := g.tokens.Token(ctx)
 	if err != nil {
@@ -806,6 +897,7 @@ type GitHubAppTokenConfig struct {
 	RepositoryIDs     []int64
 	Permissions       map[string]string
 	HTTPClient        *http.Client
+	Clock             func() time.Time
 	AllowInsecureHTTP bool
 }
 
@@ -818,10 +910,16 @@ type GitHubAppTokenSource struct {
 	repositoryIDs  []int64
 	permissions    map[string]string
 	client         *http.Client
+	now            func() time.Time
 	mu             sync.Mutex
 	token          string
 	expiresAt      time.Time
 }
+
+// ProviderHost identifies the host that receives the App installation-token
+// exchange. GitHubREST uses it to reject a source accidentally paired with a
+// different provider host.
+func (s *GitHubAppTokenSource) ProviderHost() string { return s.baseURL.Host }
 
 // NewGitHubAppTokenSource creates an in-memory installation-token source.
 func NewGitHubAppTokenSource(config GitHubAppTokenConfig) (*GitHubAppTokenSource, error) {
@@ -837,10 +935,21 @@ func NewGitHubAppTokenSource(config GitHubAppTokenConfig) (*GitHubAppTokenSource
 	}
 	base.Path = strings.TrimRight(base.Path, "/") + "/"
 	repositoryIDs := append([]int64(nil), config.RepositoryIDs...)
+	if len(repositoryIDs) == 0 || len(repositoryIDs) > maxAppRepositories {
+		return nil, errors.New("GitHub App token must name one to 500 repositories")
+	}
+	seenRepositories := make(map[int64]struct{}, len(repositoryIDs))
 	for _, id := range repositoryIDs {
 		if id <= 0 {
 			return nil, errors.New("invalid GitHub App repository ID")
 		}
+		if _, exists := seenRepositories[id]; exists {
+			return nil, errors.New("duplicate GitHub App repository ID")
+		}
+		seenRepositories[id] = struct{}{}
+	}
+	if len(config.Permissions) == 0 {
+		return nil, errors.New("GitHub App token must name explicit permissions")
 	}
 	permissions := make(map[string]string, len(config.Permissions))
 	for name, level := range config.Permissions {
@@ -849,7 +958,11 @@ func NewGitHubAppTokenSource(config GitHubAppTokenConfig) (*GitHubAppTokenSource
 		}
 		permissions[name] = level
 	}
-	return &GitHubAppTokenSource{baseURL: base, appID: config.AppID, installationID: config.InstallationID, privateKey: config.PrivateKey, repositoryIDs: repositoryIDs, permissions: permissions, client: chooseHTTPClient(config.HTTPClient)}, nil
+	now := config.Clock
+	if now == nil {
+		now = time.Now
+	}
+	return &GitHubAppTokenSource{baseURL: base, appID: config.AppID, installationID: config.InstallationID, privateKey: config.PrivateKey, repositoryIDs: repositoryIDs, permissions: permissions, client: chooseHTTPClient(config.HTTPClient), now: now}, nil
 }
 
 // NewGitHubAppTokenSourceFromPEM parses a PEM key into memory and then uses
@@ -881,7 +994,7 @@ func (s *GitHubAppTokenSource) Token(ctx context.Context) (string, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.token != "" && time.Until(s.expiresAt) > time.Minute {
+	if s.token != "" && s.now().Add(5*time.Minute).Before(s.expiresAt) {
 		return s.token, nil
 	}
 	token, expiresAt, err := s.fetch(ctx)
@@ -901,7 +1014,8 @@ func (s *GitHubAppTokenSource) Clear() {
 }
 
 func (s *GitHubAppTokenSource) fetch(ctx context.Context) (string, time.Time, error) {
-	assertion, err := appJWT(s.appID, s.privateKey, time.Now())
+	now := s.now()
+	assertion, err := appJWT(s.appID, s.privateKey, now)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -912,7 +1026,7 @@ func (s *GitHubAppTokenSource) fetch(ctx context.Context) (string, time.Time, er
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), strings.NewReader(string(body)))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -922,31 +1036,39 @@ func (s *GitHubAppTokenSource) fetch(ctx context.Context) (string, time.Time, er
 	request.Header.Set("Content-Type", "application/json")
 	response, err := s.client.Do(request)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", time.Time{}, &ProviderError{Kind: KindTimeout, Err: ErrTimeout}
+		}
 		return "", time.Time{}, &ProviderError{Kind: KindOffline, Err: ErrOffline}
 	}
 	defer response.Body.Close()
+	meta := responseMetadata(response)
 	data, readErr := io.ReadAll(io.LimitReader(response.Body, defaultRESTBodyLimit+1))
 	if readErr != nil || int64(len(data)) > defaultRESTBodyLimit {
 		return "", time.Time{}, ErrResponseLimit
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-			return "", time.Time{}, ErrAuth
+			return "", time.Time{}, &RESTError{StatusCode: response.StatusCode, RequestID: meta.RequestID, RetryAfter: meta.RetryAfter, RateLimitRemain: meta.RateLimitRemain, RateLimitReset: meta.RateLimitReset}
 		}
-		return "", time.Time{}, &RESTError{StatusCode: response.StatusCode}
+		return "", time.Time{}, &RESTError{StatusCode: response.StatusCode, RequestID: meta.RequestID, RetryAfter: meta.RetryAfter, RateLimitRemain: meta.RateLimitRemain, RateLimitReset: meta.RateLimitReset}
 	}
 	var result struct {
 		Token     string `json:"token"`
 		ExpiresAt string `json:"expires_at"`
 	}
-	if err := json.Unmarshal(data, &result); err != nil || result.Token == "" {
+	if err := json.Unmarshal(data, &result); err != nil || !validToken(result.Token) {
 		return "", time.Time{}, errors.New("invalid GitHub App token response")
 	}
 	expiresAt, err := time.Parse(time.RFC3339, result.ExpiresAt)
-	if err != nil || !expiresAt.After(time.Now()) {
+	if err != nil || !expiresAt.After(now) {
 		return "", time.Time{}, errors.New("invalid GitHub App token expiry")
 	}
 	return result.Token, expiresAt, nil
+}
+
+func validToken(value string) bool {
+	return value != "" && len(value) <= maxTokenBytes && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "\r\n")
 }
 
 func appJWT(appID int64, key *rsa.PrivateKey, now time.Time) (string, error) {

@@ -47,11 +47,9 @@ func TestGitHubCanary(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
-	ghPath := trustedCanaryExecutable(t, "AUTOGIT_GH_PATH", "gh")
 	gitPath := trustedCanaryExecutable(t, "AUTOGIT_GIT_PATH", "git")
 	root := t.TempDir()
-	gh := canaryGHRunner{Executable: ghPath, WorkingDir: root, Token: token}
-	git := SystemRunner{Executable: gitPath, WorkingDir: root}
+	git := SystemRunner{Executable: gitPath, WorkingDir: root, ExtraEnv: []string{"GIT_HTTP_EXTRAHEADER=Authorization: Bearer " + token}}
 
 	canaryGit(t, ctx, git, root, "init", "--initial-branch", "main")
 	canaryGit(t, ctx, git, root, "config", "user.email", "autogit-canary@example.invalid")
@@ -75,11 +73,20 @@ func TestGitHubCanary(t *testing.T) {
 		t.Fatalf("open canary state: %v", err)
 	}
 	defer store.Close()
-	hosted := GH{Runner: gh, VerifyOwner: true}
+	pusher := GitPusher{Runner: git, Dir: root, AllowedRemotes: map[string]string{owner + "/" + name: "origin"}}
+	hosted, err := NewGitHubREST(GitHubRESTConfig{
+		BaseURL:  "https://api.github.com/",
+		Identity: ProviderIdentity{Host: "api.github.com", Account: owner, Owner: owner},
+		Token:    token,
+		Pusher:   pusher,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	identity, err := (RepositoryTransaction{
 		State:  store,
 		Hosted: hosted,
-		Git:    GitPusher{Runner: git, Dir: root},
+		Git:    pusher,
 		Owner:  "github-canary",
 	}).Create(ctx, RemoteCreateRequest{
 		ID: "canary-" + name, RepositoryID: info.RepoID, Alias: "origin",
@@ -91,14 +98,13 @@ func TestGitHubCanary(t *testing.T) {
 	if identity != owner+"/"+name {
 		t.Fatalf("created identity=%q, want %q", identity, owner+"/"+name)
 	}
-	publication := GH{Runner: gh, Pusher: GitPusher{Runner: git, Dir: root, AllowedRemotes: map[string]string{identity: "origin"}}}
-	if err := publication.ConfirmRepository(ctx, RemoteRequest{Owner: owner, Name: name, Visibility: visibility}); err != nil {
+	if err := hosted.ConfirmRepository(ctx, RemoteRequest{Owner: owner, Name: name, Visibility: visibility}); err != nil {
 		t.Fatalf("confirm exact repository postcondition: %v", err)
 	}
-	if err := publication.Pusher.Push(ctx, identity, sha, "main"); err != nil {
+	if err := hosted.Publish(ctx, PushRequest{Owner: owner, Name: name, Ref: "main", SHA: sha}); err != nil {
 		t.Fatalf("push exact canary ref: %v", err)
 	}
-	outcome, err := publication.ConfirmPush(ctx, PushRequest{Owner: owner, Name: name, Ref: "main", SHA: sha})
+	outcome, err := hosted.ConfirmPush(ctx, PushRequest{Owner: owner, Name: name, Ref: "main", SHA: sha})
 	if err != nil {
 		t.Fatalf("confirm exact ref/SHA postcondition: %v", err)
 	}
