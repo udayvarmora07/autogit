@@ -158,6 +158,24 @@ func TestReadWithinAllowsDarwinCanonicalTemporaryAlias(t *testing.T) {
 	}
 }
 
+func TestEnsurePrivateRootAllowsMissingDarwinCanonicalTemporaryAlias(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin system aliases only")
+	}
+	base, err := os.MkdirTemp(filepath.Join(string(filepath.Separator), "tmp"), "autogit-securefs-missing-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(base); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	root := filepath.Join(base, "state")
+	if err := EnsurePrivateRoot(root); err != nil {
+		t.Fatalf("missing canonical Darwin temporary alias rejected: %v", err)
+	}
+}
+
 func TestReadWithinRejectsExistingFileUnderSymlinkedStateRootAncestor(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated Windows privileges in some environments")

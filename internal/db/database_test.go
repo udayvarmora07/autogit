@@ -22,6 +22,9 @@ func TestOpenAppliesSQLiteSafetyContractAndCombinedSchema(t *testing.T) {
 	if err := database.QueryRowContext(context.Background(), `SELECT sqlite_version()`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
+	if version != EmbeddedSQLiteVersion {
+		t.Fatalf("SQLite version = %s, want embedded version %s", version, EmbeddedSQLiteVersion)
+	}
 	if !atLeastVersion(version, RequiredSQLiteVersion) {
 		t.Fatalf("SQLite version = %s, want >= %s", version, RequiredSQLiteVersion)
 	}

@@ -214,6 +214,7 @@ func openStateRoot(root string, createParents bool) (*os.Root, string, error) {
 		return nil, "", err
 	}
 	absolute = filepath.Clean(absolute)
+	absolute = canonicalDarwinSystemPath(absolute)
 	if err := verifyPathAncestors(absolute); err != nil {
 		return nil, "", err
 	}
@@ -308,6 +309,30 @@ func isDarwinSystemAlias(path string) bool {
 	}
 	expected := filepath.Join(string(filepath.Separator), "private", strings.TrimPrefix(clean, string(filepath.Separator)))
 	return filepath.Clean(target) == expected
+}
+
+func canonicalDarwinSystemPath(path string) string {
+	if runtime.GOOS != "darwin" {
+		return path
+	}
+	clean := filepath.Clean(path)
+	for _, alias := range []string{"/tmp", "/var", "/etc"} {
+		if clean != alias && !strings.HasPrefix(clean, alias+string(filepath.Separator)) {
+			continue
+		}
+		if !isDarwinSystemAlias(alias) {
+			return clean
+		}
+		target, err := os.Readlink(alias)
+		if err != nil {
+			return clean
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(alias), target)
+		}
+		return filepath.Join(filepath.Clean(target), strings.TrimPrefix(clean, alias))
+	}
+	return clean
 }
 
 func nearestExistingAncestor(path string) (string, error) {

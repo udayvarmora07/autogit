@@ -36,10 +36,18 @@ type RemoteJobStore interface {
 	PutRemoteJob(context.Context, state.RemoteJob) error
 }
 
+type contextualRemoteJobStore interface {
+	RemoteJobContext(context.Context, string) (state.RemoteJob, error)
+}
+
 type stateRemoteJobStore struct{ db *state.Store }
 
 func (s stateRemoteJobStore) RemoteJob(id string) (state.RemoteJob, error) {
 	return s.db.RemoteJob(id)
+}
+
+func (s stateRemoteJobStore) RemoteJobContext(ctx context.Context, id string) (state.RemoteJob, error) {
+	return s.db.RemoteJobContext(ctx, id)
 }
 
 func (s stateRemoteJobStore) PutRemoteJob(ctx context.Context, job state.RemoteJob) error {
@@ -81,7 +89,7 @@ func (t RepositoryTransaction) Create(ctx context.Context, req RemoteCreateReque
 	}
 	remoteURL := "https://github.com/" + identity + ".git"
 	jobs := t.remoteJobs()
-	job, err := jobs.RemoteJob(req.ID)
+	job, err := remoteJob(ctx, jobs, req.ID)
 	if err == nil {
 		if job.RepositoryID != req.RepositoryID || job.Owner != req.Owner || job.Name != req.Name || job.Alias != req.Alias || job.Visibility != req.Visibility || job.URL != remoteURL {
 			return "", errors.New("repository creation intent identity conflict")
@@ -123,7 +131,7 @@ func (t RepositoryTransaction) Create(ctx context.Context, req RemoteCreateReque
 		return "", localErr
 	}
 
-	job, err = jobs.RemoteJob(req.ID)
+	job, err = remoteJob(ctx, jobs, req.ID)
 	if err != nil {
 		// The intent was durably written above. A read failure here leaves the
 		// hosted side effect unknown; creating again would risk a duplicate
@@ -187,6 +195,13 @@ var remoteRepositoryIDRE = regexp.MustCompile(`^(?:sha256|hmac-sha256):[a-f0-9]{
 
 func (t RepositoryTransaction) putJob(ctx context.Context, j state.RemoteJob) error {
 	return t.remoteJobs().PutRemoteJob(ctx, j)
+}
+
+func remoteJob(ctx context.Context, jobs RemoteJobStore, id string) (state.RemoteJob, error) {
+	if contextual, ok := jobs.(contextualRemoteJobStore); ok {
+		return contextual.RemoteJobContext(ctx, id)
+	}
+	return jobs.RemoteJob(id)
 }
 
 func (t RepositoryTransaction) markJob(ctx context.Context, req RemoteCreateRequest, status, hostedIdentity string) error {

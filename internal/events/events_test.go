@@ -21,6 +21,19 @@ func TestOpenStoreContextHonorsCancellationBeforeOpening(t *testing.T) {
 	}
 }
 
+func TestLifecycleProjectionContextHonorsCancellation(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := s.LifecycleProjectionContext(ctx, "sha256:"+strings.Repeat("a", 64)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("LifecycleProjectionContext() error = %v, want context canceled", err)
+	}
+}
+
 func TestDecodeRejectsDuplicateKeysAndTrailingJSON(t *testing.T) {
 	for name, input := range map[string]string{
 		"duplicate": strings.Replace(validEvent, `"payload":{}`, `"payload":{},"payload":{}`, 1),

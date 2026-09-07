@@ -29,6 +29,28 @@ func TestOpenContextHonorsCancellationBeforeOpening(t *testing.T) {
 	}
 }
 
+func TestContextBoundedReadsAndLeaseReleaseHonorCancellation(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.CommitJobContext(ctx, "missing"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CommitJobContext() error = %v, want context canceled", err)
+	}
+	if _, err := s.PushJobContext(ctx, "missing"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("PushJobContext() error = %v, want context canceled", err)
+	}
+	if _, err := s.RemoteJobContext(ctx, "missing"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RemoteJobContext() error = %v, want context canceled", err)
+	}
+	if err := s.ReleaseLeaseContext(ctx, "missing", "owner"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReleaseLeaseContext() error = %v, want context canceled", err)
+	}
+}
+
 func TestStorePersistsTypedJobAndOutboxAtomically(t *testing.T) {
 	d := t.TempDir()
 	s, err := Open(filepath.Join(d, "state.db"))

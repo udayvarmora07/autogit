@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"autogit/internal/commit"
@@ -122,7 +121,7 @@ type Outbox struct {
 
 type Store struct {
 	db   *sql.DB
-	mu   sync.Mutex
+	mu   chan struct{}
 	path string
 }
 type Tx struct{ tx *sql.Tx }
@@ -172,7 +171,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, path: path}
+	s := newStore(db, path)
 	return s, nil
 }
 
@@ -184,9 +183,29 @@ func OpenContext(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{db: db, path: path}, nil
+	return newStore(db, path), nil
 }
 func (s *Store) Close() error { return s.db.Close() }
+
+func newStore(database *sql.DB, path string) *Store {
+	mu := make(chan struct{}, 1)
+	mu <- struct{}{}
+	return &Store{db: database, mu: mu, path: path}
+}
+
+func (s *Store) lock(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("state context is required")
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.mu:
+		return nil
+	}
+}
+
+func (s *Store) unlock() { s.mu <- struct{}{} }
 
 /*
 Legacy state-only migrations are retained here as historical context while
@@ -380,8 +399,10 @@ func (s *Store) IntegrityCheck() error {
 	return nil
 }
 func (s *Store) WithTx(ctx context.Context, fn func(*Tx) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.lock(ctx); err != nil {
+		return err
+	}
+	defer s.unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -409,8 +430,12 @@ func (t *Tx) PutCommitJob(j CommitJob) error {
 	return err
 }
 func (s *Store) CommitJob(id string) (CommitJob, error) {
+	return s.CommitJobContext(context.Background(), id)
+}
+
+func (s *Store) CommitJobContext(ctx context.Context, id string) (CommitJob, error) {
 	var j CommitJob
-	err := s.db.QueryRow(`SELECT id,candidate_digest,base_sha,message_digest,policy_digest,verifier_digest,guard_digest,commit_sha,state,created_at,updated_at FROM commits WHERE id=?`, id).Scan(&j.ID, &j.CandidateDigest, &j.BaseSHA, &j.MessageDigest, &j.PolicyDigest, &j.VerifierDigest, &j.GuardDigest, &j.CommitSHA, &j.State, &j.CreatedAt, &j.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,candidate_digest,base_sha,message_digest,policy_digest,verifier_digest,guard_digest,commit_sha,state,created_at,updated_at FROM commits WHERE id=?`, id).Scan(&j.ID, &j.CandidateDigest, &j.BaseSHA, &j.MessageDigest, &j.PolicyDigest, &j.VerifierDigest, &j.GuardDigest, &j.CommitSHA, &j.State, &j.CreatedAt, &j.UpdatedAt)
 	return j, err
 }
 
@@ -643,9 +668,13 @@ func validPushJob(j PushJob) bool {
 	}
 }
 func (s *Store) PushJob(id string) (PushJob, error) {
+	return s.PushJobContext(context.Background(), id)
+}
+
+func (s *Store) PushJobContext(ctx context.Context, id string) (PushJob, error) {
 	var j PushJob
 	var local int
-	err := s.db.QueryRow(`SELECT id,commit_job_id,remote_digest,owner,name,ref,commit_sha,state,local_only,created_at,updated_at FROM pushes WHERE id=?`, id).Scan(&j.ID, &j.CommitJobID, &j.RemoteDigest, &j.Owner, &j.Name, &j.Ref, &j.CommitSHA, &j.State, &local, &j.CreatedAt, &j.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,commit_job_id,remote_digest,owner,name,ref,commit_sha,state,local_only,created_at,updated_at FROM pushes WHERE id=?`, id).Scan(&j.ID, &j.CommitJobID, &j.RemoteDigest, &j.Owner, &j.Name, &j.Ref, &j.CommitSHA, &j.State, &local, &j.CreatedAt, &j.UpdatedAt)
 	j.LocalOnly = local != 0
 	return j, err
 }
@@ -693,8 +722,12 @@ func validRemoteJob(j RemoteJob) bool {
 }
 
 func (s *Store) RemoteJob(id string) (RemoteJob, error) {
+	return s.RemoteJobContext(context.Background(), id)
+}
+
+func (s *Store) RemoteJobContext(ctx context.Context, id string) (RemoteJob, error) {
 	var j RemoteJob
-	err := s.db.QueryRow(`SELECT id,repository_id,owner,name,alias,visibility,url,hosted_identity,state,created_at,updated_at FROM remote_jobs WHERE id=?`, id).Scan(&j.ID, &j.RepositoryID, &j.Owner, &j.Name, &j.Alias, &j.Visibility, &j.URL, &j.HostedIdentity, &j.State, &j.CreatedAt, &j.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,repository_id,owner,name,alias,visibility,url,hosted_identity,state,created_at,updated_at FROM remote_jobs WHERE id=?`, id).Scan(&j.ID, &j.RepositoryID, &j.Owner, &j.Name, &j.Alias, &j.Visibility, &j.URL, &j.HostedIdentity, &j.State, &j.CreatedAt, &j.UpdatedAt)
 	return j, err
 }
 func (t *Tx) EnqueueOutbox(o Outbox) error {
@@ -731,8 +764,10 @@ func (s *Store) AcquireLease(ctx context.Context, l Lease, now int64) error {
 	if l.Key == "" || l.Owner == "" || l.ExpiresAt <= now {
 		return errors.New("invalid lease")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.lock(ctx); err != nil {
+		return err
+	}
+	defer s.unlock()
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return err
@@ -764,27 +799,47 @@ func (s *Store) AcquireLease(ctx context.Context, l Lease, now int64) error {
 	return nil
 }
 func (s *Store) ReleaseLease(key, owner string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, err := s.db.Exec(`DELETE FROM leases WHERE lease_key=? AND owner=?`, key, owner)
+	return s.ReleaseLeaseContext(context.Background(), key, owner)
+}
+
+func (s *Store) ReleaseLeaseContext(ctx context.Context, key, owner string) error {
+	if err := s.lock(ctx); err != nil {
+		return err
+	}
+	defer s.unlock()
+	_, err := s.db.ExecContext(ctx, `DELETE FROM leases WHERE lease_key=? AND owner=?`, key, owner)
 	return err
 }
 func (s *Store) Audit(e AuditEvent) error {
+	return s.AuditContext(context.Background(), e)
+}
+
+func (s *Store) AuditContext(ctx context.Context, e AuditEvent) error {
 	if e.At == 0 {
 		e.At = time.Now().UnixNano()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.lock(ctx); err != nil {
+		return err
+	}
+	defer s.unlock()
 	var prev string
-	_ = s.db.QueryRow(`SELECT digest FROM audit ORDER BY at DESC,id DESC LIMIT 1`).Scan(&prev)
+	_ = s.db.QueryRowContext(ctx, `SELECT digest FROM audit ORDER BY at DESC,id DESC LIMIT 1`).Scan(&prev)
 	e.PrevDigest = prev
 	h := sha256.Sum256([]byte(e.ID + "\x00" + e.RepositoryID + "\x00" + e.ReasonCode + "\x00" + e.Metadata + "\x00" + prev))
 	e.Digest = "sha256:" + hex.EncodeToString(h[:])
-	_, err := s.db.Exec(`INSERT INTO audit(id,repository_id,reason_code,metadata,prev_digest,digest,at) VALUES(?,?,?,?,?,?,?)`, e.ID, e.RepositoryID, e.ReasonCode, e.Metadata, e.PrevDigest, e.Digest, e.At)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO audit(id,repository_id,reason_code,metadata,prev_digest,digest,at) VALUES(?,?,?,?,?,?,?)`, e.ID, e.RepositoryID, e.ReasonCode, e.Metadata, e.PrevDigest, e.Digest, e.At)
 	return err
 }
 func (s *Store) AuditEvents() ([]AuditEvent, error) {
-	rows, err := s.db.Query(`SELECT id,repository_id,reason_code,metadata,prev_digest,digest,at FROM audit ORDER BY at,id`)
+	return s.AuditEventsContext(context.Background())
+}
+
+func (s *Store) AuditEventsContext(ctx context.Context) ([]AuditEvent, error) {
+	if err := s.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer s.unlock()
+	rows, err := s.db.QueryContext(ctx, `SELECT id,repository_id,reason_code,metadata,prev_digest,digest,at FROM audit ORDER BY at,id`)
 	if err != nil {
 		return nil, err
 	}

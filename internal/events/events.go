@@ -709,9 +709,13 @@ func (s *Store) AcceptAndProject(ctx context.Context, e Event, projector Project
 // LifecycleProjection returns a copy of the bounded projection bytes and its
 // reducer revision. The bytes are opaque to events.Store.
 func (s *Store) LifecycleProjection(repositoryID string) ([]byte, int64, error) {
+	return s.LifecycleProjectionContext(context.Background(), repositoryID)
+}
+
+func (s *Store) LifecycleProjectionContext(ctx context.Context, repositoryID string) ([]byte, int64, error) {
 	var data []byte
 	var revision int64
-	err := s.db.QueryRow(`SELECT state,revision FROM lifecycle_projections WHERE repository_id=?`, repositoryID).Scan(&data, &revision)
+	err := s.db.QueryRowContext(ctx, `SELECT state,revision FROM lifecycle_projections WHERE repository_id=?`, repositoryID).Scan(&data, &revision)
 	if err != nil {
 		return nil, 0, err
 	}

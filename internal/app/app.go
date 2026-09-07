@@ -223,7 +223,7 @@ func (a *App) completeLifecycle(ctx context.Context, ingress events.Event) (bool
 	repoID := stringValue(ingress.Scope["repo_id"])
 	taskID := stringValue(ingress.Scope["task_id"])
 	sessionID := stringValue(ingress.Scope["session_id"])
-	data, _, err := a.Store.LifecycleProjection(repoID)
+	data, _, err := a.Store.LifecycleProjectionContext(ctx, repoID)
 	if err != nil {
 		return false, err
 	}
@@ -324,7 +324,7 @@ func (a *App) promoteCompletionCandidate(ctx context.Context, ingress events.Eve
 	if a.Store == nil || taskID == "" || repoID == "" {
 		return false, Result{}, nil
 	}
-	data, _, err := a.Store.LifecycleProjection(repoID)
+	data, _, err := a.Store.LifecycleProjectionContext(ctx, repoID)
 	if err != nil {
 		return false, Result{}, err
 	}

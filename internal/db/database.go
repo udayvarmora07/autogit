@@ -23,6 +23,10 @@ import (
 
 const (
 	RequiredSQLiteVersion = "3.51.3"
+	// EmbeddedSQLiteVersion is the SQLite amalgamation version shipped by the
+	// pinned modernc.org/sqlite dependency. Keep this exact assertion alongside
+	// the dependency pin so an accidental engine downgrade fails closed.
+	EmbeddedSQLiteVersion = "3.53.4"
 	CurrentSchemaVersion  = 7
 	openTimeout           = 15 * time.Second
 	busyTimeoutMS         = 5000
@@ -148,6 +152,9 @@ func configureSQLite(ctx context.Context, database *sql.DB) error {
 	var version string
 	if err := database.QueryRowContext(ctx, `SELECT sqlite_version()`).Scan(&version); err != nil {
 		return err
+	}
+	if version != EmbeddedSQLiteVersion {
+		return fmt.Errorf("SQLite version %s does not match embedded version %s", version, EmbeddedSQLiteVersion)
 	}
 	if !atLeastVersion(version, RequiredSQLiteVersion) {
 		return fmt.Errorf("SQLite version %s is older than required %s", version, RequiredSQLiteVersion)

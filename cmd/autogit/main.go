@@ -222,7 +222,7 @@ func runWithContext(ctx context.Context, args []string, in io.Reader, out io.Wri
 			result["repo_id"] = repoID
 		}
 		if cmd == "status" {
-			projection, projectionErr := lifecycleStatus(s, repoID)
+			projection, projectionErr := lifecycleStatus(ctx, s, repoID)
 			if projectionErr != nil {
 				return projectionErr
 			}
@@ -1369,7 +1369,7 @@ func emitPublishDomainFacts(ctx context.Context, statePath string, p policy.Poli
 		return err
 	}
 	defer store.Close()
-	sessionID, taskID, changeID, ok := lifecycleScopeForCommit(store, info.RepoID, job.CommitSHA)
+	sessionID, taskID, changeID, ok := lifecycleScopeForCommit(ctx, store, info.RepoID, job.CommitSHA)
 	if !ok {
 		// Older/manual commit intents may predate lifecycle projection. The
 		// publication side effect remains authoritative in state; do not turn a
@@ -1413,15 +1413,15 @@ func emitStoredPushDomainFacts(ctx context.Context, db *state.Store, statePath s
 	if db == nil {
 		return errors.New("push-job state store is required")
 	}
-	job, err := db.PushJob(jobID)
+	job, err := db.PushJobContext(ctx, jobID)
 	if err != nil {
 		return err
 	}
 	return emitPublishDomainFacts(ctx, statePath, p, info, job, operationErr)
 }
 
-func lifecycleScopeForCommit(store *events.Store, repositoryID, sha string) (string, string, string, bool) {
-	data, _, err := store.LifecycleProjection(repositoryID)
+func lifecycleScopeForCommit(ctx context.Context, store *events.Store, repositoryID, sha string) (string, string, string, bool) {
+	data, _, err := store.LifecycleProjectionContext(ctx, repositoryID)
 	if err != nil {
 		return "", "", "", false
 	}
@@ -1632,7 +1632,7 @@ func runRetryContext(ctx context.Context, args []string, dir string, out io.Writ
 		return err
 	}
 	defer db.Close()
-	job, err := db.PushJob(options.ID)
+	job, err := db.PushJobContext(ctx, options.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return cliError{"E_NOT_FOUND", "retry job was not found"}
 	}
@@ -1894,8 +1894,8 @@ type lifecycleSummary struct {
 	Pushes        stateCounts    `json:"pushes"`
 }
 
-func lifecycleStatus(s *events.Store, repositoryID string) (lifecycleSummary, error) {
-	data, revision, err := s.LifecycleProjection(repositoryID)
+func lifecycleStatus(ctx context.Context, s *events.Store, repositoryID string) (lifecycleSummary, error) {
+	data, revision, err := s.LifecycleProjectionContext(ctx, repositoryID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return lifecycleSummary{Exists: false, Revision: 0, Tasks: stateCounts{States: map[string]int{}}, Candidates: stateCounts{States: map[string]int{}}, Verifications: stateCounts{States: map[string]int{}}, Commits: stateCounts{States: map[string]int{}}, Pushes: stateCounts{States: map[string]int{}}}, nil
 	}

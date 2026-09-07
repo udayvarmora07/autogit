@@ -91,11 +91,11 @@ func (l StateLease) Acquire(ctx context.Context, key, owner string) error {
 	return l.DB.AcquireLease(ctx, state.Lease{Key: key, Owner: owner, ExpiresAt: now.Add(ttl).UnixNano()}, now.UnixNano())
 }
 
-func (l StateLease) Release(_ context.Context, key, owner string) error {
+func (l StateLease) Release(ctx context.Context, key, owner string) error {
 	if l.DB == nil {
 		return errors.New("state lease database is missing")
 	}
-	return l.DB.ReleaseLease(key, owner)
+	return l.DB.ReleaseLeaseContext(ctx, key, owner)
 }
 
 func (r CommitRequest) EvidenceMatches(e CommitEvidence) bool {
@@ -119,8 +119,8 @@ func (s *StateStore) PutCommitIntent(ctx context.Context, r CommitRequest) error
 		return tx.PutCommitJob(state.CommitJob{ID: r.ID, CandidateDigest: r.CandidateDigest, BaseSHA: r.BaseSHA, MessageDigest: r.MessageDigest, PolicyDigest: r.PolicyDigest, VerifierDigest: r.VerifierDigest, GuardDigest: r.GuardDigest, State: state.CommitRequested})
 	})
 }
-func (s *StateStore) CommitStatus(_ context.Context, id string) (string, string, CommitRequest, error) {
-	j, e := s.DB.CommitJob(id)
+func (s *StateStore) CommitStatus(ctx context.Context, id string) (string, string, CommitRequest, error) {
+	j, e := s.DB.CommitJobContext(ctx, id)
 	if errors.Is(e, sql.ErrNoRows) {
 		return "", "", CommitRequest{}, nil
 	}
@@ -130,7 +130,7 @@ func (s *StateStore) RecordCommit(ctx context.Context, id, sha string) error {
 	return s.DB.RecordCommitJob(ctx, id, sha)
 }
 func (s *StateStore) RecordReconcile(ctx context.Context, id string) error {
-	j, e := s.DB.CommitJob(id)
+	j, e := s.DB.CommitJobContext(ctx, id)
 	if e != nil {
 		return e
 	}
@@ -143,7 +143,7 @@ func (s *StateStore) PutPushIntent(ctx context.Context, r PushRequest) error {
 	})
 }
 func (s *StateStore) MarkPushSkipped(ctx context.Context, id string) error {
-	j, e := s.DB.PushJob(id)
+	j, e := s.DB.PushJobContext(ctx, id)
 	if e != nil {
 		return e
 	}
@@ -151,22 +151,22 @@ func (s *StateStore) MarkPushSkipped(ctx context.Context, id string) error {
 	return s.DB.WithTx(ctx, func(tx *state.Tx) error { return tx.PutPushJob(j) })
 }
 func (s *StateStore) MarkPushSucceeded(ctx context.Context, id string) error {
-	j, e := s.DB.PushJob(id)
+	j, e := s.DB.PushJobContext(ctx, id)
 	if e != nil {
 		return e
 	}
 	j.State = state.PushSucceeded
 	return s.DB.WithTx(ctx, func(tx *state.Tx) error { return tx.PutPushJob(j) })
 }
-func (s *StateStore) PushStatus(_ context.Context, id string) (string, PushRequest, error) {
-	j, e := s.DB.PushJob(id)
+func (s *StateStore) PushStatus(ctx context.Context, id string) (string, PushRequest, error) {
+	j, e := s.DB.PushJobContext(ctx, id)
 	if errors.Is(e, sql.ErrNoRows) {
 		return "", PushRequest{}, nil
 	}
 	return j.State, PushRequest{ID: j.ID, Owner: j.Owner, Name: j.Name, Ref: j.Ref, CommitSHA: j.CommitSHA, RemoteDigest: j.RemoteDigest, LocalOnly: j.LocalOnly}, e
 }
 func (s *StateStore) MarkPushBlocked(ctx context.Context, id string) error {
-	j, e := s.DB.PushJob(id)
+	j, e := s.DB.PushJobContext(ctx, id)
 	if e != nil {
 		return e
 	}
@@ -175,7 +175,7 @@ func (s *StateStore) MarkPushBlocked(ctx context.Context, id string) error {
 }
 
 func (s *StateStore) MarkPushRetry(ctx context.Context, id string) error {
-	j, e := s.DB.PushJob(id)
+	j, e := s.DB.PushJobContext(ctx, id)
 	if e != nil {
 		return e
 	}
