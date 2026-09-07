@@ -930,6 +930,9 @@ func NewGitHubAppTokenSource(config GitHubAppTokenConfig) (*GitHubAppTokenSource
 	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil {
 		return nil, errors.New("invalid GitHub App base URL")
 	}
+	if base.RawQuery != "" || base.Fragment != "" {
+		return nil, errors.New("GitHub App base URL cannot contain query or fragment")
+	}
 	if base.Scheme != "https" && !config.AllowInsecureHTTP {
 		return nil, errors.New("GitHub App token endpoint requires HTTPS")
 	}

@@ -28,6 +28,29 @@ func restTestConfig(serverURL string) GitHubRESTConfig {
 	}
 }
 
+type recordingRESTPusher struct {
+	called int
+	owner  string
+	name   string
+	sha    string
+	ref    string
+	err    error
+	onPush func()
+}
+
+func (p *recordingRESTPusher) Push(_ context.Context, remote, sha, ref string) error {
+	p.called++
+	parts := strings.Split(remote, "/")
+	if len(parts) == 2 {
+		p.owner, p.name = parts[0], parts[1]
+	}
+	p.sha, p.ref = sha, ref
+	if p.onPush != nil {
+		p.onPush()
+	}
+	return p.err
+}
+
 func TestGitHubRESTBindsIdentityAndHeadersBeforeCreation(t *testing.T) {
 	t.Setenv("GH_TOKEN", "ambient-token")
 	t.Setenv("GITHUB_TOKEN", "ambient-token")
@@ -124,6 +147,67 @@ func TestGitHubRESTBoundsBodiesAndPreservesSafeRateMetadata(t *testing.T) {
 				t.Fatalf("response body leaked: %v", err)
 			}
 		})
+	}
+}
+
+func TestGitHubRESTClassifiesForbiddenResponsesAndEscapesBranchRefs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/acme/auth" {
+			w.Header().Set("X-RateLimit-Remaining", "7")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"denied"}`))
+			return
+		}
+		if r.URL.EscapedPath() != "/repos/acme/repo/git/ref/heads/feature%2Fx" {
+			t.Errorf("escaped ref path=%q", r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"object":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`))
+	}))
+	defer server.Close()
+	provider, err := NewGitHubREST(restTestConfig(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := provider.GetRepository(context.Background(), "acme", "auth", ""); !errors.Is(err, ErrAuth) {
+		t.Fatalf("forbidden auth error=%v", err)
+	}
+	sha, err := provider.Inspect(context.Background(), RemoteRequest{Owner: "acme", Name: "repo", Visibility: "private"}, "feature/x")
+	if err != nil || sha != strings.Repeat("a", 40) {
+		t.Fatalf("escaped ref sha=%q err=%v", sha, err)
+	}
+}
+
+func TestGitHubRESTPublishesOnlyTheExactRefAndSHA(t *testing.T) {
+	sha := strings.Repeat("b", 40)
+	var pushed atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"login":"alice"}`))
+		case "/repos/acme/repo/git/ref/heads/main":
+			if !pushed.Load() {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write([]byte(`{"object":{"sha":"` + sha + `"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	pusher := &recordingRESTPusher{}
+	pusher.onPush = func() { pushed.Store(true) }
+	config := restTestConfig(server.URL)
+	config.Pusher = pusher
+	provider, err := NewGitHubREST(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.Publish(context.Background(), PushRequest{Owner: "acme", Name: "repo", Ref: "main", SHA: sha}); err != nil {
+		t.Fatal(err)
+	}
+	if pusher.called != 1 || pusher.owner != "acme" || pusher.name != "repo" || pusher.sha != sha || pusher.ref != "main" {
+		t.Fatalf("pusher=%+v", pusher)
 	}
 }
 
@@ -255,6 +339,22 @@ func TestGitHubRESTRejectsAppTokenSourceForAnotherHost(t *testing.T) {
 	}
 }
 
+func TestGitHubRESTRejectsWrongConfiguredHostAndAppTokenSourceURL(t *testing.T) {
+	config := restTestConfig("https://api.example/")
+	config.Identity.Host = "other.example"
+	if _, err := NewGitHubREST(config); !errors.Is(err, ErrInvalidProviderIdentity) {
+		t.Fatalf("wrong configured host error=%v", err)
+	}
+	privateKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewGitHubAppTokenSource(GitHubAppTokenConfig{BaseURL: "https://tokens.example/?redirect=unsafe", AppID: 7, InstallationID: 42, PrivateKey: privateKey, RepositoryIDs: []int64{99}, Permissions: map[string]string{"contents": "read"}})
+	if err == nil {
+		t.Fatal("App token source accepted a query-bearing base URL")
+	}
+}
+
 func TestGitHubAppTokenSourceRefreshesBeforeExpiryAndRejectsUnscopedConfig(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
 	if err != nil {
@@ -335,6 +435,42 @@ func TestGitHubRESTEnterprisePolicyAndCheckRunProjection(t *testing.T) {
 	}
 }
 
+func TestGitHubRESTEnterpriseVersionMatrixFailsClosed(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		version    string
+		wantAccept bool
+	}{
+		{name: "minimum supported", version: "3.0.0", wantAccept: true},
+		{name: "current major", version: "3.19.0", wantAccept: true},
+		{name: "future policy major", version: "4.1.0", wantAccept: true},
+		{name: "old major", version: "2.99.0"},
+		{name: "malformed", version: "three.nineteen.0"},
+		{name: "missing minor", version: "3"},
+		{name: "missing metadata", version: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if test.version != "" {
+					w.Header().Set("X-GitHub-Enterprise-Version", test.version)
+				}
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+			config := restTestConfig(server.URL)
+			config.EnterprisePolicy = DefaultEnterpriseVersionPolicy
+			provider, err := NewGitHubREST(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.Negotiate(context.Background())
+			if (err == nil) != test.wantAccept {
+				t.Fatalf("version=%q accepted=%v err=%v", test.version, err == nil, err)
+			}
+		})
+	}
+}
+
 func TestGitHubRESTRejectsAmbientCredentialAndUnsupportedEnterprise(t *testing.T) {
 	t.Setenv("GH_TOKEN", "ambient-token")
 	t.Setenv("GITHUB_TOKEN", "ambient-token")
@@ -387,6 +523,31 @@ func TestGitHubRESTRejectsAuthenticatedAccountMismatchBeforeMutation(t *testing.
 	_, err = provider.Create(context.Background(), RemoteRequest{Owner: "acme", Name: "repo", Visibility: "private"})
 	if !errors.Is(err, ErrAuth) || createCalls.Load() != 0 {
 		t.Fatalf("mismatch error=%v create calls=%d", err, createCalls.Load())
+	}
+}
+
+func TestGitHubAppTokenSourceMapsRevocationToAuthWithoutLeakingResponse(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-GitHub-Request-Id", "revoked-1")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"installation token revoked secret=must-not-leak"}`))
+	}))
+	defer server.Close()
+	source, err := NewGitHubAppTokenSource(GitHubAppTokenConfig{BaseURL: server.URL + "/", AppID: 7, InstallationID: 42, PrivateKey: privateKey, RepositoryIDs: []int64{99}, Permissions: map[string]string{"contents": "write"}, AllowInsecureHTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = func() error {
+		_, tokenErr := source.Token(context.Background())
+		return tokenErr
+	}()
+	var restErr *RESTError
+	if !errors.As(err, &restErr) || !errors.Is(err, ErrAuth) || restErr.RequestID != "revoked-1" || strings.Contains(err.Error(), "must-not-leak") {
+		t.Fatalf("revocation error=%v request_id=%q", err, restErr.RequestID)
 	}
 }
 
