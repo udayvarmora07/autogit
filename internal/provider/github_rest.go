@@ -44,6 +44,7 @@ var (
 	ErrInvalidProviderIdentity = errors.New("invalid provider identity")
 	ErrResponseLimit           = errors.New("provider response exceeded limit")
 	ErrUnsupportedServer       = errors.New("unsupported GitHub server")
+	ErrRepositoryEmpty         = errors.New("provider repository is empty")
 )
 
 // TokenSource returns a short-lived provider credential. Implementations must
@@ -283,6 +284,10 @@ func (e *RESTError) Is(target error) bool {
 		return e.StatusCode >= 500
 	case target == ErrCollision:
 		return e.StatusCode == http.StatusConflict
+	case target == ErrRepositoryEmpty:
+		// GitHub returns 409 for a ref lookup against a repository that has no
+		// commits yet. This is distinct from a create collision at the caller.
+		return e.StatusCode == http.StatusConflict
 	case target == ErrRefAbsent:
 		return e.StatusCode == http.StatusNotFound
 	}
@@ -512,7 +517,7 @@ func (g *GitHubREST) Publish(ctx context.Context, request PushRequest) error {
 	if err == nil && current != request.SHA {
 		return ErrRefConflict
 	}
-	if err != nil && !errors.Is(err, ErrRefAbsent) {
+	if err != nil && !errors.Is(err, ErrRefAbsent) && !errors.Is(err, ErrRepositoryEmpty) {
 		return err
 	}
 	if err := g.pusher.Push(ctx, remote, request.SHA, request.Ref); err != nil {
@@ -534,7 +539,7 @@ func (g *GitHubREST) ConfirmPush(ctx context.Context, request PushRequest) (Push
 		return "", errors.New("invalid push intent")
 	}
 	actual, err := g.Inspect(ctx, RemoteRequest{Owner: request.Owner, Name: request.Name, Visibility: "private"}, request.Ref)
-	if errors.Is(err, ErrRefAbsent) {
+	if errors.Is(err, ErrRefAbsent) || errors.Is(err, ErrRepositoryEmpty) {
 		return PushMissing, nil
 	}
 	if err != nil {

@@ -3,6 +3,7 @@ package provider
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -160,7 +162,8 @@ type SystemRunner struct {
 	MaxOutput  int
 	// ExtraEnv is an explicit, per-run environment allowlist. It exists for
 	// credentialed Git pushes that cannot use ambient credential helpers; only
-	// the narrowly validated GIT_HTTP_EXTRAHEADER form is accepted.
+	// the narrowly validated GIT_HTTP_EXTRAHEADER form is accepted and it is
+	// translated to Git's supported config environment below.
 	ExtraEnv []string
 }
 
@@ -259,7 +262,18 @@ func controlledCommandEnvWithExplicit(environ, extra []string) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	return controlledCommandEnvFromExtra(environ, validated), nil
+	translated := make([]string, 0, len(validated)*3)
+	for index, item := range validated {
+		_, value, _ := strings.Cut(item, "=")
+		token := strings.TrimPrefix(value, "Authorization: Bearer ")
+		basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+		translated = append(translated,
+			"GIT_CONFIG_COUNT="+strconv.Itoa(len(validated)),
+			"GIT_CONFIG_KEY_"+strconv.Itoa(index)+"=http.extraHeader",
+			"GIT_CONFIG_VALUE_"+strconv.Itoa(index)+"=Authorization: Basic "+basic,
+		)
+	}
+	return controlledCommandEnvFromExtra(environ, translated), nil
 }
 
 func controlledCommandEnvFromExtra(environ, extra []string) []string {

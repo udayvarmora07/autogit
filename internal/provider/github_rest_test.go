@@ -211,6 +211,59 @@ func TestGitHubRESTPublishesOnlyTheExactRefAndSHA(t *testing.T) {
 	}
 }
 
+func TestGitHubRESTPublishesFirstCommitWhenRepositoryHasNoRefs(t *testing.T) {
+	sha := strings.Repeat("c", 40)
+	var pushed atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"login":"alice"}`))
+		case "/repos/acme/repo/git/ref/heads/main":
+			if !pushed.Load() {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"message":"Git Repository is empty."}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"object":{"sha":"` + sha + `"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	pusher := &recordingRESTPusher{}
+	pusher.onPush = func() { pushed.Store(true) }
+	config := restTestConfig(server.URL)
+	config.Pusher = pusher
+	provider, err := NewGitHubREST(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.Publish(context.Background(), PushRequest{Owner: "acme", Name: "repo", Ref: "main", SHA: sha}); err != nil {
+		t.Fatal(err)
+	}
+	if pusher.called != 1 {
+		t.Fatalf("pusher called %d times, want 1", pusher.called)
+	}
+}
+
+func TestGitHubRESTConfirmsEmptyRepositoryAsMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message":"Git Repository is empty."}`))
+	}))
+	defer server.Close()
+	provider, err := NewGitHubREST(restTestConfig(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := provider.ConfirmPush(context.Background(), PushRequest{
+		Owner: "acme", Name: "repo", Ref: "main", SHA: strings.Repeat("d", 40),
+	})
+	if err != nil || outcome != PushMissing {
+		t.Fatalf("outcome=%q err=%v, want missing without error", outcome, err)
+	}
+}
+
 func TestGitHubRESTConditionalReadAndPagination(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

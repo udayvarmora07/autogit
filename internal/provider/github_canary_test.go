@@ -3,9 +3,13 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +67,7 @@ func TestGitHubCanary(t *testing.T) {
 	if !shaRE.MatchString(sha) {
 		t.Fatalf("local commit did not produce a canonical SHA")
 	}
+	t.Logf("canary target=%s/%s ref=main sha=%s", owner, name, sha)
 
 	info, err := repository.Discover(root)
 	if err != nil {
@@ -78,7 +83,11 @@ func TestGitHubCanary(t *testing.T) {
 		BaseURL:  "https://api.github.com/",
 		Identity: ProviderIdentity{Host: "api.github.com", Account: owner, Owner: owner},
 		Token:    token,
-		Pusher:   pusher,
+		HTTPClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: canaryRefTraceTransport{t: t},
+		},
+		Pusher: pusher,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,6 +120,32 @@ func TestGitHubCanary(t *testing.T) {
 	if outcome != PushPresent {
 		t.Fatalf("canary ref outcome=%q, want %q", outcome, PushPresent)
 	}
+}
+
+type canaryRefTraceTransport struct {
+	t *testing.T
+}
+
+func (r canaryRefTraceTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	r.t.Helper()
+	response, err := http.DefaultTransport.RoundTrip(request)
+	if err != nil || !strings.HasSuffix(request.URL.Path, "/git/ref/heads/main") || response == nil {
+		return response, err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	_ = response.Body.Close()
+	response.Body = io.NopCloser(bytes.NewReader(data))
+	var payload struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if readErr != nil || json.Unmarshal(data, &payload) != nil {
+		r.t.Logf("canary ref response status=%d body-unparseable=%t", response.StatusCode, true)
+	} else {
+		r.t.Logf("canary ref response status=%d sha=%s", response.StatusCode, payload.Object.SHA)
+	}
+	return response, nil
 }
 
 func TestCanaryGHRunnerPassesOnlyExplicitToken(t *testing.T) {

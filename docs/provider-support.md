@@ -1,7 +1,8 @@
 # GitHub provider support policy
 
-Status: local provider boundary accepted; live provider and permission review
-remain release-gate evidence.
+Status: local provider boundary accepted; private live canary passed on
+2026-09-07; permission review and native artifact evidence remain release-gate
+requirements.
 
 This policy is deliberately narrower than “GitHub-compatible.” AutoGit binds
 every operation to an explicit API base URL, host, authenticated account, and
@@ -51,7 +52,8 @@ evidence ID, and never becomes AutoGit's durable source of truth.
 
 Local `httptest` contract tests prove transport bounds, identity binding,
 pagination, reconciliation, token refresh, Enterprise negotiation, and Check
-Run redaction. Promotion additionally requires a disposable private GitHub
-canary, exact permission review, native artifact execution, and cleanup
-evidence retained for the exact candidate.
-
+Run redaction. A private disposable canary also passed with exact repository,
+visibility, ref, and SHA confirmation using the opt-in typed REST path; its
+allowlisted target was verified absent afterward. Promotion still requires
+exact permission review, native artifact execution, and cleanup evidence
+retained for the exact candidate.

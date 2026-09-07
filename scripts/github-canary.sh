@@ -60,4 +60,4 @@ trap 'status=$?; trap - EXIT; cleanup "$status"' EXIT
 
 export AUTOGIT_GITHUB_CANARY=1
 export AUTOGIT_CANARY_NAME="$name"
-go test -tags github_canary ./internal/provider -run '^TestGitHubCanary$' -count=1 -timeout=10m
+go test -tags github_canary ./internal/provider -run '^TestGitHubCanary$' -count=1 -timeout=10m -v

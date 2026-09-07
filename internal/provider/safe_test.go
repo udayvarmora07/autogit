@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -155,7 +156,9 @@ func TestSystemRunnerScrubsAmbientProviderAndGitEnvironment(t *testing.T) {
 
 func TestSystemRunnerAcceptsOnlyExplicitBearerHeaderForCredentialedPush(t *testing.T) {
 	valid, err := controlledCommandEnvWithExplicit([]string{"PATH=/trusted/bin"}, []string{"GIT_HTTP_EXTRAHEADER=Authorization: Bearer explicit-token"})
-	if err != nil || !strings.Contains(strings.Join(valid, "\n"), "GIT_HTTP_EXTRAHEADER=Authorization: Bearer explicit-token") {
+	joined := strings.Join(valid, "\n")
+	expectedBasic := base64.StdEncoding.EncodeToString([]byte("x-access-token:explicit-token"))
+	if err != nil || !strings.Contains(joined, "GIT_CONFIG_COUNT=1") || !strings.Contains(joined, "GIT_CONFIG_KEY_0=http.extraHeader") || !strings.Contains(joined, "GIT_CONFIG_VALUE_0=Authorization: Basic "+expectedBasic) {
 		t.Fatalf("explicit header=%v err=%v", valid, err)
 	}
 	for _, extra := range [][]string{

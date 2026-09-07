@@ -7,13 +7,14 @@ Execution tracker: [todo.md](../todo.md)
 
 Current execution slice (2026-09-07): the local implementation for P2-06
 through P2-10 is present in `internal/provider/github_rest.go` with deterministic
-contract tests and a retained evidence bundle. This does not change the
-release posture or waive the live disposable-provider, permission, native
-platform, and named-reviewer requirements. The boundary now pins REST API
-version `2026-03-10`, exercises durable no-duplicate reconciliation, requires
-explicit App-token repository/permission scope, and runs the opt-in canary
-through the typed REST provider; the exact version/Enterprise policy is in
-[provider support policy](provider-support.md).
+contract tests and a retained evidence bundle. A private disposable canary
+also passed through the typed REST provider using the existing `gh` keyring
+token, with exact cleanup verification. This does not change the release
+posture or waive the permission, native platform, and named-reviewer
+requirements. The boundary now pins REST API version `2026-03-10`, exercises
+durable no-duplicate reconciliation, requires explicit App-token
+repository/permission scope, and runs the opt-in canary through the typed REST
+provider; the exact version/Enterprise policy is in [provider support policy](provider-support.md).
 
 ## 1. Executive decision
 
@@ -127,7 +128,7 @@ Git/provider side effects:
 | Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings | Filesystem/network sandbox tiers and native platform resource/isolation validation remain unavailable | Block public use |
 | Security scanning | Candidate and bounded history checks; pinned offline interface, exact-blob scope, coverage/limit evidence, redacted fingerprints | Detection engine breadth and provider-side push protection remain separately scoped; native security-tool matrix remains | Block public use |
 | Adapters | Versioned six-entry registry, sanitized versioned fixtures, canonical translation, bounded probes, and four schema-specific installers | Native all-OS/client-version installation matrix and upstream drift automation remain; OpenCode/CommandCode are intentionally observation-only | Block compatibility claim |
-| GitHub provider | Exact destination/SHA/ref checks and durable reconciliation | Ambient gh identity, no typed versioned REST transport, no App tokens, limited GHE/rate-limit coverage, no live canary | Block alpha |
+| GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and private live canary | App permission review, native artifact execution, and named provider review remain | Block alpha |
 | CLI and operations | Read-only status/plan/doctor/log commands | Monolithic 2,143-line command file, sparse help, no version command, duplicated error code, stdout/stderr ambiguity, no root deadlines | Block supportability |
 | Tests and CI | Broad unit/recovery/race/native CI and strong performance results | Slow schedules run by default; no nightly split, shellcheck, release-binary vulnerability scan, scenario eval suite, or complete native artifact smoke matrix | Needs hardening |
 | Release and governance | Deterministic cross-build script and runbook | Stale artifacts can survive output reuse; no signing, SBOM, provenance, tag release, installers, LICENSE, SECURITY, CONTRIBUTING, CODEOWNERS, or changelog | Block any release |

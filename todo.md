@@ -160,9 +160,11 @@ contract evidence in [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-
 durable no-duplicate reconciliation, least-privilege in-memory GitHub App
 installation tokens, Enterprise version negotiation, and an optional redacted
 head-SHA Check Run projection. The support window is documented in
-[provider support policy](docs/provider-support.md). Their boxes remain open
-until the bundle's live disposable-provider, permission-review, and native
-artifact requirements are actually executed and reviewed.
+[provider support policy](docs/provider-support.md). The private disposable
+provider requirement is now evidenced in the bundle by an exact
+owner/name/visibility/ref/SHA canary and verified cleanup. Their boxes remain
+open until the remaining permission-review, native-artifact, and named-review
+requirements are actually executed and reviewed.
 
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
@@ -234,7 +236,8 @@ artifact requirements are actually executed and reviewed.
 
 - [ ] Private alpha entry: Phases 0 and 1 complete; the advertised Phase 2
   subset complete; signed private artifacts and support owner ready.
-- [ ] Run and retain the disposable private GitHub canary evidence.
+- [x] Run and retain the disposable private GitHub canary evidence. Evidence:
+  [Phase 2 P2-06–P2-10 bundle](docs/release-evidence/phase-2-p2-06-p2-10.md).
 - [ ] Run a bounded private-repository cohort with opt-in telemetry and
   explicit issue/incident triage.
 - [ ] Complete backup/restore, provider reconciliation, adapter rollback, and
