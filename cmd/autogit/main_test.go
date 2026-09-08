@@ -1195,8 +1195,11 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		installWindowsPublishFixtures(t, fakeBin, gitPath, ghState, sha)
 	} else {
-		ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else : > '" + ghState + "'; printf '%s\\n' 'Not Found' >&2; exit 1; fi\n"
-		gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
+		// Keep the fake provider state transition tied to the fake push. The
+		// first ref read is an explicit 404; the post-push read returns the
+		// exact commit, independent of shell stderr handling or timing.
+		ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else printf '%s\\n' '404 Not Found'; exit 1; fi\n"
+		gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) : > '" + ghState + "'; exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
 		if err := os.WriteFile(filepath.Join(fakeBin, "gh"), []byte(ghScript), 0700); err != nil {
 			t.Fatal(err)
 		}
