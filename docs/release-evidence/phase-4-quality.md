@@ -45,17 +45,20 @@ git diff --check
 ```
 
 The checked-in JSON is a clean manifest for commit
-`771113ca04917373afafece210af142aa09943de`. Its ten suite results are backed
-by the exact-commit manual CI run `34191706245`, which passed native Linux,
-macOS, and Windows tests, 1,000-schedule soak on all three platforms, and all
-ten fuzz targets. It also records six freshly built cross-target artifact
-hashes and their Linux/amd64 artifact-smoke result. `tag_verified` remains
-false because this is implementation evidence, not a release-tag approval.
+`515284c71b9e3a4d159ab537d2d7460e849e047c`. Its ten local suite results include
+the 60-second fuzz budget for every target, the 1,000-schedule Linux soak
+matrix, six freshly built cross-target artifact hashes, and Linux/amd64
+artifact smoke. The adapter fuzz harness reuses immutable adapter setup so the
+100,000-input floor is achievable without weakening the quota.
 
-The push CI run `34191120318` independently passed the fast presubmit, native
-artifact, cross-build, reproducible-release, and security jobs for the same
-commit. These CI records do not claim a live provider canary, signing,
-provenance, or named release review.
+The exact-commit manual CI run `34203518617` passed presubmit, all ten fuzz
+targets, native Linux/macOS/Windows tests and performance gates, 1,000-schedule
+soak on all three platforms, all three cross-builds, reproducible release
+binaries, and security analysis. Push CI run `34202442716` also passed for the
+same commit; the separate security workflow `34202442760` passed its CodeQL,
+dependency, and Scorecard checks. `tag_verified` remains false because this is
+implementation evidence, not a release-tag approval. These CI records do not
+claim a live provider canary, signing, provenance, or named release review.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:
