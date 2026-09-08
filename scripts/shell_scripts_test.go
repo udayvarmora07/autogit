@@ -86,6 +86,24 @@ func TestPerformanceGateRejectsBadSampleCount(t *testing.T) {
 	}
 }
 
+func TestPerformanceGateRetriesTransientBudgetFailure(t *testing.T) {
+	fakeBin := t.TempDir()
+	counter := filepath.Join(t.TempDir(), "counter")
+	fakeGo := filepath.Join(fakeBin, "go")
+	content := "#!/usr/bin/env bash\ncount=0\nif [[ -f \"$AUTOGIT_TEST_COUNTER\" ]]; then count=$(<\"$AUTOGIT_TEST_COUNTER\"); fi\ncount=$((count + 1))\nprintf '%s\\n' \"$count\" > \"$AUTOGIT_TEST_COUNTER\"\nvalue=1\nif [[ \"$count\" -eq 1 ]]; then value=200000000; fi\nfor i in $(seq 1 20); do echo \"BenchmarkFake-1 1 $value ns/op\"; done\n"
+	if err := os.WriteFile(fakeGo, []byte(content), 0700); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runShellScript(t, []string{
+		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"AUTOGIT_PERF_RETRIES=2",
+		"AUTOGIT_TEST_COUNTER=" + counter,
+	}, "performance-gate.sh")
+	if err != nil || !bytes.Contains(output, []byte("retrying (1/2)")) {
+		t.Fatalf("transient benchmark result=%v output=%s", err, output)
+	}
+}
+
 func TestFuzzSuiteRejectsInsufficientExecutionBudget(t *testing.T) {
 	fakeBin := t.TempDir()
 	fakeGo := filepath.Join(fakeBin, "go")
