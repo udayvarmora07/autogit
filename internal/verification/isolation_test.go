@@ -61,8 +61,23 @@ func TestTrustedRegistryRecordsAchievedProcessBoundedTier(t *testing.T) {
 	}
 }
 
-func TestProcessResourceLimitsDoNotChangeUnboundedCompatibility(t *testing.T) {
-	result, err := process.Run(context.Background(), process.Options{Executable: "true", Limits: process.ResourceLimits{CPUTime: time.Second, MemoryBytes: 64 << 20, FileBytes: 1 << 20, Processes: 8}})
+func TestProcessResourceLimitsPreserveUnboundedCompatibility(t *testing.T) {
+	requested := process.ResourceLimits{CPUTime: time.Second, MemoryBytes: 64 << 20, FileBytes: 1 << 20, Processes: 8}
+	if runtime.GOOS != "linux" {
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, runErr := process.Run(context.Background(), process.Options{Executable: executable, Args: []string{"-test.run=^$"}})
+		if runErr != nil || result.ExitCode != 0 {
+			t.Fatalf("unbounded process result=%+v err=%v", result, runErr)
+		}
+		if limitErr := process.ValidateResourceLimits(requested); !errors.Is(limitErr, process.ErrUnsupportedResourceLimit) {
+			t.Fatalf("platform accepted unsupported resource limits: %v", limitErr)
+		}
+		return
+	}
+	result, err := process.Run(context.Background(), process.Options{Executable: "true", Limits: requested})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("bounded process result=%+v err=%v", result, err)
 	}

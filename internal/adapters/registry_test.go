@@ -98,6 +98,10 @@ func TestProbeClassifiesSupportedDegradedAndUnsupportedWithoutNetwork(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := func(_ context.Context, _ string, _ []string) (ProbeExecution, error) {
 		return ProbeExecution{Stdout: "client 2.1.233\n", ExitCode: 0}, nil
 	}
@@ -169,8 +173,12 @@ func TestProbeResolvesLauncherSymlinkBeforeVersionCheck(t *testing.T) {
 	if err := os.Symlink(target, launcher); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
+	expectedTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
 	report, err := Probe(context.Background(), "cursor", ProbeOptions{Executable: launcher})
-	if err != nil || report.Status != ProbeSupported || report.Executable != target {
+	if err != nil || report.Status != ProbeSupported || report.Executable != expectedTarget {
 		t.Fatalf("report=%+v err=%v", report, err)
 	}
 }

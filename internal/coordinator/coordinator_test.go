@@ -646,6 +646,23 @@ func TestStateLeaseSerializesOwnersUntilRelease(t *testing.T) {
 	}
 }
 
+func TestStateLeaseExpiresAfterForwardClockJump(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Unix(100, 0)
+	lease := StateLease{DB: db, TTL: time.Minute, Now: func() time.Time { return now }}
+	if err := lease.Acquire(context.Background(), "repo/worktree/main", "owner-a"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if err := lease.Acquire(context.Background(), "repo/worktree/main", "owner-b"); err != nil {
+		t.Fatalf("owner did not acquire after lease expiry: %v", err)
+	}
+}
+
 func TestPushPersistsTypedProviderFailureStatesAtEveryBoundary(t *testing.T) {
 	cases := []struct {
 		name                     string

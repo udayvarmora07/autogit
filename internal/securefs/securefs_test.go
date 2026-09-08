@@ -71,6 +71,30 @@ func TestAtomicWriteWithinUsesRestrictiveModeAndDoesNotFollowDestination(t *test
 	}
 }
 
+func TestAtomicWriteWithinFailsClosedAfterPermissionLoss(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("permission-loss fault requires a non-root Unix filesystem")
+	}
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicWriteWithin(root, "state.json", []byte("before"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0700) })
+	if err := AtomicWriteWithin(root, "state.json", []byte("after"), 0600); err == nil {
+		t.Fatal("write succeeded after state-root permission loss")
+	}
+	content, err := os.ReadFile(filepath.Join(root, "state.json"))
+	if err != nil || string(content) != "before" {
+		t.Fatalf("permission-loss write changed state: %q err=%v", content, err)
+	}
+}
+
 func TestReadWithinRejectsSymlinkedParentAndEnforcesLimit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated Windows privileges in some environments")
