@@ -69,6 +69,11 @@ jobs:
         run: go test -run '^$' -bench '^Benchmark' -benchmem -benchtime=1s -count=5 ./...
       - name: p95 performance gates
         shell: bash
+        # Windows hosted runners show materially higher transient scheduler
+        # tails. Keep the same strict budgets, but collect more independent
+        # samples before failing the platform gate.
+        env:
+          AUTOGIT_PERF_RETRIES: ${{ matrix.os == 'windows-latest' && '4' || '2' }}
         run: AUTOGIT_PERF_OUTPUT=performance-results.tsv bash scripts/performance-gate.sh
       - name: retain performance budget artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
