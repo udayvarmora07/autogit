@@ -73,8 +73,9 @@ record. `uninstall` removes only an owned adapter fragment and preserves user
 settings.
 
 Operational procedures, incident response, rollback, and support boundaries
-are documented in [`docs/release-runbook.md`](docs/release-runbook.md). The
-project remains NO-GO for alpha until the release gates in
+are documented in [`docs/release-runbook.md`](docs/release-runbook.md); the
+support intake rules are in [`docs/support-policy.md`](docs/support-policy.md).
+The project remains NO-GO for alpha until the release gates in
 [`todo.md`](todo.md) are evidenced on the advertised native platforms.
 
 ## Phase 0 status

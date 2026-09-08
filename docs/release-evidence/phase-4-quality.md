@@ -17,7 +17,7 @@ named-reviewer promotion gates remain separate
 | P4-06 | `scripts/scenario-eval.sh` grades final branch, index, AutoGit ref, consent, and read-only state outcomes. It records only bounded scenario IDs and pass/fail facts, never source or raw paths. |
 | P4-07 | `internal/compatibility` validates seven explicit support windows. `cmd/autogit-compat` emits machine-readable due/expired reports and a redacted issue body; the scheduled workflow creates at most one open review issue. |
 | P4-08 | `cmd/autogit-evidence` and `scripts/generate-evidence.sh` bind suite results, controls, requirement IDs, test selectors, threat IDs, toolchain, platform, exact Git HEAD, optional exact tag, and SHA-256 artifact identities into JSON. Dirty working trees are rejected unless `--allow-dirty` is explicit; artifact paths are reduced to names and symlinks are rejected. |
-| P5-01 | Apache-2.0 license, security reporting, contribution, conduct, CODEOWNERS, support, and changelog artifacts are present and linked from README. |
+| P5-01 | Apache-2.0 license, security reporting, contribution, conduct, `.github/CODEOWNERS`, support, and changelog artifacts are present and linked from README. |
 | P5-02 | Dependabot, dependency review, CodeQL, Scorecard, pinned-action enforcement, module verification, and the SPDX license policy are present. `scripts/check-dependencies.sh` is the local gate. |
 
 ## Local verification

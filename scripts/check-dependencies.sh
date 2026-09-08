@@ -23,6 +23,12 @@ while IFS= read -r action; do
 done <<<"$action_refs"
 
 test -f LICENSE
+test -f SECURITY.md
+test -f CONTRIBUTING.md
+test -f CODE_OF_CONDUCT.md
+test -f .github/CODEOWNERS
+test -f docs/support-policy.md
+test -f CHANGELOG.md
 test -f docs/dependency-policy.md
 test -f docs/dependency-licenses.json
 echo "dependency and workflow policy checks passed"
