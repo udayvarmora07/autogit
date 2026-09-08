@@ -2,8 +2,9 @@
 
 Date: 2026-09-08
 Scope: P4-01 through P4-08 and P5-01 through P5-02
-Status: local implementation complete; native, tagged-artifact, provider, and
-named-reviewer promotion gates remain separate
+Status: implementation complete; local and hosted native evidence is current;
+tagged-artifact, provider, signing, and named-reviewer promotion gates remain
+separate
 
 ## Delivered controls
 
@@ -45,21 +46,23 @@ git diff --check
 ```
 
 The checked-in JSON is a clean manifest for commit
-`e6ed519c01cdefa2db5e6579290995e21ddd35eb`. Its ten local suite results include
+`ea18690a6a4d200a9e97e369489843c299ddb20d`. Its ten local suite results include
 the 60-second fuzz budget for every target, the 1,000-schedule Linux soak
 matrix, six freshly built cross-target artifact hashes, and Linux/amd64
 artifact smoke. The adapter fuzz harness reuses immutable adapter setup so the
-100,000-input floor is achievable without weakening the quota. Hosted
-performance gates retry transient high-tail samples while preserving the
-configured p95 limits.
+100,000-input floor is achievable without weakening the quota. The performance
+gate uses one-second steady-state benchmark windows and preserves the
+configured p95 limits; Windows hosted jobs collect four independent attempts
+for transient scheduler tails.
 
-The exact-commit manual CI run `34216754925` passed presubmit, all ten fuzz
+The exact-commit manual CI run `34236274123` (successful failed-job rerun,
+attempt 2) passed presubmit, all ten fuzz
 targets, native Linux/macOS/Windows tests and performance gates, the six-entry
 native artifact matrix, 1,000-schedule soak on all three platforms, all three
 cross-builds, reproducible release binaries, and security analysis. Its
 Windows ARM artifact job also passed the hardened Git preflight and artifact
-smoke. Push CI run `34216741860` and the separate security workflow
-`34216741816` also passed for the same commit. `tag_verified` remains false
+smoke. Push CI run `34236263861` and the separate security workflow
+`34236263863` also passed for the same commit. `tag_verified` remains false
 because this is implementation evidence, not a release-tag approval. These CI
 records do not claim a live provider canary, signing, provenance, or named
 release review.
