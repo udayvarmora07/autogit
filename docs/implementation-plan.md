@@ -30,7 +30,7 @@ automation, machine-readable evidence generation, and the Phase 5 governance,
 dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Hosted native
 artifact coverage, full fuzz quotas, and native OS performance pass for exact
-commit `ea18690a6a4d200a9e97e369489843c299ddb20d` in CI run `34236274123`;
+commit `f21420f4ad72ab2d0bf0df44e0349e14ab27e184` in CI run `34253311536`;
 live provider execution, signing, and named review remain release evidence
 rather than claims made by this slice.
 
