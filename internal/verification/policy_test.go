@@ -280,7 +280,11 @@ func TestExecRunnerBindsExecutionToTheVerifiedExecutableObject(t *testing.T) {
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("bound executable failed: result=%+v err=%v", result, err)
 	}
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 97\n"), 0700); err != nil {
+	replacement := filepath.Join(dir, "replacement")
+	if err := os.WriteFile(replacement, []byte("#!/bin/sh\nexit 97\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, path); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := (ExecRunner{}).RunBoundedWithLimitsAndIdentity(context.Background(), dir, nil, 4096, process.ResourceLimits{}, digest, path, "-test.run=^$"); err == nil {
