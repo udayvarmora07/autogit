@@ -103,6 +103,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Windows ARM hardened Git preflight
+        if: matrix.os == 'windows-11-arm'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git --version
+          preflight_root="$RUNNER_TEMP/autogit-git-preflight"
+          mkdir -p "$preflight_root"
+          GIT_CONFIG_NOSYSTEM=1 \
+          GIT_CONFIG_SYSTEM=NUL \
+          GIT_CONFIG_GLOBAL=NUL \
+          GIT_TERMINAL_PROMPT=0 \
+          GIT_OPTIONAL_LOCKS=0 \
+            git -c core.hooksPath=NUL -c core.fsmonitor=false -c core.sshCommand= -c credential.helper= \
+              init --initial-branch=main "$preflight_root"
       - name: native release artifact smoke
         shell: bash
         env:
