@@ -58,6 +58,17 @@ jobs:
           binary="$PWD/autogit"
           go build -trimpath -o "$binary" ./cmd/autogit
           bash scripts/artifact-smoke.sh --binary "$binary"
+      - name: client and repository scenario evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/autogit-scenario-${{ matrix.os }}.json"
+          bash scripts/scenario-eval.sh --binary "$PWD/autogit" --trace "$trace"
+      - name: retain scenario trace
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scenario-trace-${{ matrix.os }}
+          path: ${{ runner.temp }}/autogit-scenario-${{ matrix.os }}.json
       - name: vet
         shell: bash
         run: go vet ./...
@@ -131,6 +142,17 @@ jobs:
           rm -rf dist
           bash scripts/release-build.sh --target "$AUTOGIT_TARGET" --output dist
           bash scripts/artifact-smoke.sh --directory dist
+          binary="dist/autogit-${AUTOGIT_TARGET/\//-}"
+          if [[ "$AUTOGIT_TARGET" == windows/* ]]; then
+            binary+=".exe"
+          fi
+          trace="$RUNNER_TEMP/autogit-scenario-${AUTOGIT_TARGET//\//-}.json"
+          bash scripts/scenario-eval.sh --binary "$binary" --trace "$trace"
+      - name: retain native artifact scenario trace
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-artifact-scenario-trace-${{ matrix.os }}
+          path: ${{ runner.temp }}/autogit-scenario-*.json
 
   presubmit:
     name: presubmit / bounded feedback

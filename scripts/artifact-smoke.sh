@@ -7,7 +7,8 @@ Usage: scripts/artifact-smoke.sh --binary PATH
    or: scripts/artifact-smoke.sh --directory DIR
 
 Run the built AutoGit binary through version, doctor, init, plan, and status
-using a disposable local repository and state directory.
+using a disposable local repository and state directory. The host Git version
+must satisfy the minimum declared in docs/compatibility-manifest.json.
 EOF
 }
 
@@ -64,6 +65,42 @@ fi
 
 [[ -f "$binary" ]] || { echo "artifact binary is missing: $binary" >&2; exit 1; }
 [[ -x "$binary" || "$(go env GOOS)" == "windows" ]] || { echo "artifact is not executable: $binary" >&2; exit 1; }
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+manifest="${AUTOGIT_COMPATIBILITY_MANIFEST:-$script_dir/../docs/compatibility-manifest.json}"
+[[ -f "$manifest" ]] || { echo "compatibility manifest is missing: $manifest" >&2; exit 1; }
+
+# Keep artifact smoke independent of jq. The compatibility manifest is a
+# reviewed, repository-owned JSON document and the Git minimum is a scalar on
+# its git support-window row.
+git_minimum="$(sed -n 's/.*"git"[[:space:]]*:[[:space:]]*{[^}]*"minimum"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' "$manifest" | head -n 1)"
+[[ "$git_minimum" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  echo "compatibility manifest has no valid Git minimum" >&2
+  exit 1
+}
+git_version_line="$(git --version)"
+git_version="$(printf '%s\n' "$git_version_line" | sed -En 's/^git version ([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p')"
+[[ "$git_version" =~ ^[0-9]+\.[0-9]+([.][0-9]+)?$ ]] || {
+  echo "could not parse system Git version" >&2
+  exit 1
+}
+
+version_at_least() {
+  local got=$1 want=$2
+  local got_major got_minor got_patch want_major want_minor want_patch
+  IFS=. read -r got_major got_minor got_patch <<<"$got"
+  IFS=. read -r want_major want_minor want_patch <<<"$want"
+  got_patch="${got_patch:-0}"
+  want_patch="${want_patch:-0}"
+  (( got_major > want_major ||
+     (got_major == want_major && got_minor > want_minor) ||
+     (got_major == want_major && got_minor == want_minor && got_patch >= want_patch) ))
+}
+
+if ! version_at_least "$git_version" "$git_minimum"; then
+  echo "system Git $git_version is below supported minimum $git_minimum" >&2
+  exit 1
+fi
 
 root="$(mktemp -d "${TMPDIR:-/tmp}/autogit-artifact-smoke.XXXXXX")"
 trap 'rm -rf "$root"' EXIT

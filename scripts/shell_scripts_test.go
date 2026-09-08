@@ -59,6 +59,30 @@ func TestArtifactSmokeRejectsMissingBinaryBeforeCreatingState(t *testing.T) {
 	}
 }
 
+func TestArtifactSmokeRejectsGitBelowCompatibilityFloor(t *testing.T) {
+	binDir := t.TempDir()
+	fakeGit := filepath.Join(binDir, "git")
+	gitScript := "#!/usr/bin/env bash\nif [[ \"$1\" == \"--version\" ]]; then echo 'git version 2.38.0'; exit 0; fi\nexec \"$AUTOGIT_REAL_GIT\" \"$@\"\n"
+	if err := os.WriteFile(fakeGit, []byte(gitScript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fakeArtifact := filepath.Join(t.TempDir(), "autogit")
+	if err := os.WriteFile(fakeArtifact, []byte("#!/usr/bin/env bash\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := runShellScript(t, []string{
+		"PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"AUTOGIT_REAL_GIT=" + realGit,
+	}, "artifact-smoke.sh", "--binary", fakeArtifact)
+	if err == nil || !bytes.Contains(output, []byte("below supported minimum")) {
+		t.Fatalf("old Git result=%v output=%s", err, output)
+	}
+}
+
 func TestCanaryPreconditionsFailClosed(t *testing.T) {
 	output, err := runShellScript(t, []string{
 		"AUTOGIT_CANARY_OWNER=owner",
@@ -123,13 +147,18 @@ func TestFuzzSuiteRejectsInsufficientExecutionBudget(t *testing.T) {
 func TestScenarioEvaluationGradesFinalRepositoryState(t *testing.T) {
 	root := filepath.Dir(scriptsRoot(t))
 	binary := filepath.Join(t.TempDir(), "autogit")
+	trace := filepath.Join(t.TempDir(), "scenario-trace.json")
 	build := exec.Command("go", "build", "-trimpath", "-o", binary, "./cmd/autogit")
 	build.Dir = root
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build scenario binary: %v\n%s", err, output)
 	}
-	output, err := runShellScript(t, nil, "scenario-eval.sh", "--binary", binary)
-	if err != nil || !bytes.Contains(output, []byte(`"passed":true`)) {
+	output, err := runShellScript(t, nil, "scenario-eval.sh", "--binary", binary, "--trace", trace)
+	if err != nil || !bytes.Contains(output, []byte(`"scenario_count":20,"passed_count":20,"passed":true`)) {
 		t.Fatalf("scenario evaluation result=%v output=%s", err, output)
+	}
+	traceData, err := os.ReadFile(trace)
+	if err != nil || !bytes.Contains(traceData, []byte(`"schema_version":"autogit.scenario-trace/1"`)) || !bytes.Contains(traceData, []byte(`"passed_count":20`)) {
+		t.Fatalf("scenario trace=%s err=%v", traceData, err)
 	}
 }

@@ -28,11 +28,13 @@ The 2026-09-08 execution slice adds the named Phase 4 verification tiers,
 artifact and final-state scenario evaluators, compatibility-window expiry
 automation, machine-readable evidence generation, and the Phase 5 governance,
 dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
-[the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Hosted native
-artifact coverage, full fuzz quotas, and native OS performance pass for exact
-commit `f21420f4ad72ab2d0bf0df44e0349e14ab27e184` in CI run `34253311536`;
-live provider execution, signing, and named review remain release evidence
-rather than claims made by this slice.
+[the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Artifact smoke now
+checks the live system Git against the advertised minimum, and the scenario
+evaluator covers all six registered clients with bounded native platform
+traces. Hosted native artifact coverage, full fuzz quotas, and native OS
+performance pass for exact commit `f21420f4ad72ab2d0bf0df44e0349e14ab27e184`
+in CI run `34253311536`; live provider execution, signing, and named review
+remain release evidence rather than claims made by this slice.
 
 ## 1. Executive decision
 
