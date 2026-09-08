@@ -1,6 +1,6 @@
 # Phase 4 and Phase 5 local implementation evidence
 
-Date: 2026-09-08
+Date: 2026-09-09
 Scope: P4-01 through P4-08 and P5-01 through P5-02
 Status: implementation complete; local and hosted native evidence is current;
 tagged-artifact, provider, signing, and named-reviewer promotion gates remain
@@ -48,23 +48,23 @@ git diff --check
 ```
 
 The checked-in JSON is a clean manifest for commit
-`f21420f4ad72ab2d0bf0df44e0349e14ab27e184`. Its ten local suite results include
+`6d44b151e42844f2fd4758d5cb93c804b7ffa2c2`. Its ten local suite results include
 the 60-second fuzz budget for every target, the 1,000-schedule Linux soak
-matrix, six freshly built cross-target artifact hashes, and Linux/amd64
-artifact smoke. The adapter fuzz harness reuses immutable adapter setup so the
-100,000-input floor is achievable without weakening the quota. The performance
-gate uses one-second steady-state benchmark windows and preserves the
-configured p95 limits; Windows hosted jobs collect four independent attempts
-for transient scheduler tails.
+matrix, six freshly built cross-target artifact hashes, Linux/amd64 artifact
+smoke, and the 20-case six-client final-state scenario matrix. The adapter fuzz
+harness reuses immutable adapter setup so the 100,000-input floor is achievable
+without weakening the quota. The performance gate uses one-second
+steady-state benchmark windows and preserves the configured p95 limits;
+Windows hosted jobs collect four independent attempts for transient scheduler
+tails.
 
-The exact-commit manual CI run `34253311536` (successful failed-job rerun,
-attempt 2) passed presubmit, all ten fuzz
-targets, native Linux/macOS/Windows tests and performance gates, the six-entry
-native artifact matrix, 1,000-schedule soak on all three platforms, all three
-cross-builds, reproducible release binaries, and security analysis. Its
-Windows ARM artifact job also passed the hardened Git preflight and artifact
-smoke. Push CI run `34253300305` and the separate security workflow
-`34253300338` also passed for the same commit. `tag_verified` remains false
+The exact-commit push CI run `34261069135` passed presubmit, native
+Linux/macOS/Windows tests, the six cross-builds, reproducible release binaries,
+security analysis, and the expanded client/repository scenario evaluation on
+all three native operating systems. The separate security workflow
+`34261068928` also passed for the same commit. The scheduled/manual native
+artifact matrix remains configured for all six OS/arch targets and will retain
+the corresponding traces when dispatched. `tag_verified` remains false
 because this is implementation evidence, not a release-tag approval. These CI
 records do not claim a live provider canary, signing, provenance, or named
 release review.

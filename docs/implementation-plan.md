@@ -1,7 +1,7 @@
 # AutoGit world-class implementation plan
 
 Status: Active; release posture is NO-GO for private alpha
-Last updated: 2026-09-08
+Last updated: 2026-09-09
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
@@ -31,10 +31,12 @@ dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Artifact smoke now
 checks the live system Git against the advertised minimum, and the scenario
 evaluator covers all six registered clients with bounded native platform
-traces. Hosted native artifact coverage, full fuzz quotas, and native OS
-performance pass for exact commit `f21420f4ad72ab2d0bf0df44e0349e14ab27e184`
-in CI run `34253311536`; live provider execution, signing, and named review
-remain release evidence rather than claims made by this slice.
+traces. Hosted native Linux/macOS/Windows artifact smoke, client/repository
+scenarios, and performance pass for exact commit
+`6d44b151e42844f2fd4758d5cb93c804b7ffa2c2` in CI run `34261069135`; full fuzz,
+soak, and six cross-target artifact evidence is retained in the local bundle.
+Live provider execution, signing, and named review remain release evidence
+rather than claims made by this slice.
 
 ## 1. Executive decision
 

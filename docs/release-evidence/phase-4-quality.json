@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "f21420f4ad72ab2d0bf0df44e0349e14ab27e184",
+  "commit": "6d44b151e42844f2fd4758d5cb93c804b7ffa2c2",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-08T17:40:07.251092393Z",
+  "generated_at": "2026-09-08T18:34:33.046689542Z",
   "go_version": "go1.26.7",
   "platform": "linux/amd64",
   "suites": [
@@ -51,32 +51,32 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "2cc53bea1b6db3ca97072d9f8732d633812ac87af95c2f0c977c1f4ba3ba69f6",
+      "sha256": "e4b27704524340d9e02c9d463840edf1e21119aa4f7b40aead8772cdede89f76",
       "size": 15962704
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "efd07f2652e5a1c848924615fb75735a053399e1429a0e552652a5090e4cefae",
+      "sha256": "4ee6530ff0e1feee6317e9377c278380c8062286191fb9c6af416b79f1152c48",
       "size": 15322274
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "3d1443c8186a990b9e58804a0ce57a8cae905e3b8b026b6f1291df5727cc6503",
+      "sha256": "bd0d61ac9a2c4d4fa310bf51453b70db6608df68e1abc99a83c979f1a5e76369",
       "size": 15729483
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "f721fd4545a4dab354a0fd7d87cca13f2f9b66a0596ce5204d0a1bd8b965eb39",
+      "sha256": "0ea31ee62bf888e7c5c0ae20898cf353603bf3dfa15f53eb5c3dc61b1e97262b",
       "size": 15005375
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "ff30c4c4af8fdd59b0ab38eb0e95d7ef4a2eebbd5a291dc08a6b15df4bc23cb4",
+      "sha256": "d7af5583ddb11e94860751ba5db5f49b77eb53ee14d9af040329830ea3448bd6",
       "size": 16144896
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "2b6ddffa4c55df609834f2e7a5e08168fe3ed45dcfcc9e52bf575c09d9e873d1",
+      "sha256": "90f38897e022a7b7274ef1d0a740b636456903552227755f37af097dfa7876f8",
       "size": 15159296
     }
   ],
@@ -141,6 +141,7 @@
         "NFR-COM-001"
       ],
       "tests": [
+        "TestArtifactSmokeRejectsGitBelowCompatibilityFloor",
         "TestReleaseBuildProducesReproducibleTrimmedLinuxAMD64Binary",
         "TestReleaseBuildNamesWindowsTargetAndBuildsItsArchitecture",
         "TestReleaseBuildDefaultsToEverySupportedReleaseTarget"
@@ -218,7 +219,7 @@
         "TestScenarioEvaluationGradesFinalRepositoryState"
       ],
       "commands": [
-        "bash scripts/scenario-eval.sh --binary PATH",
+        "bash scripts/scenario-eval.sh --binary PATH --trace FILE",
         "go test ./scripts -run TestScenarioEvaluation"
       ],
       "threats": [
