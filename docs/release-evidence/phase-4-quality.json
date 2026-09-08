@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "60d7408beef6907c4e0f2ddf66b1a08f32175ceb",
+  "commit": "e6ed519c01cdefa2db5e6579290995e21ddd35eb",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-08T10:12:24.102047071Z",
+  "generated_at": "2026-09-08T11:05:19.082623597Z",
   "go_version": "go1.26.7",
   "platform": "linux/amd64",
   "suites": [
@@ -51,32 +51,32 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "dd978ee749f003a9fa1c6a60f02999044c2b84db6249bf9fee4d5b986cbf9634",
+      "sha256": "a60caf04e7245061980bb3eeda7ec7ddc9380d66c592b706b46984ef7000b66e",
       "size": 15962704
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "8d39f5686fa8566749d9748e2e6e3bf5644c4ee64468953181f4f297a9140f4d",
+      "sha256": "e6622f1ab141d6aafd3d9dc5b071a4f63363a405fa44b04decdc9fb7c29d2b6a",
       "size": 15322274
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "baf833b9433d4e77b05cdea66be6c84aa456e4243bd6ba99bab6d6d90213e969",
+      "sha256": "455c59212360678c9b332843f7022e891883a8c6af72679bbbf7cf859ac9a6e1",
       "size": 15729483
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "95ef22af83235a61cf9bde212b381a0ac6207fd735af4aef4e447d7533ef867a",
+      "sha256": "d4c0e99e482232a3fe999959509065bd44df1821f63443314c2bdf30eac37824",
       "size": 15005375
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "3543db887408217e7db5c582815e13fd9660ef6abf5e1f0b0aa9add4494abf47",
+      "sha256": "a88545d1784580de2e620ff8fc548526d3ac76d919187087fb5a42ff685bd1ea",
       "size": 16144896
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "d4294b037929ae3e854c56e6a408636d5c76b3142473dba3b5419747c419f02b",
+      "sha256": "705a865a3d6d7d2c8d2f9bf10d1d230ae29830dd4cb2c6e88856c75312c02380",
       "size": 15159296
     }
   ],
