@@ -76,6 +76,43 @@ jobs:
           name: performance-results-${{ matrix.os }}
           path: performance-results.tsv
 
+  native-artifact:
+    name: native artifact / ${{ matrix.target }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux/amd64
+          - os: ubuntu-24.04-arm
+            target: linux/arm64
+          - os: macos-15-intel
+            target: darwin/amd64
+          - os: macos-15
+            target: darwin/arm64
+          - os: windows-latest
+            target: windows/amd64
+          - os: windows-11-arm
+            target: windows/arm64
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: native release artifact smoke
+        shell: bash
+        env:
+          AUTOGIT_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          bash scripts/release-build.sh --target "$AUTOGIT_TARGET" --output dist
+          bash scripts/artifact-smoke.sh --directory dist
+
   presubmit:
     name: presubmit / bounded feedback
     runs-on: ubuntu-latest
