@@ -13,7 +13,9 @@ sample_p95() {
   local label=$4
   local samples count p50_index p95_index p99_index p50 p95 p99
 
-  samples="$(go test "$package" -run '^$' -bench "^${benchmark}$" -benchtime=1x -count=20 2>&1 | awk '$4 == "ns/op" { print $3 }' | sort -n)"
+  # Amortize scheduler and process-start noise so the sample measures the
+  # steady-state operation described by the budget, not one cold invocation.
+  samples="$(go test "$package" -run '^$' -bench "^${benchmark}$" -benchtime=100ms -count=20 2>&1 | awk '$4 == "ns/op" { print $3 }' | sort -n)"
   count="$(printf '%s\n' "$samples" | awk 'NF { n++ } END { print n + 0 }')"
   if [[ "$count" -ne 20 ]]; then
     echo "$label produced $count samples, want 20" >&2
