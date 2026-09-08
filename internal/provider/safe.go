@@ -292,8 +292,7 @@ func controlledCommandEnvFromExtra(environ, extra []string) []string {
 	// credential prompts, or inherit environment-controlled object locations.
 	out = append(out,
 		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_GLOBAL=",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_OPTIONAL_LOCKS=0",
 		// gh reads normal config for its authenticated session, but must not
@@ -438,7 +437,7 @@ func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
 }
 
 func safeGitArgs(args ...string) []string {
-	return append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper="}, args...)
+	return append([]string{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper="}, args...)
 }
 
 const maxOutput = 1 << 20

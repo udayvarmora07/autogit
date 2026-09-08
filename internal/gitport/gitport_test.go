@@ -55,7 +55,7 @@ func TestRunnerUsesHardenedGitConfigurationAndArgumentBoundary(t *testing.T) {
 	if strings.Contains(got.Output, "secret-config") || strings.Contains(got.Output, "secret-ssh") {
 		t.Fatalf("ambient configuration leaked: %q", got.Output)
 	}
-	for _, want := range []string{"global=", "config=1", "prompt=0", "core.hooksPath=/dev/null", "core.sshCommand=", "init --initial-branch=main"} {
+	for _, want := range []string{"global=", "config=1", "prompt=0", "core.hooksPath=", "core.sshCommand=", "init --initial-branch=main"} {
 		if !strings.Contains(got.Output, want) {
 			t.Fatalf("output=%q missing %q", got.Output, want)
 		}

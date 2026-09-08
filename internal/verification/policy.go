@@ -512,8 +512,7 @@ func controlledEnvironment(spec TrustedVerifierSpec, executable string) map[stri
 		"LANG":                "C",
 		"LC_ALL":              "C",
 		"GIT_CONFIG_NOSYSTEM": "1",
-		"GIT_CONFIG_GLOBAL":   os.DevNull,
-		"GIT_CONFIG_SYSTEM":   os.DevNull,
+		"GIT_CONFIG_GLOBAL":   "",
 		"GIT_TERMINAL_PROMPT": "0",
 	}
 	for k, v := range spec.Environment {

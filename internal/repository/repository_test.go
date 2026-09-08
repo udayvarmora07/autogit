@@ -94,7 +94,7 @@ func TestDiscoverUsesHardenedGitRunnerForLinkedWorktreeValidation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"core.hooksPath=/dev/null", "core.sshCommand=", "credential.helper=", "rev-parse --path-format=absolute --show-toplevel --git-dir"} {
+	for _, want := range []string{"core.hooksPath=", "core.sshCommand=", "credential.helper=", "rev-parse --path-format=absolute --show-toplevel --git-dir"} {
 		if !strings.Contains(string(args), want) {
 			t.Fatalf("hardened Git args=%q missing %q", args, want)
 		}

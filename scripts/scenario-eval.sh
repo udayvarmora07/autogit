@@ -39,7 +39,7 @@ repo="$root/repository"
 mkdir -p "$state" "$repo"
 export AUTOGIT_STATE_DIR="$state"
 export GIT_CONFIG_NOSYSTEM=1
-export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_GLOBAL=''
 export GIT_TERMINAL_PROMPT=0
 
 scenario_count=0

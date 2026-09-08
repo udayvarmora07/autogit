@@ -807,7 +807,7 @@ func isLFSPointer(b []byte) bool {
 	return strings.HasPrefix(s, "version https://git-lfs.github.com/spec/v1\n") && strings.Contains(s, "\noid sha256:") && strings.Contains(s, "\nsize ")
 }
 func controlledGitEnv() map[string]string {
-	return map[string]string{"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.DevNull, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_PROTOCOL_FROM_USER": "0", "GIT_ALLOW_PROTOCOL": "none", "GIT_ATTR_NOSYSTEM": "1"}
+	return map[string]string{"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_PROTOCOL_FROM_USER": "0", "GIT_ALLOW_PROTOCOL": "none", "GIT_ATTR_NOSYSTEM": "1"}
 }
 
 func cloneEnv(env map[string]string) map[string]string {

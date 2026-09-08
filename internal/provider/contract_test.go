@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -67,8 +66,8 @@ func TestGitPusherBindsCanonicalIdentityBeforeExactPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := [][]string{
-		{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "remote", "get-url", "--push", "--", "origin"},
-		{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "push", "--", "origin", sha + ":refs/heads/feature/x"},
+		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "remote", "get-url", "--push", "--", "origin"},
+		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "push", "--", "origin", sha + ":refs/heads/feature/x"},
 	}
 	if len(r.calls) != len(want) {
 		t.Fatalf("calls=%#v want %#v", r.calls, want)
