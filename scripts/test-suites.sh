@@ -38,9 +38,23 @@ case "$suite" in
     go test -tags soak ./...
     ;;
   fuzz)
-    fuzz_time="${AUTOGIT_FUZZ_TIME:-30s}"
+    fuzz_time="${AUTOGIT_FUZZ_TIME:-60s}"
+    min_execs="${AUTOGIT_FUZZ_MIN_EXECS:-100000}"
+    if [[ ! "$min_execs" =~ ^[0-9]+$ ]]; then
+      echo "AUTOGIT_FUZZ_MIN_EXECS must be an unsigned integer" >&2
+      exit 2
+    fi
     while IFS=' ' read -r package target; do
-      go test "$package" -run '^$' -fuzz "^${target}$" -fuzztime "$fuzz_time"
+      output="$(go test "$package" -run '^$' -fuzz "^${target}$" -fuzztime "$fuzz_time" 2>&1)" || {
+        printf '%s\n' "$output"
+        exit 1
+      }
+      printf '%s\n' "$output"
+      execs="$(printf '%s\n' "$output" | awk '$1 == "fuzz:" && $4 == "execs:" { gsub(",", "", $5); if ($5 + 0 > max) max = $5 + 0 } END { print max + 0 }')"
+      if (( execs < min_execs )); then
+        echo "${target} executed ${execs} fuzz inputs; want at least ${min_execs}" >&2
+        exit 1
+      fi
     done <<'EOF'
 ./internal/events FuzzDecodeNeverPanics
 ./internal/adapters FuzzP303MalformedClientFieldsNeverPanic

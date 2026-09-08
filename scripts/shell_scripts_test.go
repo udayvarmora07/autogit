@@ -86,6 +86,22 @@ func TestPerformanceGateRejectsBadSampleCount(t *testing.T) {
 	}
 }
 
+func TestFuzzSuiteRejectsInsufficientExecutionBudget(t *testing.T) {
+	fakeBin := t.TempDir()
+	fakeGo := filepath.Join(fakeBin, "go")
+	content := "#!/usr/bin/env bash\nprintf '%s\\n' 'fuzz: elapsed: 1s, execs: 1 (1/sec)'\n"
+	if err := os.WriteFile(fakeGo, []byte(content), 0700); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runShellScript(t, []string{
+		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"AUTOGIT_FUZZ_MIN_EXECS=100",
+	}, "test-suites.sh", "fuzz")
+	if err == nil || !bytes.Contains(output, []byte("executed 1 fuzz inputs; want at least 100")) {
+		t.Fatalf("fuzz budget result=%v output=%s", err, output)
+	}
+}
+
 func TestScenarioEvaluationGradesFinalRepositoryState(t *testing.T) {
 	root := filepath.Dir(scriptsRoot(t))
 	binary := filepath.Join(t.TempDir(), "autogit")
