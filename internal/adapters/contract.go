@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -845,11 +846,18 @@ func isLowerHex(s string) bool {
 	return true
 }
 func safeRelativePath(path string) bool {
-	if path == "" || strings.ContainsAny(path, "\\\x00\r\n") || filepath.IsAbs(path) {
+	if path == "" || strings.ContainsAny(path, "\\\x00\r\n") || portableAbsolutePath(path) {
 		return false
 	}
-	clean := filepath.Clean(path)
-	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator)) && clean == path
+	clean := pathpkg.Clean(path)
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && clean == path
+}
+
+func portableAbsolutePath(path string) bool {
+	if pathpkg.IsAbs(path) || filepath.IsAbs(filepath.FromSlash(path)) {
+		return true
+	}
+	return len(path) >= 3 && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':' && (path[2] == '/' || path[2] == '\\')
 }
 func stableID(s string) string {
 	h := sha256.Sum256([]byte(s))

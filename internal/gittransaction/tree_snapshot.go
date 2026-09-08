@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -178,7 +179,7 @@ func parseTreeSnapshotRecord(raw string) (string, int64, string, error) {
 }
 
 func safeTreePath(name string) error {
-	if name == "" || strings.ContainsAny(name, "\\\x00\r\n") || filepath.IsAbs(filepath.FromSlash(name)) {
+	if name == "" || strings.ContainsAny(name, "\\\x00\r\n") || portableAbsolutePath(name) {
 		return errors.New("commit tree contains unsafe path")
 	}
 	for _, r := range name {
@@ -192,4 +193,11 @@ func safeTreePath(name string) error {
 		}
 	}
 	return nil
+}
+
+func portableAbsolutePath(name string) bool {
+	if pathpkg.IsAbs(name) || filepath.IsAbs(filepath.FromSlash(name)) {
+		return true
+	}
+	return len(name) >= 3 && ((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= 'a' && name[0] <= 'z')) && name[1] == ':' && (name[2] == '/' || name[2] == '\\')
 }

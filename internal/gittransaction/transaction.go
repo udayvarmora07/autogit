@@ -695,20 +695,20 @@ func validateSnapshot(root string, requested []SnapshotEntry) ([]SnapshotEntry, 
 		if safeTreePath(p) != nil || filepath.IsAbs(p) {
 			return nil, nil, errors.New("unsafe owned path")
 		}
-		clean := filepath.Clean(filepath.FromSlash(p))
-		if clean == "." || clean != filepath.FromSlash(p) {
+		native := filepath.Clean(filepath.FromSlash(p))
+		if native == "." || native != filepath.FromSlash(p) {
 			return nil, nil, errors.New("unsafe owned path")
 		}
-		for _, part := range strings.Split(clean, string(filepath.Separator)) {
+		for _, part := range strings.Split(native, string(filepath.Separator)) {
 			if part == ".." {
 				return nil, nil, errors.New("unsafe owned path")
 			}
 		}
-		abs := filepath.Join(root, clean)
+		abs := filepath.Join(root, native)
 		if !within(root, abs) {
 			return nil, nil, errors.New("owned path escapes repository")
 		}
-		if err := rejectSymlinkComponents(root, clean); err != nil {
+		if err := rejectSymlinkComponents(root, native); err != nil {
 			return nil, nil, err
 		}
 		if !input.Delete {
@@ -720,12 +720,13 @@ func validateSnapshot(root string, requested []SnapshotEntry) ([]SnapshotEntry, 
 				input.Mode = 0644
 			}
 		}
-		if seen[clean] {
+		canonical := filepath.ToSlash(native)
+		if seen[canonical] {
 			return nil, nil, errors.New("duplicate owned path")
 		}
-		seen[clean] = true
-		paths = append(paths, clean)
-		input.Path = clean
+		seen[canonical] = true
+		paths = append(paths, canonical)
+		input.Path = canonical
 		entries = append(entries, input)
 	}
 	if len(paths) == 0 {
