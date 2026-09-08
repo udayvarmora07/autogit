@@ -44,11 +44,18 @@ python3 -m json.tool docs/release-evidence/phase-4-quality.json
 git diff --check
 ```
 
-The checked-in JSON is a fresh local full-suite record for commit
-`b9f4d55c7b2ed9385e46751512c7c98db2fa5e40`; it deliberately says
-`working_tree: dirty` and `tag_verified: false` because this implementation
-slice has not been committed or tagged. It contains six cross-target artifact
-hashes, but only the Linux/amd64 artifact was executed in this environment.
+The checked-in JSON is a clean manifest for commit
+`771113ca04917373afafece210af142aa09943de`. Its ten suite results are backed
+by the exact-commit manual CI run `34191706245`, which passed native Linux,
+macOS, and Windows tests, 1,000-schedule soak on all three platforms, and all
+ten fuzz targets. It also records six freshly built cross-target artifact
+hashes and their Linux/amd64 artifact-smoke result. `tag_verified` remains
+false because this is implementation evidence, not a release-tag approval.
+
+The push CI run `34191120318` independently passed the fast presubmit, native
+artifact, cross-build, reproducible-release, and security jobs for the same
+commit. These CI records do not claim a live provider canary, signing,
+provenance, or named release review.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:
