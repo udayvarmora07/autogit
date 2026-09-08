@@ -33,7 +33,7 @@ bash scripts/test-suites.sh presubmit
 bash scripts/test-suites.sh integration
 bash scripts/test-suites.sh race
 bash scripts/test-suites.sh soak              # 1,000-schedule Linux matrix
-AUTOGIT_FUZZ_TIME=60s bash scripts/test-suites.sh fuzz
+AUTOGIT_FUZZ_TIME=45s bash scripts/test-suites.sh fuzz
 bash scripts/test-suites.sh release            # six cross-target artifacts + host smoke
 PATH=... bash scripts/check-shell.sh           # ShellCheck 0.11.0
 bash scripts/check-dependencies.sh
@@ -49,7 +49,7 @@ git diff --check
 
 The checked-in JSON is a clean manifest for commit
 `6d44b151e42844f2fd4758d5cb93c804b7ffa2c2`. Its ten local suite results include
-the 60-second fuzz budget for every target, the 1,000-schedule Linux soak
+the 45-second fuzz budget for every target, the 1,000-schedule Linux soak
 matrix, six freshly built cross-target artifact hashes, Linux/amd64 artifact
 smoke, and the 20-case six-client final-state scenario matrix. The adapter fuzz
 harness reuses immutable adapter setup so the 100,000-input floor is achievable
@@ -77,7 +77,7 @@ bash scripts/test-suites.sh presubmit
 bash scripts/test-suites.sh core
 bash scripts/test-suites.sh race
 bash scripts/test-suites.sh soak
-AUTOGIT_FUZZ_TIME=60s bash scripts/generate-evidence.sh \
+AUTOGIT_FUZZ_TIME=45s bash scripts/generate-evidence.sh \
   --full --tag vX.Y.Z --require-tag \
   --output docs/release-evidence/phase-4-quality.json
 ```

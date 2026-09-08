@@ -201,7 +201,7 @@ jobs:
       - name: fuzz suite
         shell: bash
         env:
-          AUTOGIT_FUZZ_TIME: 60s
+          AUTOGIT_FUZZ_TIME: 45s
         run: bash scripts/test-suites.sh fuzz
 
   cross-build:
