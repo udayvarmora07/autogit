@@ -606,6 +606,9 @@ func TestPolicyLockRejectsAReplacementSymlink(t *testing.T) {
 }
 
 func TestFailedInitializationLeavesTrackingDisabled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("failure-injection shell fixture is Unix-specific")
+	}
 	stateRoot := t.TempDir()
 	if err := os.Chmod(stateRoot, 0700); err != nil {
 		t.Fatal(err)

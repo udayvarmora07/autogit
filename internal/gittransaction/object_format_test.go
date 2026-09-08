@@ -105,7 +105,8 @@ func TestSHA256TransactionPreservesSpecialPathsModesAndBytes(t *testing.T) {
 		{Path: "目录/é.txt", Content: []byte("exact\r\nbytes\n"), Mode: 0644},
 		{Path: "run.sh", Content: []byte("#!/bin/sh\nexit 7\n"), Mode: 0755},
 	}
-	prepared, err := New(SystemRunner{}, &memoryIntentStore{}).Prepare(context.Background(), Request{
+	runner := testLoggingRunner{t: t}
+	prepared, err := New(runner, &memoryIntentStore{}).Prepare(context.Background(), Request{
 		ID: "sha256-special", RepoDir: repo, Snapshot: entries, Message: "feat: candidate",
 		PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
 	})
@@ -115,10 +116,10 @@ func TestSHA256TransactionPreservesSpecialPathsModesAndBytes(t *testing.T) {
 	if len(prepared.TreeOID()) != 64 || len(prepared.ParentSHA()) != 64 {
 		t.Fatalf("prepared=%+v, want SHA-256 tree and parent", prepared)
 	}
-	if err := CompareTreeToSnapshot(context.Background(), SystemRunner{}, repo, prepared.TreeOID(), entries, 1<<20); err != nil {
+	if err := CompareTreeToSnapshot(context.Background(), runner, repo, prepared.TreeOID(), entries, 1<<20); err != nil {
 		t.Fatalf("candidate tree differed from immutable snapshot: %v", err)
 	}
-	created, err := New(SystemRunner{}, &memoryIntentStore{}).Create(context.Background(), Request{
+	created, err := New(runner, &memoryIntentStore{}).Create(context.Background(), Request{
 		ID: "sha256-commit", RepoDir: repo, Snapshot: entries, Message: "feat: candidate",
 		PolicyDigest: emptyDigest(), VerifierDigest: emptyDigest(), GuardDigest: emptyDigest(),
 	})
@@ -128,6 +129,18 @@ func TestSHA256TransactionPreservesSpecialPathsModesAndBytes(t *testing.T) {
 	if len(created.SHA) != 64 || len(created.TreeOID) != 64 {
 		t.Fatalf("created=%+v, want SHA-256 commit and tree", created)
 	}
+}
+
+type testLoggingRunner struct {
+	t *testing.T
+}
+
+func (r testLoggingRunner) Run(ctx context.Context, dir string, env map[string]string, args ...string) (Result, error) {
+	result, err := (SystemRunner{}).Run(ctx, dir, env, args...)
+	if err != nil {
+		r.t.Logf("git %v output=%q err=%v", args, result.Output, err)
+	}
+	return result, err
 }
 
 func TestSnapshotAndTransactionRejectControlPathsButAcceptOptionLikePaths(t *testing.T) {

@@ -48,7 +48,12 @@ func TestCursorFileEditPayloadUsesOfficialWorkspaceAndPathFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := a.Translate([]byte(`{"hook_event_name":"afterFileEdit","conversation_id":"conversation-1","workspace_roots":["`+root+`"],"file_path":"src/main.go","cursor_version":"3.14.7"}`), TranslateOptions{ApprovedRoots: []string{root}, ResolvedScope: map[string]string{"repo_id": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}})
+	encodedRoot, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"hook_event_name":"afterFileEdit","conversation_id":"conversation-1","workspace_roots":[` + string(encodedRoot) + `],"file_path":"src/main.go","cursor_version":"3.14.7"}`)
+	e, err := a.Translate(payload, TranslateOptions{ApprovedRoots: []string{root}, ResolvedScope: map[string]string{"repo_id": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +79,11 @@ func TestRegistryPayloadFixturesTranslateWithinApprovedRoot(t *testing.T) {
 					t.Fatalf("fixture config has no grouped hooks: %s", fixture.Config)
 				}
 			}
-			raw := bytes.ReplaceAll(fixture.Payload, []byte("/workspace/project"), []byte(root))
+			encodedRoot, err := json.Marshal(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw := bytes.ReplaceAll(fixture.Payload, []byte(`"/workspace/project"`), encodedRoot)
 			a, err := New(entry.Adapter)
 			if err != nil {
 				t.Fatal(err)
@@ -166,7 +175,7 @@ func TestProbeRejectsContextCancellation(t *testing.T) {
 func TestProbeResolvesLauncherSymlinkBeforeVersionCheck(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "client")
-	if err := os.WriteFile(target, []byte("#!/bin/sh\nprintf '3.14.7\\n'\n"), 0700); err != nil {
+	if err := os.WriteFile(target, []byte("portable probe fixture\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	launcher := filepath.Join(dir, "cursor")
@@ -177,7 +186,12 @@ func TestProbeResolvesLauncherSymlinkBeforeVersionCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := Probe(context.Background(), "cursor", ProbeOptions{Executable: launcher})
+	report, err := Probe(context.Background(), "cursor", ProbeOptions{
+		Executable: launcher,
+		Run: func(_ context.Context, _ string, _ []string) (ProbeExecution, error) {
+			return ProbeExecution{Stdout: "3.14.7\n", ExitCode: 0}, nil
+		},
+	})
 	if err != nil || report.Status != ProbeSupported || report.Executable != expectedTarget {
 		t.Fatalf("report=%+v err=%v", report, err)
 	}

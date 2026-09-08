@@ -83,8 +83,10 @@ func TestBackupRestoreRoundTripPreservesDurableState(t *testing.T) {
 	if !strings.Contains(metadata, "sha256:") {
 		t.Fatalf("restored metadata=%q", metadata)
 	}
-	if info, err := os.Stat(backup); err != nil || info.Mode().Perm() != 0600 {
-		t.Fatalf("backup permissions/stat: info=%v err=%v", info, err)
+	if info, err := os.Stat(backup); err != nil {
+		t.Fatalf("backup stat: info=%v err=%v", info, err)
+	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		t.Fatalf("backup permissions: mode=%o, want 600", info.Mode().Perm())
 	}
 }
 
