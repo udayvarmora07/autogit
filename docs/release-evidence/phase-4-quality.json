@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "515284c71b9e3a4d159ab537d2d7460e849e047c",
+  "commit": "e832274131212e11fbb3afbb1e3e59447a64f0ea",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-08T08:15:01.141589157Z",
+  "generated_at": "2026-09-08T08:44:05.835313906Z",
   "go_version": "go1.26.7",
   "platform": "linux/amd64",
   "suites": [
@@ -51,32 +51,32 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "f50a6cfbe0946b2f9925df13f89fcbf0f2ad4161d816478e6d8a8164aa394ded",
+      "sha256": "0c455810b10e893e43a0c3125eeb92bb33b83d89170ddff81b35076ff11eb396",
       "size": 15962704
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "45e2877a01de839e99b66b6c961bdc67f3c9b8416b1fd2734c9b35e1eb317f15",
+      "sha256": "22218e4596bc566ea9089c2a616986544778a8993ed69efbdefba5122f40fbdb",
       "size": 15322274
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "ce7602fe11059e82ae86785287fce09a06ba8e02cc00da559ac401a3c9fc3a27",
+      "sha256": "eca3bdef80cd498dc6a576dea4c21156802be661c051c6f76df8c5bab84f5324",
       "size": 15729475
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "b152084cd786fcf2c91586312d4298c70b35da1075929cdfcc65bedd8a039f37",
+      "sha256": "c0fd47f64a0cad223a7e652e910271b51102999159d3c27c321e3baf0e45e4d3",
       "size": 15005423
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "5e330b528676b375d1c773f0c3119e0b2fe2cbe120ed8c329bc326a949b14f67",
+      "sha256": "d69f7edf63cfd94e41458f00ed66efc3f30cf4bb2538ccca6f3caaa04dc5147e",
       "size": 16145408
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "33198c1e8dcb930d47f114c749e36700a522050ad8f9c3c4601ea32a64182712",
+      "sha256": "a7e0b5c68545d789267e61abe81bab89647f1f1e97aca17e063907634bc6c43b",
       "size": 15159808
     }
   ],
@@ -278,7 +278,8 @@
         "test -f SECURITY.md",
         "test -f CONTRIBUTING.md",
         "test -f CODE_OF_CONDUCT.md",
-        "test -f CODEOWNERS",
+        "test -f .github/CODEOWNERS",
+        "test -f docs/support-policy.md",
         "test -f CHANGELOG.md"
       ],
       "threats": [

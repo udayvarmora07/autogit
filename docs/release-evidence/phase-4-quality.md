@@ -45,17 +45,17 @@ git diff --check
 ```
 
 The checked-in JSON is a clean manifest for commit
-`515284c71b9e3a4d159ab537d2d7460e849e047c`. Its ten local suite results include
+`e832274131212e11fbb3afbb1e3e59447a64f0ea`. Its ten local suite results include
 the 60-second fuzz budget for every target, the 1,000-schedule Linux soak
 matrix, six freshly built cross-target artifact hashes, and Linux/amd64
 artifact smoke. The adapter fuzz harness reuses immutable adapter setup so the
 100,000-input floor is achievable without weakening the quota.
 
-The exact-commit manual CI run `34203518617` passed presubmit, all ten fuzz
+The exact-commit manual CI run `34206249481` passed presubmit, all ten fuzz
 targets, native Linux/macOS/Windows tests and performance gates, 1,000-schedule
 soak on all three platforms, all three cross-builds, reproducible release
-binaries, and security analysis. Push CI run `34202442716` also passed for the
-same commit; the separate security workflow `34202442760` passed its CodeQL,
+binaries, and security analysis. Push CI run `34205056739` also passed for the
+same commit; the separate security workflow `34205056815` passed its CodeQL,
 dependency, and Scorecard checks. `tag_verified` remains false because this is
 implementation evidence, not a release-tag approval. These CI records do not
 claim a live provider canary, signing, provenance, or named release review.
