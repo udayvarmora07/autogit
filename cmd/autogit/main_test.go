@@ -1192,28 +1192,12 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	ghState := filepath.Join(fakeBin, "gh-state")
-	if runtime.GOOS == "windows" {
-		installWindowsPublishFixtures(t, fakeBin, gitPath, ghState, sha)
-	} else {
-		// Keep the fake provider state transition tied to the fake push. The
-		// first ref read is an explicit 404; the post-push read returns the
-		// exact commit, independent of shell stderr handling or timing.
-		ghScript := "#!/bin/sh\nif [ -f '" + ghState + "' ]; then printf '%s\\n' '" + sha + "'; else printf '%s\\n' '404 Not Found'; exit 1; fi\n"
-		gitScript := "#!/bin/sh\ncase \"$*\" in *'remote get-url --push -- origin'*) printf '%s\\n' 'https://github.com/owner/repo';; *' push -- origin '*) : > '" + ghState + "'; exit 0;; *) exec '" + gitPath + "' \"$@\";; esac\n"
-		if err := os.WriteFile(filepath.Join(fakeBin, "gh"), []byte(ghScript), 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(fakeBin, "git"), []byte(gitScript), 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
+	installPublishFixtures(t, fakeBin, gitPath, ghState, sha)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var out bytes.Buffer
 	if err := run([]string{"publish", "--id", "commit-publish", "--repo", root, "--remote", "origin", "--owner", "owner", "--name", "repo", "--ref", "main", "--visibility", "private"}, strings.NewReader(""), &out); err != nil {
-		if runtime.GOOS == "windows" {
-			if log, readErr := os.ReadFile(filepath.Join(fakeBin, "git-log")); readErr == nil {
-				t.Fatalf("publish: %v output=%s git-log=%s", err, out.String(), log)
-			}
+		if log, readErr := os.ReadFile(filepath.Join(fakeBin, "git-log")); readErr == nil {
+			t.Fatalf("publish: %v output=%s git-log=%s", err, out.String(), log)
 		}
 		t.Fatalf("publish: %v output=%s", err, out.String())
 	}
@@ -1241,7 +1225,7 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 	}
 }
 
-func installWindowsPublishFixtures(t *testing.T, dir, realGit, ghState, sha string) {
+func installPublishFixtures(t *testing.T, dir, realGit, ghState, sha string) {
 	t.Helper()
 	source := filepath.Join(dir, "publish-fixture.go")
 	program := `package main
@@ -1271,21 +1255,28 @@ func main() {
 		}
 	}
 	if name == "gh" {
+		if !hasFixtureArgs(os.Args[1:], "api", "repos/owner/repo/git/ref/heads/main", "--jq", ".object.sha") {
+			fmt.Fprintln(os.Stderr, "unexpected gh fixture arguments")
+			os.Exit(2)
+		}
 		state := testGHState
 		if _, err := os.Stat(state); err == nil {
 			fmt.Fprintln(os.Stdout, testGHSHA)
 			return
 		}
-		_ = os.WriteFile(state, []byte{}, 0600)
 		fmt.Fprintln(os.Stderr, "Not Found")
 		os.Exit(1)
 	}
-	args := strings.Join(os.Args[1:], " ")
-	if strings.Contains(args, "remote get-url --push -- origin") {
+	args := os.Args[1:]
+	if hasFixtureArgs(args, "remote", "get-url", "--push", "--", "origin") {
 		fmt.Fprintln(os.Stdout, "https://github.com/owner/repo")
 		return
 	}
-	if strings.Contains(args, "push -- origin") {
+	if hasFixtureArgs(args, "push", "--", "origin", testGHSHA+":refs/heads/main") {
+		if err := os.WriteFile(testGHState, []byte{}, 0600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		return
 	}
 	command := exec.Command(testRealGit, os.Args[1:]...)
@@ -1298,21 +1289,45 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}`
+	}
+
+func hasFixtureArgs(args []string, expected ...string) bool {
+	for start := 0; start+len(expected) <= len(args); start++ {
+		matched := true
+		for offset := range expected {
+			if args[start+offset] != expected[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+`
 	if err := os.WriteFile(source, []byte(program), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fixture := filepath.Join(dir, "publish-fixture.exe")
+	fixture := filepath.Join(dir, "publish-fixture")
+	if runtime.GOOS == "windows" {
+		fixture += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", fixture, source)
 	build.Env = append(os.Environ(), "GO111MODULE=off")
 	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build Windows publish fixture: %v: %s", err, output)
+		t.Fatalf("build publish fixture: %v: %s", err, output)
 	}
 	binary, err := os.ReadFile(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"gh.exe", "git.exe"} {
+	extension := ""
+	if runtime.GOOS == "windows" {
+		extension = ".exe"
+	}
+	for _, name := range []string{"gh" + extension, "git" + extension} {
 		if err := os.WriteFile(filepath.Join(dir, name), binary, 0700); err != nil {
 			t.Fatal(err)
 		}
