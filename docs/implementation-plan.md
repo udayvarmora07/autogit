@@ -87,31 +87,34 @@ This plan replaces the previous chronological implementation log. Completed
 history remains available in Git; this document describes the current system,
 target architecture, remaining work, dependencies, and release gates.
 
-The 2026-09-06 review covered:
+The 2026-09-06 review is the historical baseline review. It covered:
 
 - The complete repository structure, approximately 34,682 lines, all Go
   packages, CLI entry points, scripts, workflows, product/security/architecture
   documents, dependency graph, and release artifacts.
-- Fresh local validation: go test -count=1 ./... passed, go vet ./... passed,
-  go build ./... passed, go mod verify passed, actionlint passed, shell syntax
-  checks passed, and the performance gate passed.
+- Fresh local validation for that baseline: go test -count=1 ./... passed, go
+  vet ./... passed, go build ./... passed, go mod verify passed, actionlint
+  passed, shell syntax checks passed, and the performance gate passed.
 - The full test suite took roughly four minutes locally because 1,000-schedule
   subprocess matrices run in the default test path.
 - govulncheck found no reachable vulnerability in application code. It noted
-  two module-level vulnerabilities that are not reached by current code.
+  two module-level vulnerabilities that were not reached by the baseline code.
 - staticcheck found unused code, overwritten/ignored error values, an ignored
-  Errorf result in the Git transaction path, and style/API findings.
+  Errorf result in the Git transaction path, and style/API findings; these were
+  addressed in the subsequent PR-008 implementation and verification bundle.
 - gosec 2.29 found three high-confidence, high-severity G703 path-taint
-  findings while the CI configuration excludes seven broad rule classes.
+  findings; the current configuration uses narrow, documented suppressions
+  and the current security workflow passes.
 - 25 research waves and 92 focused searches across current primary sources.
   About 50 unique official sources were inspected and 37 decision-relevant
   sources retained. Research stopped when new waves repeated established
   conclusions. The source set is intentionally deduplicated rather than padded
   to an arbitrary citation count.
 
-Research is current as of 2026-09-06. Hosted behavior, commercial feature
-availability, and fast-moving client hook contracts must still be verified
-with pinned fixtures and live disposable tests.
+The current evidence refresh is recorded in the Phase 4/5 bundle. Hosted
+behavior, commercial feature availability, and fast-moving client hook
+contracts must still be verified with pinned fixtures and live disposable
+tests for each release candidate.
 
 Key repository evidence is directly traceable:
 
@@ -155,16 +158,16 @@ Git/provider side effects:
 | Area | Existing strength | Material gap | Release posture |
 | --- | --- | --- | --- |
 | Product contract | Detailed requirements, lifecycle, threat model, ADRs, and traceability test | Documents remain proposed and acceptance has no owner/date | Block alpha |
-| Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, HEAD/index rechecks | Init and linked-worktree paths use weaker runners; hostile attributes/filters and SHA-256 need broader differential tests | Block alpha |
-| Ownership | Source-free baseline evidence, race checks, rename/delete handling, fail-closed ambiguity | Duplicate start replay performs capture before dedupe | Block alpha |
-| Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules, supported backup/restore/integrity/retention APIs | Native backup/restore/retention runtime matrix and remaining Phase 1 recovery drills | Block alpha |
+| Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, hardened init/worktree discovery, and HEAD/index rechecks | Native hostile-repository and differential matrices still need Phase 1 exit evidence and named acceptance | Block alpha |
+| Ownership | Source-free baseline evidence, replay deduplication, race checks, rename/delete handling, and fail-closed ambiguity | Native recovery/ownership matrix and release-owner acceptance remain open | Block alpha |
+| Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules, and supported backup/restore/integrity/retention APIs | Native backup/restore/retention runtime matrix and remaining Phase 1 recovery drills | Block alpha |
 | Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings | Filesystem/network sandbox tiers and native platform resource/isolation validation remain unavailable | Block public use |
 | Security scanning | Candidate and bounded history checks; pinned offline interface, exact-blob scope, coverage/limit evidence, redacted fingerprints | Detection engine breadth and provider-side push protection remain separately scoped; native security-tool matrix remains | Block public use |
 | Adapters | Versioned six-entry registry, sanitized versioned fixtures, canonical translation, bounded probes, and four schema-specific installers | Native all-OS/client-version installation matrix and upstream drift automation remain; OpenCode/CommandCode are intentionally observation-only | Block compatibility claim |
-| GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and private live canary | App permission review, native artifact execution, and named provider review remain | Block alpha |
-| CLI and operations | Read-only status/plan/doctor/log commands | Monolithic 2,143-line command file, sparse help, no version command, duplicated error code, stdout/stderr ambiguity, no root deadlines | Block supportability |
-| Tests and CI | Broad unit/recovery/race/native CI and strong performance results | Slow schedules run by default; no nightly split, shellcheck, release-binary vulnerability scan, scenario eval suite, or complete native artifact smoke matrix | Needs hardening |
-| Release and governance | Deterministic cross-build script and runbook | Stale artifacts can survive output reuse; no signing, SBOM, provenance, tag release, installers, LICENSE, SECURITY, CONTRIBUTING, CODEOWNERS, or changelog | Block any release |
+| GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and retained historical private canary | Current dedicated-token canary, App permission review, native artifact execution for the exact release snapshot, and named provider review remain | Block alpha |
+| CLI and operations | Read-only status/plan/doctor/log commands, structured output, version/help contracts, operation recovery UX, and bounded local telemetry | Support-owner acceptance and native install/upgrade/rollback evidence remain | Block supportability |
+| Tests and CI | Layered presubmit/core/race/integration/soak/fuzz/release suites, shell checks, scenario evaluation, native artifact smoke, and hosted performance/security evidence | Exact release-tag binding and release-owner acceptance remain; current provider canary is not green | Needs release evidence |
+| Release and governance | Deterministic cross-build script, snapshot-bound evidence manifest, license/support files, dependency policy, Dependabot, CodeQL, and Scorecard | Tag-gated signed release, SBOM/provenance, independent reproducibility, package channels, and native install/rollback drills remain | Block any release |
 
 ## 5. Non-negotiable invariants
 
