@@ -46,19 +46,9 @@ func TestShellScriptsPassSyntaxValidation(t *testing.T) {
 }
 
 func TestDependencyPolicyDoesNotRequireRipgrep(t *testing.T) {
-	goPath, err := exec.LookPath("go")
-	if err != nil {
-		t.Fatal(err)
-	}
 	binDir := t.TempDir()
-	if err := os.Symlink(goPath, filepath.Join(binDir, "go")); err != nil {
-		t.Fatal(err)
-	}
-	grepPath, err := exec.LookPath("grep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(grepPath, filepath.Join(binDir, "grep")); err != nil {
+	rgShim := filepath.Join(binDir, "rg")
+	if err := os.WriteFile(rgShim, []byte("#!/usr/bin/env bash\necho 'rg intentionally unavailable for this test' >&2\nexit 127\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	env := make([]string, 0, len(os.Environ())+1)
@@ -67,7 +57,7 @@ func TestDependencyPolicyDoesNotRequireRipgrep(t *testing.T) {
 			env = append(env, value)
 		}
 	}
-	env = append(env, "PATH="+binDir)
+	env = append(env, "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cmdArgs := []string{filepath.Join(scriptsRoot(t), "check-dependencies.sh")}
 	cmd := exec.Command("bash", cmdArgs...)
 	cmd.Dir = filepath.Dir(scriptsRoot(t))

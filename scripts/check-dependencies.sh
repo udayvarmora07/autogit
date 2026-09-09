@@ -4,14 +4,30 @@ set -euo pipefail
 go mod verify
 go list -m all >/dev/null
 
-if grep -RIn --exclude='*.json' -- '@latest' go.mod go.sum .github 2>/dev/null ||
-  grep -nE '^replace[[:space:]]' go.mod; then
+forbidden_dependency_reference=false
+for manifest in go.mod go.sum; do
+  if grep -nI '@latest' "$manifest"; then
+    forbidden_dependency_reference=true
+  fi
+done
+while IFS= read -r repository_file; do
+  if grep -nI '@latest' "$repository_file"; then
+    forbidden_dependency_reference=true
+  fi
+done < <(find .github -type f ! -name '*.json' -print)
+if grep -nE '^replace[[:space:]]' go.mod; then
+  forbidden_dependency_reference=true
+fi
+if [[ "$forbidden_dependency_reference" == true ]]; then
   echo "floating or replacement dependencies are not allowed" >&2
   exit 1
 fi
 
-action_refs="$(grep -RohE --include='*.yml' --include='*.yaml' \
-  'uses: [^@[:space:]]+@[[:alnum:]_.-]+' .github || true)"
+action_refs="$(
+  while IFS= read -r workflow_file; do
+    grep -oE 'uses: [^@[:space:]]+@[[:alnum:]_.-]+' "$workflow_file" || true
+  done < <(find .github -type f \( -name '*.yml' -o -name '*.yaml' \) -print)
+)"
 if [[ -z "$action_refs" ]]; then
   echo "no GitHub Actions were found" >&2
   exit 1
