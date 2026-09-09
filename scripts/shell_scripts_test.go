@@ -45,6 +45,39 @@ func TestShellScriptsPassSyntaxValidation(t *testing.T) {
 	}
 }
 
+func TestDependencyPolicyDoesNotRequireRipgrep(t *testing.T) {
+	goPath, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	if err := os.Symlink(goPath, filepath.Join(binDir, "go")); err != nil {
+		t.Fatal(err)
+	}
+	grepPath, err := exec.LookPath("grep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(grepPath, filepath.Join(binDir, "grep")); err != nil {
+		t.Fatal(err)
+	}
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "PATH=") {
+			env = append(env, value)
+		}
+	}
+	env = append(env, "PATH="+binDir)
+	cmdArgs := []string{filepath.Join(scriptsRoot(t), "check-dependencies.sh")}
+	cmd := exec.Command("bash", cmdArgs...)
+	cmd.Dir = filepath.Dir(scriptsRoot(t))
+	cmd.Env = env
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("dependency policy without rg: %v\n%s", err, output)
+	}
+}
+
 func TestTestSuiteDispatcherRejectsUnknownSuite(t *testing.T) {
 	output, err := runShellScript(t, nil, "test-suites.sh", "not-a-suite")
 	if err == nil || !bytes.Contains(output, []byte("unknown suite")) {
