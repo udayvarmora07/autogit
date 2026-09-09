@@ -51,26 +51,31 @@ consent, immutable candidate construction, fail-closed ownership attribution,
 durable intent records, exact-SHA publication, redacted state, deterministic
 recovery tests, and native CI. It is not yet ready for alpha distribution.
 
-The release-blocking gaps are:
+The original baseline review identified nine technical gaps. The local
+implementation work in PR-001 through PR-010 and the linked Phase 1–4 bundles
+addresses the SQLite, filesystem, Git, lifecycle, deadline, adapter/provider,
+static-analysis, test-tier, and governance implementation findings. The
+current release-blocking gaps are:
 
-1. The pinned SQLite engine predates a documented WAL corruption fix while
-   AutoGit uses WAL through more than one database connection and process.
-2. State and policy paths are not consistently protected from symlink and
-   replacement attacks.
-3. Verifiers are timeout-bounded but not sandboxed, resource-bounded, or
-   guaranteed to terminate their descendant process trees.
-4. Git initialization and linked-worktree checks do not use the hardened Git
-   execution boundary used elsewhere.
-5. Duplicate session-start events can repeat baseline work before receipt
-   deduplication, and a failed initialization can leave stale consent.
-6. CLI operations have no end-to-end deadlines and can hang on Git, SQLite, or
-   provider operations.
-7. Adapter knowledge has drifted from current client capabilities, especially
-   Cursor hooks, and provider identity relies on ambient gh CLI state.
-8. Static analysis is not clean: staticcheck reports correctness and dead-code
-   findings, and gosec reports three high-severity path-taint findings.
-9. There is no signed, attributable release pipeline, SBOM/provenance, package
-   channel, security policy, or live disposable-provider evidence.
+1. Phase 0 and Phase 1 exit evidence is not accepted by named product/security
+   owners; the required native hostile, crash, cancellation, privacy,
+   ownership, and backup/restore matrices are not yet a release-approved
+   record across every claimed platform.
+2. The advertised verifier baseline remains process-bounded. The Linux
+   Landlock/namespace, Windows AppContainer/job-control, and macOS fallback
+   capability prototype in P1-04 is not complete and independently attested.
+3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
+   named review for the exact alpha-supported client/provider subset. The
+   historical provider canary is retained, but the current dedicated-token
+   canary path has not completed for the evidence snapshot.
+4. P4-08 has implementation evidence but no exact release tag: the checked-in
+   manifest deliberately has `tag_verified: false` and is snapshot-bound.
+5. P5-03 through P5-07 remain open: there is no tag-gated signed release
+   pipeline with published SBOM/provenance, independent reproducibility,
+   verified package channels, and native install/rollback drill evidence.
+6. P5-01 and P5-02 still require explicit product/maintainer review, including
+   the security contact/support decision, automated dependency-update review,
+   and documented approval of any policy exceptions.
 
 The correct strategy is to harden the trusted local core first, productize
 integrations second, then earn alpha, beta, and GA through evidence. Feature
