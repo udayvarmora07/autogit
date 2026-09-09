@@ -38,16 +38,17 @@ case "$suite" in
     go test -tags soak ./...
     ;;
   fuzz)
-    # Leave headroom below the fuzz deadline so the Go fuzz runner can shut
-    # down cleanly on slower hosted runners instead of racing its context.
-    fuzz_time="${AUTOGIT_FUZZ_TIME:-40s}"
+    # Request the execution floor directly instead of relying on a wall-clock
+    # throughput estimate. The timeout remains a hard bound for pathological
+    # inputs or a stuck fuzz target.
+    fuzz_timeout="${AUTOGIT_FUZZ_TIME:-40s}"
     min_execs="${AUTOGIT_FUZZ_MIN_EXECS:-100000}"
     if [[ ! "$min_execs" =~ ^[0-9]+$ ]]; then
       echo "AUTOGIT_FUZZ_MIN_EXECS must be an unsigned integer" >&2
       exit 2
     fi
     while IFS=' ' read -r package target; do
-      output="$(go test "$package" -run '^$' -fuzz "^${target}$" -fuzztime "$fuzz_time" 2>&1)" || {
+      output="$(go test "$package" -run '^$' -fuzz "^${target}$" -fuzztime "${min_execs}x" -timeout "$fuzz_timeout" 2>&1)" || {
         printf '%s\n' "$output"
         exit 1
       }
