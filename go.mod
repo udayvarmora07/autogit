@@ -2,7 +2,7 @@ module autogit
 
 go 1.26
 
-toolchain go1.26.7
+toolchain go1.26.8
 
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
