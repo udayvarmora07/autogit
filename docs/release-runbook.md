@@ -1,23 +1,26 @@
 # AutoGit v1 release and rollback runbook
 
 Status: implementation artifact; alpha/beta approval pending  
-Last updated: 2026-09-07
+Last updated: 2026-09-09
 
 This runbook covers the bounded private-alpha and public-beta gates. It does
 not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
 
-[CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903)
-(attempt 2) completed successfully for commit
-`bbf2e371f1d0fa592ac18a323c1b3df3133a57be`.
-Its native Linux, macOS, and Windows jobs passed tests, builds, deterministic
-test-floor checks, benchmark sampling, and p95 gates; security analysis and
-all three cross-build jobs also passed. This closes the native-OS gate only.
-The implementation evidence for P0-01 through P0-05 is recorded in
-[`docs/release-evidence/phase-0-p0-01-p0-05.md`](release-evidence/phase-0-p0-01-p0-05.md).
-Phase 0 acceptance for the remaining items, the live disposable-provider
-canary, and alpha/beta promotion remain pending.
+[The full hosted CI run 34312141862](https://github.com/udayvarmora07/autogit/actions/runs/34312141862)
+completed successfully for exact commit
+`01035c6250407f5d1b40a02ace8ae97d924b15b2`. All 19/19 jobs passed, including
+native Linux/macOS/Windows tests, six native artifact smoke targets, three
+soak targets, fuzz, cross-builds, reproducible release binaries, presubmit,
+security analysis, and retained scenario/performance artifacts. The separate
+[security workflow 34312149484](https://github.com/udayvarmora07/autogit/actions/runs/34312149484)
+also passed CodeQL and OpenSSF Scorecard; its dependency-review job was
+skipped because it is pull-request-only. This closes the current hosted
+verification matrix, not the release gate. The exact-HEAD evidence manifest is
+in [`docs/release-evidence/phase-4-quality.json`](release-evidence/phase-4-quality.json).
+The live disposable-provider canary, exact release tag, signed artifacts, and
+alpha/beta promotion remain pending.
 
 ## Release evidence checklist
 
@@ -32,10 +35,10 @@ command output, and redacted artifact links for each item:
    remains a separate release-owner step using an approved key.
 3. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
-4. [Recorded] The native Linux, macOS, and Windows matrix passed in
-   [CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903),
-   including benchmark, p95-gate, and build steps. Cross-build output alone is
-   not native evidence.
+4. [Recorded] The native Linux, macOS, and Windows matrix passed in the
+   [exact-HEAD CI run 34312141862](https://github.com/udayvarmora07/autogit/actions/runs/34312141862),
+   including benchmark, p95-gate, build, artifact-smoke, and scenario steps.
+   Cross-build output alone is not native evidence.
 5. The same run passed the native p95 gates. Retain the run logs with the
    release record; this evidence does not by itself approve alpha or beta.
 6. Run the manually dispatched
@@ -54,9 +57,10 @@ local test does not authorize public publication.
 
 - Phase 0 remains open: the contract-freeze record and normative documents are
   awaiting product acceptance, despite passing traceability checks.
-- The disposable canary remains open: its local token-boundary test passes and
-  cleanup safeguards are implemented, but there is no live run or cleanup
-  artifact. It requires only the dedicated `AUTOGIT_CANARY_TOKEN`.
+- The disposable canary remains open: cleanup safeguards and local token-boundary
+  tests pass, but there is no current exact-HEAD live run using the dedicated
+  `AUTOGIT_CANARY_TOKEN` or retained cleanup artifact. The historical local
+  canary record is not release evidence for this exact commit.
 - Private alpha remains open: native CI and local reliability evidence pass,
   but the bounded cohort and release-owner approval are not recorded.
 - Public beta remains open: it depends on those unresolved gates and has no

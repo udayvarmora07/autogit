@@ -47,27 +47,29 @@ python3 -m json.tool docs/release-evidence/phase-4-quality.json
 git diff --check
 ```
 
-The checked-in JSON is a clean manifest for commit
-`6d44b151e42844f2fd4758d5cb93c804b7ffa2c2`. Its ten local suite results include
-the 45-second fuzz budget for every target, the 1,000-schedule Linux soak
-matrix, six freshly built cross-target artifact hashes, Linux/amd64 artifact
-smoke, and the 20-case six-client final-state scenario matrix. The adapter fuzz
-harness reuses immutable adapter setup so the 100,000-input floor is achievable
-without weakening the quota. The performance gate uses one-second
-steady-state benchmark windows and preserves the configured p95 limits;
+The regenerated JSON manifest currently in this working tree is a clean
+collection for exact commit
+`01035c6250407f5d1b40a02ace8ae97d924b15b2`. Its ten local suite results include
+the corrected 45-second fuzz budget for all 11 targets, the 1,000-schedule
+Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
+artifact smoke, and the 20-case six-client final-state scenario matrix. The
+adapter fuzz harness reuses immutable adapter setup so the 100,000-input floor
+is achievable without weakening the quota. The performance gate uses one-
+second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The exact-commit push CI run `34261069135` passed presubmit, native
-Linux/macOS/Windows tests, the six cross-builds, reproducible release binaries,
-security analysis, and the expanded client/repository scenario evaluation on
-all three native operating systems. The separate security workflow
-`34261068928` also passed for the same commit. The scheduled/manual native
-artifact matrix remains configured for all six OS/arch targets and will retain
-the corresponding traces when dispatched. `tag_verified` remains false
-because this is implementation evidence, not a release-tag approval. These CI
-records do not claim a live provider canary, signing, provenance, or named
-release review.
+The exact-commit full hosted CI dispatch `34312141862` passed all 19/19 jobs:
+presubmit, native Linux/macOS/Windows tests, six native artifact targets,
+three soak targets, fuzz, three cross-builds, reproducible release binaries,
+security analysis, and the retained scenario/performance checks. It retained
+the native scenario traces and performance artifacts for the exact SHA. The
+separate exact-commit security workflow `34312149484` passed CodeQL and
+OpenSSF Scorecard; its dependency-review job was skipped because that job is
+restricted to pull requests. `tag_verified` remains false because this is
+implementation evidence, not release-tag approval. These records do not claim
+a live provider canary, signing, published provenance, or named release
+review.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:
