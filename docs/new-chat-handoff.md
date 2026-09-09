@@ -38,6 +38,11 @@ attestations, and an Ubuntu/macOS byte-for-byte reproducibility comparison.
 The consumer verifier binds checksums to the exact workflow, tag, and source
 commit. That is implementation progress, not release acceptance.
 
+The package-by-package reconciliation is recorded in the [Phase 4/5
+acceptance matrix](release-evidence/phase-4-5-acceptance-matrix.md). It keeps
+P4-01 through P4-07 tied to the exact quality evidence while leaving P4-08 and
+P5-01/P5-02 open for their distinct tag and named-review requirements.
+
 ## Evidence warning
 
 - The current exact-snapshot full hosted matrix is run `34388511108`, with all

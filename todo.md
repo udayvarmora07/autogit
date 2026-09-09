@@ -17,6 +17,8 @@ The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `4817750`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
+The package-level reconciliation is recorded in the [Phase 4/5 acceptance
+matrix](docs/release-evidence/phase-4-5-acceptance-matrix.md).
 
 This tracker contains remaining work, not the project's historical changelog.
 Completed implementation history remains in Git. Check an item only when its

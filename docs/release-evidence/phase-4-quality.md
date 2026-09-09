@@ -8,6 +8,9 @@ promotion gates remain separate
 
 ## Delivered controls
 
+The package-by-package acceptance reconciliation is recorded in the
+[Phase 4/5 acceptance matrix](phase-4-5-acceptance-matrix.md).
+
 | ID | Evidence |
 | --- | --- |
 | P4-01 | `scripts/test-suites.sh` names presubmit, core, race, integration, soak, fuzz, canary, and release suites. The default process-boundary matrices use 50 representative schedules; `-tags soak` runs the retained 1,000-schedule Linux/macOS matrix. CI runs the fast path on changes and the soak/fuzz jobs only on schedule or manual dispatch. |
