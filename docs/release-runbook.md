@@ -8,18 +8,19 @@ not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
 
-[The full hosted CI run 34327518122](https://github.com/udayvarmora07/autogit/actions/runs/34327518122)
-completed successfully for evidence snapshot commit
-`ded26c350af754a266e7a48cdd5f24f92c028bf0`. All 19/19 jobs passed, including
+The local evidence manifest was regenerated cleanly at commit
+`0ad8577aab7cc016a3913c3d4aa943700b11baee`; all 10 local suites passed and it
+contains six cross-target artifact hashes. The latest full hosted CI run
+[34344709357](https://github.com/udayvarmora07/autogit/actions/runs/34344709357)
+completed successfully for the earlier evidence snapshot
+`94ecc899cc0c367fb2540f4ad9fb537b36b2480b`. All 20/20 jobs passed, including
 native Linux/macOS/Windows tests, six native artifact smoke targets, three
-soak targets, fuzz, cross-builds, reproducible release binaries, presubmit,
-security analysis, and retained scenario/performance artifacts. The separate
-[security workflow 34325605252](https://github.com/udayvarmora07/autogit/actions/runs/34325605252)
-also passed CodeQL and OpenSSF Scorecard; its dependency-review job was
-skipped because it is pull-request-only. This closes the current hosted
-verification matrix for that evidence snapshot, not the release gate. The
-snapshot-bound evidence manifest is
-in [`docs/release-evidence/phase-4-quality.json`](release-evidence/phase-4-quality.json).
+soak targets, fuzz, cross-builds, reproducible release binaries, security
+analysis, dependency policy, and retained scenario/performance artifacts.
+This closes the hosted verification matrix for that earlier evidence
+snapshot, not current HEAD or the release gate. The snapshot-bound evidence
+manifest is in
+[`docs/release-evidence/phase-4-quality.json`](release-evidence/phase-4-quality.json).
 The live disposable-provider canary, exact release tag, signed artifacts, and
 alpha/beta promotion remain pending. The private canary dispatch
 [34324968472](https://github.com/udayvarmora07/autogit/actions/runs/34324968472)
@@ -48,9 +49,10 @@ command output, and redacted artifact links for each item:
 4. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
 5. [Recorded] The native Linux, macOS, and Windows matrix passed in the
-   [exact-snapshot CI run 34327518122](https://github.com/udayvarmora07/autogit/actions/runs/34327518122),
-   including benchmark, p95-gate, build, artifact-smoke, and scenario steps.
-   Cross-build output alone is not native evidence.
+   [exact-snapshot CI run 34344709357](https://github.com/udayvarmora07/autogit/actions/runs/34344709357),
+   against the earlier `94ecc89` snapshot, including benchmark, p95-gate,
+   build, artifact-smoke, and scenario steps. Cross-build output alone is not
+   native evidence.
 6. The same run passed the native p95 gates. Retain the run logs with the
    release record; this evidence does not by itself approve alpha or beta.
 7. Run the manually dispatched

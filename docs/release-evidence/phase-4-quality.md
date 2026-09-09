@@ -2,9 +2,9 @@
 
 Date: 2026-09-09
 Scope: P4-01 through P4-08 and P5-01 through P5-02
-Status: implementation complete; local and hosted native evidence is current;
-tagged-artifact, provider, signing, and named-reviewer promotion gates remain
-separate
+Status: implementation complete; local evidence is current; hosted native
+evidence is current for the earlier `94ecc89` snapshot; tagged-artifact,
+provider, signing, and named-reviewer promotion gates remain separate
 
 ## Delivered controls
 
@@ -49,7 +49,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`94ecc899cc0c367fb2540f4ad9fb537b36b2480b`. Its ten local suite results use
+`0ad8577aab7cc016a3913c3d4aa943700b11baee`. Its ten local suite results use
 the corrected 40-second fuzz budget for all 10 targets, leaving shutdown
 headroom while retaining the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -60,8 +60,9 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The current exact-snapshot full hosted CI dispatch `34344709357` passed all
-20/20 jobs against `94ecc899cc0c367fb2540f4ad9fb537b36b2480b`:
+The latest exact-snapshot full hosted CI dispatch `34344709357` passed all
+20/20 jobs against the earlier
+`94ecc899cc0c367fb2540f4ad9fb537b36b2480b`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained

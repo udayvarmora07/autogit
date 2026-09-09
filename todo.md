@@ -14,7 +14,7 @@ implementation exists, but formal acceptance is still 0/10 because exact-tag
 evidence, provider authorization, signing/provenance, and named review are
 still required.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `94ecc89`. Documentation commits may advance the
+for evidence snapshot commit `0ad8577`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 
@@ -294,9 +294,10 @@ system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. Evidence snapshot `94ecc89` passed the full 20-job hosted matrix
-(`34344709357`); the local manifest records 10/10 suites and six artifact
-hashes. The last private canary
+workflows. The latest hosted evidence snapshot `94ecc89` passed the full
+20-job matrix (`34344709357`); the current local manifest was regenerated at
+`0ad8577` and records 10/10 suites and six artifact hashes. The last private
+canary
 dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
 before mutation because the dedicated token secret was empty, and the
 allowlisted repository was confirmed absent. The checkboxes remain open until
