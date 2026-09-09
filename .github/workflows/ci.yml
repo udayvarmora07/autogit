@@ -43,8 +43,14 @@ jobs:
       - name: deterministic Go release test floor
         shell: bash
         run: |
-          set -o pipefail
-          count="$(go test -count=1 -json ./... | awk '/"Action":"pass"/ && /"Test":/ {n++} END {print n+0}')"
+          set -euo pipefail
+          test_json="$RUNNER_TEMP/autogit-go-test.json"
+          if ! go test -count=1 -json ./... >"$test_json" 2>&1; then
+            echo "go test JSON output (tail):"
+            tail -n 200 "$test_json"
+            exit 1
+          fi
+          count="$(awk '/"Action":"pass"/ && /"Test":/ {n++} END {print n+0}' "$test_json")"
           echo "deterministic Go test cases: ${count}"
           test "${count}" -ge 609
       - name: race tests
