@@ -19,6 +19,8 @@ branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 The package-level reconciliation is recorded in the [Phase 4/5 acceptance
 matrix](docs/release-evidence/phase-4-5-acceptance-matrix.md).
+The recommended two-ledger closure model and depth-first loop are documented
+in the [task closure protocol](docs/task-closure-protocol.md).
 
 This tracker contains remaining work, not the project's historical changelog.
 Completed implementation history remains in Git. Check an item only when its
