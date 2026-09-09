@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878",
+  "commit": "94ecc899cc0c367fb2540f4ad9fb537b36b2480b",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-09T09:35:49.405452441Z",
+  "generated_at": "2026-09-09T11:37:48.781452797Z",
   "go_version": "go1.26.7",
   "platform": "linux/amd64",
   "suites": [
@@ -51,32 +51,32 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "c56b4383af2973d6febd1f5b3a38476336c6afb7c3bd1a86ce90934b8e4ac150",
+      "sha256": "35471e51431b4374d646e0672e1550e08b49726b3ddd174c6e563bd6c3773aed",
       "size": 15962704
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "ea2d8b8507f0418278ce61491799cbc5f41145a756e3a090daf0154d86e8bae7",
+      "sha256": "454351392e246454c85b5a682ac47ea0f67a736997108c7b9572cb7d003cad22",
       "size": 15322274
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "0c706b73b04cd4bba2f8bf74631ce7acb3e95c5fc85535362a514250cede9384",
+      "sha256": "5f33f62c396e5e5bebd08a8d3de680c154c1dd120e2172822350a528d12fa96d",
       "size": 15729483
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "746e1213532e130ce860a6567195c01a59310096b4ab416b1169bee96444da7b",
+      "sha256": "e5614178622a348460b973f63bb10f72760ac03b6f51c5da0342fd09f656feaa",
       "size": 15005375
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "7aa2951c92cfb1c77a4c3faae83a8be57a6b12e440fa39a8b1d9da1514bc7d01",
+      "sha256": "68a84dce4ea37a7b169a06deccfd15d4fe199ccda49a68486df37d51199fccc7",
       "size": 16144896
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "1a2a805c5f3026fcfa0fabfa09380d81bcd57070d829579a321933dd18764360",
+      "sha256": "89dcb12d5a5f59e35eeb3662877d730db6ba8c7ec8e50765d5c7702c2e781585",
       "size": 15159296
     }
   ],
@@ -175,7 +175,7 @@
         "FuzzScannerNeverPanics"
       ],
       "commands": [
-        "AUTOGIT_FUZZ_TIME=45s bash scripts/test-suites.sh fuzz",
+        "AUTOGIT_FUZZ_TIME=40s bash scripts/test-suites.sh fuzz",
         "go test ./..."
       ],
       "threats": [

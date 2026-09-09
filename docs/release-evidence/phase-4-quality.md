@@ -47,12 +47,11 @@ python3 -m json.tool docs/release-evidence/phase-4-quality.json
 git diff --check
 ```
 
-The checked-in JSON manifest records a clean historical collection performed at
-evidence snapshot commit
-`0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878`. Its ten local suite results used
-the prior 45-second fuzz budget for all 11 targets. The current suite uses the
-corrected 40-second budget to leave shutdown headroom, while retaining the
-1,000-schedule
+The checked-in JSON manifest records a clean collection performed at evidence
+snapshot commit
+`94ecc899cc0c367fb2540f4ad9fb537b36b2480b`. Its ten local suite results use
+the corrected 40-second fuzz budget for all 10 targets, leaving shutdown
+headroom while retaining the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
 artifact smoke, and the 20-case six-client final-state scenario matrix. The
 adapter fuzz harness reuses immutable adapter setup so the 100,000-input floor
@@ -61,13 +60,13 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The current exact-snapshot full hosted CI dispatch `34334723962` passed all
-20/20 jobs against `0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878`:
+The current exact-snapshot full hosted CI dispatch `34344709357` passed all
+20/20 jobs against `94ecc899cc0c367fb2540f4ad9fb537b36b2480b`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-push-triggered core run `34333523392` and security run `34333523253` also passed
+push-triggered core run `34343500284` and security run `34343500286` also passed
 against the same exact SHA. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
