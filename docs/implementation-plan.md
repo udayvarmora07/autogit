@@ -35,14 +35,14 @@ dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Artifact smoke now
 checks the live system Git against the advertised minimum, and the scenario
 evaluator covers all six registered clients with bounded native platform
-traces. Hosted native Linux/macOS/Windows artifact smoke, client/repository
-scenarios, and performance passed for earlier exact commits in the retained CI
-runs. The latest full hosted matrix passed for `5635fe0` in run
-`34270648746`, while the current HEAD is `1427097` after a metadata-selector
-correction and still needs exact-HEAD hosted validation. The checked-in machine
-manifest is stale and must be regenerated rather than hand-edited. Live
-provider execution, signing, and named review remain release evidence rather
-than claims made by this slice.
+traces. The evidence snapshot `ded26c3` passed the full hosted matrix in run
+`34327518122` and the separate security workflow in run `34325605252`; the
+machine manifest records that snapshot's clean 10/10 local suite collection
+and six artifact hashes. The current documentation follow-up is `d919f09`,
+whose push-triggered core and security workflows (`34328903738` and
+`34328903736`) also passed. No exact release tag exists yet. Live provider
+execution, signing, and named review remain release evidence rather than
+claims made by this slice.
 
 ## 1. Executive decision
 
