@@ -6,9 +6,9 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 ## Current snapshot
 
-- Snapshot date: 2026-09-09.
+- Snapshot date: 2026-09-10.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `0ad8577aab7cc016a3913c3d4aa943700b11baee`.
+- Evidence snapshot commit: `48177501564cda9aa5507ab789c71ce3f285a0d5`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
@@ -16,7 +16,8 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 - Tracker: 96 total checklist rows, 65 checked, 31 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
-  P5-03 through P5-05 release workflow slice and consumer artifact verifier.
+  P5-03 through P5-05 release workflow slice and consumer artifact verifier,
+  plus hosted macOS Bash portability and deterministic fuzz-floor fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
   independent substeps. The release rows remain unchecked pending exact-tag
   hosted acceptance; the full project still has 31 open rows.
@@ -39,14 +40,14 @@ commit. That is implementation progress, not release acceptance.
 
 ## Evidence warning
 
-- The current exact-snapshot full hosted matrix is run `34344709357`, with all
- 20 jobs passing against the earlier
-  `94ecc899cc0c367fb2540f4ad9fb537b36b2480b`, including
+- The current exact-snapshot full hosted matrix is run `34388511108`, with all
+ 20 jobs passing against
+  `48177501564cda9aa5507ab789c71ce3f285a0d5`, including
   fuzz, soak, native artifact, scenario, and performance jobs. Its security
   and dependency-policy jobs also passed. The push-triggered core run
-  `34343500284` and security run `34343500286` passed against the same SHA.
+  `34388483045` and security run `34388482915` passed against the same SHA.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for evidence snapshot commit `0ad8577`; it records
+  generated collection for evidence snapshot commit `4817750`; it records
   10/10 local suites and six artifact hashes with a clean tree at collection
   time.
 - The last canary dispatch, `34324968472`, targeted the earlier `1ec8c39`
@@ -80,12 +81,9 @@ commit. That is implementation progress, not release acceptance.
 
 ## Important recent changes
 
-- `210c4c3`: lowered the default/manual fuzz duration from 60s to 45s while
-  retaining the 100,000-execution minimum.
-- Current follow-up: lowered the fuzz duration to 40s after hosted evidence
-  showed the Go fuzz runner can exceed a 45s context during shutdown.
-- `5635fe0`: aligned the evidence command with the 45s fuzz budget.
-- `1427097`: corrected the fuzz evidence selector to the actual test function.
+- `c09c059`: kept the release verifier compatible with stock macOS Bash 3.2.
+- `4817750`: made fuzz execution floors deterministic with an explicit input
+  count and retained timeout budget.
 
 ## Continuation rules
 

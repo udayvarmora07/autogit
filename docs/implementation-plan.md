@@ -28,19 +28,20 @@ retained in [the P2-11 and Phase 3 evidence bundle](release-evidence/phase-2-p2-
 The Phase 2/3 release gates remain open until native artifact, provider,
 support-owner, and signed-release evidence is separately executed.
 
-The 2026-09-08/09 execution slice adds the named Phase 4 verification tiers,
+The 2026-09-08/10 execution slice adds the named Phase 4 verification tiers,
 artifact and final-state scenario evaluators, compatibility-window expiry
 automation, machine-readable evidence generation, and the Phase 5 governance,
 dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Artifact smoke now
 checks the live system Git against the advertised minimum, and the scenario
 evaluator covers all six registered clients with bounded native platform
-traces. The latest hosted evidence snapshot `94ecc89` passed the full 20-job
-hosted matrix in run `34344709357`, including fuzz, soak, native artifact,
+traces. The latest hosted evidence snapshot `4817750` passed the full 20-job
+hosted matrix in run `34388511108`, including fuzz, soak, native artifact,
 scenario, p95, reproducible-build, security, and dependency-policy jobs. The
-machine manifest was subsequently regenerated at current local evidence
-snapshot `0ad8577`, where it records a clean 10/10 local suite collection and
-six artifact hashes. No exact release tag exists yet. Live provider
+machine manifest was regenerated at evidence snapshot
+`48177501564cda9aa5507ab789c71ce3f285a0d5`, where it records a clean 10/10
+local suite collection and six artifact hashes. No exact release tag exists
+yet. Live provider
 execution, signing, and named review remain release evidence rather than
 claims made by this slice.
 

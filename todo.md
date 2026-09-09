@@ -2,7 +2,7 @@
 
 Source of truth: [world-class implementation plan](docs/implementation-plan.md)
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 Release posture: NO-GO for private alpha
 
 ## New-chat continuation handoff
@@ -14,7 +14,7 @@ implementation exists, but formal acceptance is still 0/10 because exact-tag
 evidence, provider authorization, signing/provenance, and named review are
 still required.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `0ad8577`. Documentation commits may advance the
+for evidence snapshot commit `4817750`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 
@@ -284,7 +284,7 @@ named-review requirements are executed and reviewed.
   restore/reproducibility evidence, support/deprecation policy, and signed
   evidence manifest for the exact release tag.
 
-### 2026-09-09 exact-snapshot validation refresh
+### 2026-09-10 exact-snapshot validation refresh
 
 The P4-01 through P4-08 and P5-01 through P5-02 work packages have local
 implementations and fresh exact-snapshot evidence in
@@ -294,9 +294,9 @@ system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. The latest hosted evidence snapshot `94ecc89` passed the full
-20-job matrix (`34344709357`); the current local manifest was regenerated at
-`0ad8577` and records 10/10 suites and six artifact hashes. The last private
+workflows. The latest hosted evidence snapshot `4817750` passed the full
+20-job matrix (`34388511108`); the current local manifest was regenerated at
+`4817750` and records 10/10 suites and six artifact hashes. The last private
 canary
 dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
 before mutation because the dedicated token secret was empty, and the

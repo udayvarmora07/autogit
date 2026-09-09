@@ -1,10 +1,10 @@
 # Phase 4 and Phase 5 local implementation evidence
 
-Date: 2026-09-09
+Date: 2026-09-10
 Scope: P4-01 through P4-08 and P5-01 through P5-02
-Status: implementation complete; local evidence is current; hosted native
-evidence is current for the earlier `94ecc89` snapshot; tagged-artifact,
-provider, signing, and named-reviewer promotion gates remain separate
+Status: implementation complete; exact-snapshot local and hosted quality
+evidence is current; tagged-artifact, provider, signing, and named-reviewer
+promotion gates remain separate
 
 ## Delivered controls
 
@@ -49,9 +49,9 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`0ad8577aab7cc016a3913c3d4aa943700b11baee`. Its ten local suite results use
-the corrected 40-second fuzz budget for all 10 targets, leaving shutdown
-headroom while retaining the 1,000-schedule
+`48177501564cda9aa5507ab789c71ce3f285a0d5`. Its ten local suite results use
+the deterministic 100,000-input fuzz floor for all 10 targets while retaining
+the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
 artifact smoke, and the 20-case six-client final-state scenario matrix. The
 adapter fuzz harness reuses immutable adapter setup so the 100,000-input floor
@@ -60,14 +60,14 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The latest exact-snapshot full hosted CI dispatch `34344709357` passed all
-20/20 jobs against the earlier
-`94ecc899cc0c367fb2540f4ad9fb537b36b2480b`:
+The latest exact-snapshot full hosted CI dispatch `34388511108` passed all
+20/20 jobs against
+`48177501564cda9aa5507ab789c71ce3f285a0d5`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-push-triggered core run `34343500284` and security run `34343500286` also passed
+push-triggered core run `34388483045` and security run `34388482915` also passed
 against the same exact SHA. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
@@ -77,9 +77,10 @@ not current-HEAD canary evidence. The former `ded26c3` manifest and hosted
 run `34327518122` remain historical records. These records do not claim a live
 provider canary, signing, published provenance, or named release review.
 
-The hosted compatibility-window review `34347979343` passed at the current
-branch commit `211fb69b9cc2d23813c7feda5dc4831357a586ff`; all advertised
-windows were current and no expiry issue was generated.
+The hosted compatibility-window review `34347979343` passed at branch commit
+`211fb69b9cc2d23813c7feda5dc4831357a586ff`; all advertised windows were
+current and no expiry issue was generated. The compatibility contract is
+unchanged by the later evidence-only and test-runner portability fixes.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:
