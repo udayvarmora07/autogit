@@ -286,8 +286,8 @@ named-review requirements are executed and reviewed.
 
 ### 2026-09-09 exact-snapshot validation refresh
 
-The next ten actionable work packages (P4-01 through P4-08 and P5-01 through
-P5-02) have local implementations and fresh exact-snapshot evidence in
+The P4-01 through P4-08 and P5-01 through P5-02 work packages have local
+implementations and fresh exact-snapshot evidence in
 [phase-4-quality.md](docs/release-evidence/phase-4-quality.md): named
 test tiers, ShellCheck/failure tests, built-artifact smoke with the manifest's
 system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
@@ -301,7 +301,9 @@ dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
 before mutation because the dedicated token secret was empty, and the
 allowlisted repository was confirmed absent. The checkboxes remain open until
 the plan's exact-tag, provider, signing, and named-review acceptance evidence
-is executed.
+is executed. The P5-03/P5-04 implementation details and local checks are in
+[phase-5-release-workflow.md](docs/release-evidence/phase-5-release-workflow.md);
+they do not represent a hosted signing run.
 
 ## Immediate PR queue
 

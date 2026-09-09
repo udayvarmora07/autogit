@@ -1,0 +1,157 @@
+name: AutoGit tagged release evidence
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: -mod=readonly
+
+jobs:
+  quality:
+    name: release quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: verify exact release tag and clean checkout
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
+          test "$(git describe --exact-match --tags HEAD)" = "$RELEASE_TAG"
+          test -z "$(git status --porcelain=v1)"
+      - name: deterministic and race tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -count=1 ./...
+          go test -race ./...
+          go vet ./...
+          go build ./...
+      - name: release integration and artifact gates
+        shell: bash
+        run: bash scripts/test-suites.sh release
+      - name: source vulnerability scan
+        shell: bash
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - name: shell and dependency policy checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/check-shell.sh
+          bash scripts/check-dependencies.sh
+
+  attest:
+    name: build and attest release artifacts
+    needs: quality
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: verify exact release identity
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
+          test "$(git describe --exact-match --tags HEAD)" = "$RELEASE_TAG"
+          test -z "$(git status --porcelain=v1)"
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - name: build clean release directory
+        shell: bash
+        env:
+          AUTOGIT_VERSION: ${{ github.ref_name }}
+          AUTOGIT_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test ! -e dist
+          bash scripts/release-build.sh --output dist
+          bash scripts/artifact-smoke.sh --directory dist
+          version_output="$(dist/autogit-linux-amd64 version)"
+          grep -Eq '"version":"'"${AUTOGIT_VERSION}"'"' <<<"$version_output"
+          grep -Eq '"commit":"'"${AUTOGIT_COMMIT}"'"' <<<"$version_output"
+      - name: generate SPDX dependency SBOM
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          created="$(date -u -d "@$SOURCE_DATE_EPOCH" '+%Y-%m-%dT%H:%M:%SZ')"
+          go list -m -json all | go run ./cmd/autogit-sbom \
+            --output dist/autogit.spdx.json \
+            --name "autogit-${RELEASE_TAG}" \
+            --namespace "https://github.com/udayvarmora07/autogit/sbom/${RELEASE_TAG}/${RELEASE_SHA}" \
+            --root-module autogit \
+            --version "$RELEASE_TAG" \
+            --created "$created"
+      - name: scan every release binary with govulncheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          for binary in dist/autogit-*; do
+            case "$binary" in
+              *.exe) ;;
+              *.json|*.txt) continue ;;
+            esac
+            report="dist/$(basename "$binary").govulncheck.txt"
+            go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -mode=binary "$binary" >"$report" 2>&1
+          done
+      - name: create signed checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum autogit-* autogit.spdx.json | LC_ALL=C sort -k2,2 > SHA256SUMS)
+          (cd dist && sha256sum -c SHA256SUMS)
+      - name: attest SLSA provenance and checksums
+        id: provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-checksums: dist/SHA256SUMS
+      - name: attest SBOM
+        id: sbom
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-checksums: dist/SHA256SUMS
+          sbom-path: dist/autogit.spdx.json
+      - name: upload release evidence bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: autogit-${{ github.ref_name }}-release-evidence
+          if-no-files-found: error
+          path: |
+            dist
+            ${{ steps.provenance.outputs.bundle-path }}
+            ${{ steps.sbom.outputs.bundle-path }}

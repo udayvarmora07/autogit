@@ -35,10 +35,12 @@ command output, and redacted artifact links for each item:
 
 1. Run `go test -count=1 ./...`, `go test -race ./...`, `go vet ./...`, and
    `go build ./...`.
-2. Run `bash scripts/release-build.sh --output dist/first` twice with separate
-   output directories and byte-compare matching binaries plus `SHA256SUMS`.
-   CI performs this check for all six supported release targets; signing
-   remains a separate release-owner step using an approved key.
+2. Push only an approved exact `vMAJOR.MINOR.PATCH` tag. The tag-gated release
+   workflow reruns the quality gates, builds all six supported targets in a
+   clean directory, produces checksums/SBOM/binary-vulnerability evidence,
+   and creates keyless Sigstore-backed SLSA and SBOM attestations after the
+   `release` environment gate. Inspect and retain the hosted attestation
+   bundles before any future publication step.
 3. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
 4. [Recorded] The native Linux, macOS, and Windows matrix passed in the
