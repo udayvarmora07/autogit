@@ -56,7 +56,7 @@ acceptance.
    `implementation-plan.md`; inspect the current evidence generator and its
    output contract before running it.
 2. Preserve the fresh exact-snapshot local manifest and hosted records above; if
-   source or toolchain changes, regenerate with the configured 45-second fuzz
+   source or toolchain changes, regenerate with the configured 40-second fuzz
    budget and verify its commit, dirty-tree state, suite results, artifact
    identities, and control statuses before replacement.
 3. Supply the dedicated canary credential and rerun the private canary; retain
@@ -74,7 +74,9 @@ acceptance.
 ## Important recent changes
 
 - `210c4c3`: lowered the default/manual fuzz duration from 60s to 45s while
-  retaining the 100,000-execution minimum and leaving CI deadline headroom.
+  retaining the 100,000-execution minimum.
+- Current follow-up: lowered the fuzz duration to 40s after hosted evidence
+  showed the Go fuzz runner can exceed a 45s context during shutdown.
 - `5635fe0`: aligned the evidence command with the 45s fuzz budget.
 - `1427097`: corrected the fuzz evidence selector to the actual test function.
 

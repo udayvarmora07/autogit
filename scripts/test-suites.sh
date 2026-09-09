@@ -40,7 +40,7 @@ case "$suite" in
   fuzz)
     # Leave headroom below the fuzz deadline so the Go fuzz runner can shut
     # down cleanly on slower hosted runners instead of racing its context.
-    fuzz_time="${AUTOGIT_FUZZ_TIME:-45s}"
+    fuzz_time="${AUTOGIT_FUZZ_TIME:-40s}"
     min_execs="${AUTOGIT_FUZZ_MIN_EXECS:-100000}"
     if [[ ! "$min_execs" =~ ^[0-9]+$ ]]; then
       echo "AUTOGIT_FUZZ_MIN_EXECS must be an unsigned integer" >&2

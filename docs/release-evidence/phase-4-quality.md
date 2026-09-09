@@ -33,7 +33,7 @@ bash scripts/test-suites.sh presubmit
 bash scripts/test-suites.sh integration
 bash scripts/test-suites.sh race
 bash scripts/test-suites.sh soak              # 1,000-schedule Linux matrix
-AUTOGIT_FUZZ_TIME=45s bash scripts/test-suites.sh fuzz
+AUTOGIT_FUZZ_TIME=40s bash scripts/test-suites.sh fuzz
 bash scripts/test-suites.sh release            # six cross-target artifacts + host smoke
 PATH=... bash scripts/check-shell.sh           # ShellCheck 0.11.0
 bash scripts/check-dependencies.sh
@@ -47,10 +47,12 @@ python3 -m json.tool docs/release-evidence/phase-4-quality.json
 git diff --check
 ```
 
-The JSON manifest now records a clean collection performed at evidence
-snapshot commit
-`0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878`. Its ten local suite results include
-the corrected 45-second fuzz budget for all 11 targets, the 1,000-schedule
+The checked-in JSON manifest records a clean historical collection performed at
+evidence snapshot commit
+`0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878`. Its ten local suite results used
+the prior 45-second fuzz budget for all 11 targets. The current suite uses the
+corrected 40-second budget to leave shutdown headroom, while retaining the
+1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
 artifact smoke, and the 20-case six-client final-state scenario matrix. The
 adapter fuzz harness reuses immutable adapter setup so the 100,000-input floor
@@ -83,7 +85,7 @@ bash scripts/test-suites.sh presubmit
 bash scripts/test-suites.sh core
 bash scripts/test-suites.sh race
 bash scripts/test-suites.sh soak
-AUTOGIT_FUZZ_TIME=45s bash scripts/generate-evidence.sh \
+AUTOGIT_FUZZ_TIME=40s bash scripts/generate-evidence.sh \
   --full --tag vX.Y.Z --require-tag \
   --output docs/release-evidence/phase-4-quality.json
 ```
