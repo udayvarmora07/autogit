@@ -28,7 +28,7 @@ The following checks passed during this implementation slice on Linux/amd64:
 ```text
 go test ./...
 go vet ./...
-go test -count=1 -json ./...                 # 853 deterministic test cases
+go test -count=1 -json ./...                 # 859 deterministic test cases
 bash scripts/test-suites.sh presubmit
 bash scripts/test-suites.sh integration
 bash scripts/test-suites.sh race
@@ -47,9 +47,9 @@ python3 -m json.tool docs/release-evidence/phase-4-quality.json
 git diff --check
 ```
 
-The JSON manifest records a clean collection performed at evidence snapshot
-commit
-`ded26c350af754a266e7a48cdd5f24f92c028bf0`. Its ten local suite results include
+The JSON manifest now records a clean collection performed at evidence
+snapshot commit
+`0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878`. Its ten local suite results include
 the corrected 45-second fuzz budget for all 11 targets, the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
 artifact smoke, and the 20-case six-client final-state scenario matrix. The
@@ -59,21 +59,21 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The exact-snapshot full hosted CI dispatch `34327518122` passed all 19/19 jobs
-against `ded26c350af754a266e7a48cdd5f24f92c028bf0`:
+The current exact-snapshot full hosted CI dispatch `34334723962` passed all
+20/20 jobs against `0fb0ad5eb7e84b17d28c765f2bdcb8649dd59878`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-separate security workflow `34325605252` passed CodeQL and
-OpenSSF Scorecard; its dependency-review job was skipped because that job is
-restricted to pull requests. `tag_verified` remains false because this is
+push-triggered core run `34333523392` and security run `34333523253` also passed
+against the same exact SHA. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
 authentication: the dedicated `AUTOGIT_CANARY_TOKEN` secret was empty, so the
 canary did not run and the allowlisted repository was confirmed absent. It is
-not current-HEAD canary evidence. These records do not claim a live provider
-canary, signing, published provenance, or named release review.
+not current-HEAD canary evidence. The former `ded26c3` manifest and hosted
+run `34327518122` remain historical records. These records do not claim a live
+provider canary, signing, published provenance, or named release review.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:

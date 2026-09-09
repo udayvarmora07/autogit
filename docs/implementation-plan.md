@@ -35,12 +35,11 @@ dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Artifact smoke now
 checks the live system Git against the advertised minimum, and the scenario
 evaluator covers all six registered clients with bounded native platform
-traces. The evidence snapshot `ded26c3` passed the full hosted matrix in run
-`34327518122` and the separate security workflow in run `34325605252`; the
+traces. The regenerated evidence snapshot `0fb0ad5` passed the full 20-job
+hosted matrix in run `34334723962`, including fuzz, soak, native artifact,
+scenario, p95, reproducible-build, security, and dependency-policy jobs. The
 machine manifest records that snapshot's clean 10/10 local suite collection
-and six artifact hashes. The current documentation follow-up is `d919f09`,
-whose push-triggered core and security workflows (`34328903738` and
-`34328903736`) also passed. No exact release tag exists yet. Live provider
+and six artifact hashes. No exact release tag exists yet. Live provider
 execution, signing, and named review remain release evidence rather than
 claims made by this slice.
 

@@ -11,9 +11,10 @@ For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff
 before starting work. Current audit: 96 total rows, 65 checked, 31 open; the
 user-assigned batch is 10 work packages occupying 11 open rows. The local
 implementation exists, but formal acceptance is still 0/10 because exact-tag
-evidence, native/provider/release checks, and named review are still required.
+evidence, provider authorization, signing/provenance, and named review are
+still required.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `ded26c3`. Documentation commits may advance the
+for evidence snapshot commit `0fb0ad5`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 
@@ -293,9 +294,9 @@ system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. Evidence snapshot `ded26c3` passed the full 19-job hosted matrix
-(`34327518122`) and the separate security workflow (`34325605252`); the local
-manifest records 10/10 suites and six artifact hashes. The last private canary
+workflows. Evidence snapshot `0fb0ad5` passed the full 20-job hosted matrix
+(`34334723962`); the local manifest records 10/10 suites and six artifact
+hashes. The last private canary
 dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
 before mutation because the dedicated token secret was empty, and the
 allowlisted repository was confirmed absent. The checkboxes remain open until
