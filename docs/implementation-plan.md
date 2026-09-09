@@ -1,5 +1,9 @@
 # AutoGit world-class implementation plan
 
+Cross-chat continuation: read [new-chat-handoff.md](new-chat-handoff.md) for the
+current exact-commit, evidence, count, and next-action snapshot. Do not use an
+older evidence commit in this document as proof of current HEAD status.
+
 Status: Active; release posture is NO-GO for private alpha
 Last updated: 2026-09-09
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
@@ -24,7 +28,7 @@ retained in [the P2-11 and Phase 3 evidence bundle](release-evidence/phase-2-p2-
 The Phase 2/3 release gates remain open until native artifact, provider,
 support-owner, and signed-release evidence is separately executed.
 
-The 2026-09-08 execution slice adds the named Phase 4 verification tiers,
+The 2026-09-08/09 execution slice adds the named Phase 4 verification tiers,
 artifact and final-state scenario evaluators, compatibility-window expiry
 automation, machine-readable evidence generation, and the Phase 5 governance,
 dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
@@ -32,11 +36,13 @@ dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 checks the live system Git against the advertised minimum, and the scenario
 evaluator covers all six registered clients with bounded native platform
 traces. Hosted native Linux/macOS/Windows artifact smoke, client/repository
-scenarios, and performance pass for exact commit
-`6d44b151e42844f2fd4758d5cb93c804b7ffa2c2` in CI run `34261069135`; full fuzz,
-soak, and six cross-target artifact evidence is retained in the local bundle.
-Live provider execution, signing, and named review remain release evidence
-rather than claims made by this slice.
+scenarios, and performance passed for earlier exact commits in the retained CI
+runs. The latest full hosted matrix passed for `5635fe0` in run
+`34270648746`, while the current HEAD is `1427097` after a metadata-selector
+correction and still needs exact-HEAD hosted validation. The checked-in machine
+manifest is stale and must be regenerated rather than hand-edited. Live
+provider execution, signing, and named review remain release evidence rather
+than claims made by this slice.
 
 ## 1. Executive decision
 

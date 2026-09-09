@@ -5,6 +5,16 @@ Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Last updated: 2026-09-09
 Release posture: NO-GO for private alpha
 
+## New-chat continuation handoff
+
+For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
+before starting work. Current audit: 96 total rows, 65 checked, 31 open; the
+user-assigned batch is 10 work packages occupying 11 open rows. The local
+implementation exists, but formal acceptance is still 0/10 because exact-HEAD
+evidence, native/provider/release checks, and named review are still required.
+The checked-in Phase 4 machine manifest is stale and must be regenerated for
+the current HEAD; never update its commit identity by hand.
+
 This tracker contains remaining work, not the project's historical changelog.
 Completed implementation history remains in Git. Check an item only when its
 acceptance evidence is linked from the pull request or release evidence bundle.
