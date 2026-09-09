@@ -301,9 +301,9 @@ dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
 before mutation because the dedicated token secret was empty, and the
 allowlisted repository was confirmed absent. The checkboxes remain open until
 the plan's exact-tag, provider, signing, and named-review acceptance evidence
-is executed. The P5-03/P5-04 implementation details and local checks are in
+is executed. The P5-03/P5-05 implementation details and local checks are in
 [phase-5-release-workflow.md](docs/release-evidence/phase-5-release-workflow.md);
-they do not represent a hosted signing run.
+they do not represent hosted signing or cross-runner evidence.
 
 ## Immediate PR queue
 

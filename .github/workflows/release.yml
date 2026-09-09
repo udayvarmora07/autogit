@@ -57,9 +57,120 @@ jobs:
           bash scripts/check-shell.sh
           bash scripts/check-dependencies.sh
 
+  reproducibility:
+    name: reproducibility / ${{ matrix.label }}
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu
+            os: ubuntu-latest
+          - label: macos
+            os: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: verify exact release identity
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
+          test "$(git describe --exact-match --tags HEAD)" = "$RELEASE_TAG"
+          test -z "$(git status --porcelain=v1)"
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - name: build independent release artifact set
+        shell: bash
+        env:
+          AUTOGIT_VERSION: ${{ github.ref_name }}
+          AUTOGIT_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test ! -e dist
+          bash scripts/release-build.sh --output dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd dist && sha256sum -c SHA256SUMS)
+          else
+            (cd dist && shasum -a 256 -c SHA256SUMS)
+          fi
+      - name: retain independent artifact set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-repro-${{ matrix.label }}
+          if-no-files-found: error
+          retention-days: 14
+          path: dist
+
+  reproducibility_compare:
+    name: compare independent release artifacts
+    needs: reproducibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: download Ubuntu artifact set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-repro-ubuntu
+          path: ${{ runner.temp }}/autogit-repro/ubuntu
+      - name: download macOS artifact set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-repro-macos
+          path: ${{ runner.temp }}/autogit-repro/macos
+      - name: compare every release artifact byte-for-byte
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ubuntu_dir="$RUNNER_TEMP/autogit-repro/ubuntu"
+          macos_dir="$RUNNER_TEMP/autogit-repro/macos"
+          test -f "$ubuntu_dir/SHA256SUMS"
+          test -f "$macos_dir/SHA256SUMS"
+          cmp "$ubuntu_dir/SHA256SUMS" "$macos_dir/SHA256SUMS"
+          diff -u \
+            <(cd "$ubuntu_dir" && sha256sum autogit-* | LC_ALL=C sort -k2,2) \
+            <(cd "$macos_dir" && sha256sum autogit-* | LC_ALL=C sort -k2,2)
+          while IFS= read -r name; do
+            test -f "$macos_dir/$name"
+            cmp "$ubuntu_dir/$name" "$macos_dir/$name"
+          done < <(cd "$ubuntu_dir" && find . -maxdepth 1 -type f -name 'autogit-*' -printf '%f\n' | LC_ALL=C sort)
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "commit=$RELEASE_SHA"
+            echo "runners=ubuntu-latest,macos-latest"
+            echo "status=byte-identical"
+            echo "sha256:"
+            (cd "$ubuntu_dir" && sha256sum autogit-* | LC_ALL=C sort -k2,2)
+          } > "$RUNNER_TEMP/autogit-reproducibility.txt"
+      - name: retain reproducibility comparison
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-reproducibility
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/autogit-reproducibility.txt
+
   attest:
     name: build and attest release artifacts
-    needs: quality
+    needs: [quality, reproducibility_compare]
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 30
@@ -147,7 +258,7 @@ jobs:
           subject-checksums: dist/SHA256SUMS
           sbom-path: dist/autogit.spdx.json
       - name: upload release evidence bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: autogit-${{ github.ref_name }}-release-evidence
           if-no-files-found: error

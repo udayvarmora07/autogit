@@ -14,12 +14,12 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   commit, so the manifest's commit identity is intentionally historical.
 - Overall release posture: **NO-GO for private alpha**.
 - Tracker: 96 total checklist rows, 65 checked, 31 open.
-- User-assigned implementation scope: 10 work packages—P4-01 through P4-08,
-  P5-01, and P5-02.
-- Those packages occupy 11 checklist rows because P5-01 has two independent
-  substeps. All 11 remain unchecked pending acceptance evidence.
-- Therefore, the assigned batch is locally implemented but formally closed at
-  0/10 packages; the full project has 31 open rows.
+- Earlier user-assigned implementation scope: 10 work packages—P4-01 through
+  P4-08, P5-01, and P5-02. The local continuation has also implemented the
+  P5-03 through P5-05 release workflow slice.
+- Those earlier packages occupy 11 checklist rows because P5-01 has two
+  independent substeps. The release rows remain unchecked pending exact-tag
+  hosted acceptance; the full project still has 31 open rows.
 
 ## Why the tracker is still open
 
@@ -31,8 +31,10 @@ platform execution, provider evidence where applicable, and named review.
 The local Phase 4/5 implementation slice exists, including test tiers, script
 failure checks, artifact/scenario evaluators, fuzz budgets, chaos cases,
 compatibility expiry automation, machine-readable evidence, governance files,
-and dependency/security workflows. That is implementation progress, not release
-acceptance.
+and dependency/security workflows. The tag-gated release workflow now adds
+exact identity checks, SPDX/binary-vulnerability evidence, keyless
+attestations, and an Ubuntu/macOS byte-for-byte reproducibility comparison.
+That is implementation progress, not release acceptance.
 
 ## Evidence warning
 
@@ -65,10 +67,11 @@ acceptance.
    its exact owner/name/visibility/ref/SHA and cleanup evidence.
 4. Reconcile the evidence against each P4-01..P4-08, P5-01, and P5-02
    acceptance condition. Check only rows whose evidence is genuinely complete.
-5. Handle the remaining external gates separately: exact release tag,
-   provider/App permission review, signed checksums/SBOM/provenance,
-   reproducibility, named security/release review, native install/rollback
-   tests, and alpha backup/restore/reconciliation/rollback drills.
+5. Handle the remaining external gates separately: exact release tag and
+   release-environment approval, hosted attestation and independent-runner
+   verification, provider/App permission review, named security/release
+   review, native install/rollback tests, and alpha
+   backup/restore/reconciliation/rollback drills.
 6. Report any gate that cannot be completed with the exact missing authority,
    credential, platform, reviewer, or external event. Do not loop indefinitely
    on already-green local tests.
