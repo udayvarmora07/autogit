@@ -10,7 +10,9 @@ outside that set requires maintainer approval before merge.
 GitHub Actions are pinned to full commit SHAs. Dependabot proposes Go-module
 and action updates weekly; dependency review blocks high-severity additions on
 pull requests. CodeQL and OpenSSF Scorecard run with least-privilege workflow
-permissions. `scripts/check-dependencies.sh` is the local enforcement point.
+permissions. `scripts/check-dependencies.sh` is the local enforcement point and
+is also required by the CI `dependency-policy` job on every push and pull
+request.
 
 The direct runtime license inventory is recorded in
 [`dependency-licenses.json`](dependency-licenses.json). Release SBOM

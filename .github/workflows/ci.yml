@@ -291,3 +291,19 @@ jobs:
             echo "credential-shaped content found in tracked source"
             exit 1
           fi
+
+  dependency-policy:
+    name: dependency and workflow policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: enforce dependency and workflow policy
+        shell: bash
+        run: bash scripts/check-dependencies.sh
