@@ -10,11 +10,12 @@ Release posture: NO-GO for private alpha
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
 before starting work. Current audit: 96 total rows, 65 checked, 31 open; the
 user-assigned batch is 10 work packages occupying 11 open rows. The local
-implementation exists, but formal acceptance is still 0/10 because exact-HEAD
+implementation exists, but formal acceptance is still 0/10 because exact-tag
 evidence, native/provider/release checks, and named review are still required.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for the current HEAD. If source or toolchain inputs change, regenerate it with
-the evidence command; never update its commit identity by hand.
+for evidence snapshot commit `ded26c3`. Documentation commits may advance the
+branch after that snapshot. If source or toolchain inputs change, regenerate it
+with the evidence command; never update its commit identity by hand.
 
 This tracker contains remaining work, not the project's historical changelog.
 Completed implementation history remains in Git. Check an item only when its
@@ -282,23 +283,24 @@ named-review requirements are executed and reviewed.
   restore/reproducibility evidence, support/deprecation policy, and signed
   evidence manifest for the exact release tag.
 
-### 2026-09-09 exact-HEAD validation refresh
+### 2026-09-09 exact-snapshot validation refresh
 
 The next ten actionable work packages (P4-01 through P4-08 and P5-01 through
-P5-02) have local implementations and fresh exact-HEAD evidence in
+P5-02) have local implementations and fresh exact-snapshot evidence in
 [phase-4-quality.md](docs/release-evidence/phase-4-quality.md): named
 test tiers, ShellCheck/failure tests, built-artifact smoke with the manifest's
 system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. Exact HEAD `1ec8c39` passed the full 19-job hosted matrix
-(`34324167378`) and security workflow (`34324167261`); the local manifest
-records 10/10 suites and six artifact hashes. The private canary dispatch
-(`34324968472`) stopped before mutation because the dedicated token secret was
-empty, and the allowlisted repository was confirmed absent. Their checkboxes
-remain open until the plan's exact-tag, provider, signing, and named-review
-acceptance evidence is executed.
+workflows. Evidence snapshot `ded26c3` passed the full 19-job hosted matrix
+(`34327518122`) and the separate security workflow (`34325605252`); the local
+manifest records 10/10 suites and six artifact hashes. The last private canary
+dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
+before mutation because the dedicated token secret was empty, and the
+allowlisted repository was confirmed absent. The checkboxes remain open until
+the plan's exact-tag, provider, signing, and named-review acceptance evidence
+is executed.
 
 ## Immediate PR queue
 

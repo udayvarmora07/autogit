@@ -8,23 +8,25 @@ not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
 
-[The full hosted CI run 34324167378](https://github.com/udayvarmora07/autogit/actions/runs/34324167378)
-completed successfully for exact commit
-`1ec8c39a9dbe369a0456fb793b8dfe34c54443e9`. All 19/19 jobs passed, including
+[The full hosted CI run 34327518122](https://github.com/udayvarmora07/autogit/actions/runs/34327518122)
+completed successfully for evidence snapshot commit
+`ded26c350af754a266e7a48cdd5f24f92c028bf0`. All 19/19 jobs passed, including
 native Linux/macOS/Windows tests, six native artifact smoke targets, three
 soak targets, fuzz, cross-builds, reproducible release binaries, presubmit,
 security analysis, and retained scenario/performance artifacts. The separate
-[security workflow 34324167261](https://github.com/udayvarmora07/autogit/actions/runs/34324167261)
+[security workflow 34325605252](https://github.com/udayvarmora07/autogit/actions/runs/34325605252)
 also passed CodeQL and OpenSSF Scorecard; its dependency-review job was
 skipped because it is pull-request-only. This closes the current hosted
-verification matrix, not the release gate. The exact-HEAD evidence manifest is
+verification matrix for that evidence snapshot, not the release gate. The
+snapshot-bound evidence manifest is
 in [`docs/release-evidence/phase-4-quality.json`](release-evidence/phase-4-quality.json).
 The live disposable-provider canary, exact release tag, signed artifacts, and
-alpha/beta promotion remain pending. The exact-HEAD private canary dispatch
+alpha/beta promotion remain pending. The private canary dispatch
 [34324968472](https://github.com/udayvarmora07/autogit/actions/runs/34324968472)
-failed at `gh auth status` because the dedicated `AUTOGIT_CANARY_TOKEN` secret
-was empty; it performed no repository mutation, and the generated allowlisted
-repository was confirmed absent.
+targeted the earlier `1ec8c39` snapshot and failed at `gh auth status` because
+the dedicated `AUTOGIT_CANARY_TOKEN` secret was empty; it performed no
+repository mutation, and the generated allowlisted repository was confirmed
+absent. It is not current-HEAD canary evidence.
 
 ## Release evidence checklist
 
@@ -40,7 +42,7 @@ command output, and redacted artifact links for each item:
 3. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
 4. [Recorded] The native Linux, macOS, and Windows matrix passed in the
-   [exact-HEAD CI run 34314582591](https://github.com/udayvarmora07/autogit/actions/runs/34314582591),
+   [exact-snapshot CI run 34327518122](https://github.com/udayvarmora07/autogit/actions/runs/34327518122),
    including benchmark, p95-gate, build, artifact-smoke, and scenario steps.
    Cross-build output alone is not native evidence.
 5. The same run passed the native p95 gates. Retain the run logs with the
@@ -61,10 +63,11 @@ local test does not authorize public publication.
 
 - Phase 0 remains open: the contract-freeze record and normative documents are
   awaiting product acceptance, despite passing traceability checks.
-- The disposable canary remains open: the exact-HEAD dispatch
-  `34324968472` failed before the test because `AUTOGIT_CANARY_TOKEN` is not
-  configured. No canary repository was created; a successful dedicated-token
-  run and retained cleanup evidence are still required.
+- The disposable canary remains open: the last dispatch `34324968472` targeted
+  the earlier `1ec8c39` snapshot and failed before the test because
+  `AUTOGIT_CANARY_TOKEN` is not configured. No canary repository was created; a
+  successful dedicated-token run against the intended snapshot and retained
+  cleanup evidence are still required.
 - Private alpha remains open: native CI and local reliability evidence pass,
   but the bounded cohort and release-owner approval are not recorded.
 - Public beta remains open: it depends on those unresolved gates and has no

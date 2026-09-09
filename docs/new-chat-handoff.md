@@ -8,9 +8,10 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-09.
 - Repository: `/home/uday-varmora/autogit`.
-- HEAD and `origin/main`: `94712bf8c1517f516eb1035772912ded1ad95b8b`.
-- Working tree: documentation/evidence refresh changes are uncommitted; the
-  manifest collection itself ran against a clean tree at the recorded commit.
+- Evidence snapshot commit: `ded26c350af754a266e7a48cdd5f24f92c028bf0`.
+- The manifest collection ran against a clean tree at that snapshot. This
+  continuity/evidence refresh may be committed as a newer documentation
+  commit, so the manifest's commit identity is intentionally historical.
 - Overall release posture: **NO-GO for private alpha**.
 - Tracker: 96 total checklist rows, 65 checked, 31 open.
 - User-assigned implementation scope: 10 work packages—P4-01 through P4-08,
@@ -35,24 +36,26 @@ acceptance.
 
 ## Evidence warning
 
-- The exact-HEAD full hosted matrix is run `34324167378`, with all 19 jobs
-  passing, including fuzz, soak, native artifact, scenario, and performance
-  jobs. The exact-HEAD security workflow is `34314583318`, with CodeQL and
-  Scorecard passing and dependency review skipped because it is pull-request
-  only.
+- The exact-snapshot full hosted matrix is run `34327518122`, with all 19 jobs
+  passing against `ded26c350af754a266e7a48cdd5f24f92c028bf0`, including fuzz,
+  soak, native artifact, scenario, and performance jobs. The separate security
+  workflow `34325605252` also passed CodeQL and Scorecard; dependency review
+  was skipped because it is pull-request only.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for exact commit `1ec8c39`; it records 10/10 local
-  suites and six artifact hashes with a clean tree at collection time.
-- Exact-HEAD canary dispatch `34324968472` failed before mutation because the
-  dedicated `AUTOGIT_CANARY_TOKEN` secret is empty; the allowlisted canary
-  repository was confirmed absent.
+  generated collection for evidence snapshot commit `ded26c3`; it records
+  10/10 local suites and six artifact hashes with a clean tree at collection
+  time.
+- The last canary dispatch, `34324968472`, targeted the earlier `1ec8c39`
+  snapshot and failed before mutation because the dedicated
+  `AUTOGIT_CANARY_TOKEN` secret was empty; the allowlisted canary repository
+  was confirmed absent. It is not current-HEAD canary evidence.
 
 ## Immediate continuation order
 
 1. Re-read `todo.md`, this handoff, and the relevant Phase 4/5 sections of
    `implementation-plan.md`; inspect the current evidence generator and its
    output contract before running it.
-2. Preserve the fresh exact-HEAD local manifest and hosted records above; if
+2. Preserve the fresh exact-snapshot local manifest and hosted records above; if
    source or toolchain changes, regenerate with the configured 45-second fuzz
    budget and verify its commit, dirty-tree state, suite results, artifact
    identities, and control statuses before replacement.
