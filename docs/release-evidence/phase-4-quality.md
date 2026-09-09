@@ -49,7 +49,7 @@ git diff --check
 
 The JSON manifest in this worktree records a clean collection performed at
 exact commit
-`94712bf8c1517f516eb1035772912ded1ad95b8b`. Its ten local suite results include
+`1ec8c39a9dbe369a0456fb793b8dfe34c54443e9`. Its ten local suite results include
 the corrected 45-second fuzz budget for all 11 targets, the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
 artifact smoke, and the 20-case six-client final-state scenario matrix. The
@@ -59,16 +59,16 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The exact-commit full hosted CI dispatch `34314582591` passed all 19/19 jobs:
+The exact-commit full hosted CI dispatch `34324167378` passed all 19/19 jobs:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-separate exact-commit security workflow `34314583318` passed CodeQL and
+separate exact-commit security workflow `34324167261` passed CodeQL and
 OpenSSF Scorecard; its dependency-review job was skipped because that job is
 restricted to pull requests. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The exact-HEAD private
-canary dispatch `34314717400` stopped at authentication: the dedicated
+canary dispatch `34324968472` stopped at authentication: the dedicated
 `AUTOGIT_CANARY_TOKEN` secret was empty, so the canary did not run and the
 allowlisted repository was confirmed absent. These records do not claim a live
 provider canary, signing, published provenance, or named release review.

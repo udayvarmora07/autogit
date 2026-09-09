@@ -35,15 +35,15 @@ acceptance.
 
 ## Evidence warning
 
-- The exact-HEAD full hosted matrix is run `34314582591`, with all 19 jobs
+- The exact-HEAD full hosted matrix is run `34324167378`, with all 19 jobs
   passing, including fuzz, soak, native artifact, scenario, and performance
   jobs. The exact-HEAD security workflow is `34314583318`, with CodeQL and
   Scorecard passing and dependency review skipped because it is pull-request
   only.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for exact commit `94712bf`; it records 10/10 local
+  generated collection for exact commit `1ec8c39`; it records 10/10 local
   suites and six artifact hashes with a clean tree at collection time.
-- Exact-HEAD canary dispatch `34314717400` failed before mutation because the
+- Exact-HEAD canary dispatch `34324968472` failed before mutation because the
   dedicated `AUTOGIT_CANARY_TOKEN` secret is empty; the allowlisted canary
   repository was confirmed absent.
 

@@ -292,10 +292,10 @@ system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. Exact HEAD `94712bf` passed the full 19-job hosted matrix
-(`34314582591`) and security workflow (`34314583318`); the local manifest
+workflows. Exact HEAD `1ec8c39` passed the full 19-job hosted matrix
+(`34324167378`) and security workflow (`34324167261`); the local manifest
 records 10/10 suites and six artifact hashes. The private canary dispatch
-(`34314717400`) stopped before mutation because the dedicated token secret was
+(`34324968472`) stopped before mutation because the dedicated token secret was
 empty, and the allowlisted repository was confirmed absent. Their checkboxes
 remain open until the plan's exact-tag, provider, signing, and named-review
 acceptance evidence is executed.

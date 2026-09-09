@@ -8,20 +8,20 @@ not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
 
-[The full hosted CI run 34314582591](https://github.com/udayvarmora07/autogit/actions/runs/34314582591)
+[The full hosted CI run 34324167378](https://github.com/udayvarmora07/autogit/actions/runs/34324167378)
 completed successfully for exact commit
-`94712bf8c1517f516eb1035772912ded1ad95b8b`. All 19/19 jobs passed, including
+`1ec8c39a9dbe369a0456fb793b8dfe34c54443e9`. All 19/19 jobs passed, including
 native Linux/macOS/Windows tests, six native artifact smoke targets, three
 soak targets, fuzz, cross-builds, reproducible release binaries, presubmit,
 security analysis, and retained scenario/performance artifacts. The separate
-[security workflow 34314583318](https://github.com/udayvarmora07/autogit/actions/runs/34314583318)
+[security workflow 34324167261](https://github.com/udayvarmora07/autogit/actions/runs/34324167261)
 also passed CodeQL and OpenSSF Scorecard; its dependency-review job was
 skipped because it is pull-request-only. This closes the current hosted
 verification matrix, not the release gate. The exact-HEAD evidence manifest is
 in [`docs/release-evidence/phase-4-quality.json`](release-evidence/phase-4-quality.json).
 The live disposable-provider canary, exact release tag, signed artifacts, and
 alpha/beta promotion remain pending. The exact-HEAD private canary dispatch
-[34314717400](https://github.com/udayvarmora07/autogit/actions/runs/34314717400)
+[34324968472](https://github.com/udayvarmora07/autogit/actions/runs/34324968472)
 failed at `gh auth status` because the dedicated `AUTOGIT_CANARY_TOKEN` secret
 was empty; it performed no repository mutation, and the generated allowlisted
 repository was confirmed absent.
@@ -62,7 +62,7 @@ local test does not authorize public publication.
 - Phase 0 remains open: the contract-freeze record and normative documents are
   awaiting product acceptance, despite passing traceability checks.
 - The disposable canary remains open: the exact-HEAD dispatch
-  `34314717400` failed before the test because `AUTOGIT_CANARY_TOKEN` is not
+  `34324968472` failed before the test because `AUTOGIT_CANARY_TOKEN` is not
   configured. No canary repository was created; a successful dedicated-token
   run and retained cleanup evidence are still required.
 - Private alpha remains open: native CI and local reliability evidence pass,
