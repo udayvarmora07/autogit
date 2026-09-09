@@ -69,13 +69,19 @@ for binary in "${release_binaries[@]}"; do
   expected_names+=("$binary.govulncheck.txt")
 done
 
-declare -A expected=()
-for name in "${expected_names[@]}"; do
-  expected["$name"]=1
-done
+is_expected_name() {
+  local candidate=$1
+  local name
+  for name in "${expected_names[@]}"; do
+    if [[ "$name" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 manifest_lines=0
-declare -A seen=()
+seen_names=()
 manifest_pattern='^([0-9a-f]{64})  ([^[:space:]]+)$'
 while IFS= read -r line || [[ -n "$line" ]]; do
   manifest_lines=$((manifest_lines + 1))
@@ -84,11 +90,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     exit 1
   fi
   name="${BASH_REMATCH[2]}"
-  if [[ -z "${expected[$name]+present}" ]]; then
+  if ! is_expected_name "$name"; then
     echo "checksum manifest contains an unexpected file: $name" >&2
     exit 1
   fi
-  seen["$name"]=$(( ${seen[$name]:-0} + 1 ))
+  seen_names+=("$name")
 done < "$directory/SHA256SUMS"
 
 if [[ "$manifest_lines" -ne "${#expected_names[@]}" ]]; then
@@ -96,7 +102,13 @@ if [[ "$manifest_lines" -ne "${#expected_names[@]}" ]]; then
   exit 1
 fi
 for name in "${expected_names[@]}"; do
-  if [[ "${seen[$name]:-0}" -ne 1 || ! -f "$directory/$name" || -L "$directory/$name" ]]; then
+  seen_count=0
+  for seen_name in "${seen_names[@]}"; do
+    if [[ "$seen_name" == "$name" ]]; then
+      seen_count=$((seen_count + 1))
+    fi
+  done
+  if [[ "$seen_count" -ne 1 || ! -f "$directory/$name" || -L "$directory/$name" ]]; then
     echo "release evidence file is missing, duplicated, or a symlink: $name" >&2
     exit 1
   fi

@@ -134,6 +134,16 @@ func TestReleaseVerifierBindsAttestationIdentity(t *testing.T) {
 	}
 }
 
+func TestReleaseVerifierStaysCompatibleWithStockMacOSBash(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(scriptsRoot(t), "verify-release-artifacts.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("declare -A")) {
+		t.Fatal("release verifier must not require Bash 4 associative arrays; macOS ships Bash 3.2")
+	}
+}
+
 var releaseEvidenceNames = []string{
 	"autogit-linux-amd64",
 	"autogit-linux-arm64",
