@@ -16,6 +16,7 @@ Status: implementation complete; exact-tag hosted acceptance remains open
 | Binary vulnerability evidence | Each Linux, macOS, and Windows release binary is scanned with `golang.org/x/vuln/cmd/govulncheck@v1.7.0 -mode=binary`; reports are included in the checksum manifest. |
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
+| Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe or incomplete manifests, verifies all six binaries plus SBOM/vulnerability reports, and invokes `gh attestation verify` with the exact repository, release workflow, tag, source commit, SLSA predicate, and hosted-runner requirement. The release workflow runs this verifier after both attestations and before final evidence upload. |
 
 ## Local verification
 
@@ -28,6 +29,13 @@ bash -n scripts/*.sh
 shellcheck --shell=bash --severity=warning scripts/*.sh
 bash scripts/check-dependencies.sh
 git diff --check
+```
+
+After an authorized hosted release, consumers can run:
+
+```text
+bash scripts/verify-release-artifacts.sh --directory DIST \
+  --repo udayvarmora07/autogit --tag vMAJOR.MINOR.PATCH --commit FULL_SHA
 ```
 
 The SBOM generator was also run against the repository's complete Go module

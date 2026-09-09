@@ -41,20 +41,24 @@ command output, and redacted artifact links for each item:
    and creates keyless Sigstore-backed SLSA and SBOM attestations after the
    `release` environment gate. Inspect and retain the hosted attestation
    bundles before any future publication step.
-3. Run the deterministic test-floor command from
+3. After downloading the evidence bundle, run
+   `bash scripts/verify-release-artifacts.sh` with the exact repository, tag,
+   and commit. It validates the complete checksum manifest and requires the
+   release workflow's hosted SLSA provenance identity.
+4. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
-4. [Recorded] The native Linux, macOS, and Windows matrix passed in the
+5. [Recorded] The native Linux, macOS, and Windows matrix passed in the
    [exact-snapshot CI run 34327518122](https://github.com/udayvarmora07/autogit/actions/runs/34327518122),
    including benchmark, p95-gate, build, artifact-smoke, and scenario steps.
    Cross-build output alone is not native evidence.
-5. The same run passed the native p95 gates. Retain the run logs with the
+6. The same run passed the native p95 gates. Retain the run logs with the
    release record; this evidence does not by itself approve alpha or beta.
-6. Run the manually dispatched
+7. Run the manually dispatched
    [GitHub canary](../.github/workflows/github-canary.yml) with the dedicated
    `AUTOGIT_CANARY_TOKEN` secret and owner. Confirm generated name, owner,
    visibility, `main` ref, exact commit SHA, and successful cleanup. A personal
    token or ambient `GH_TOKEN` is not acceptable.
-7. Obtain product acceptance of the Phase 0 contract, threat invariants, test
+8. Obtain product acceptance of the Phase 0 contract, threat invariants, test
    traceability, compatibility boundary, and release decision. Record the
    approver and date in the release record.
 

@@ -16,7 +16,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 - Tracker: 96 total checklist rows, 65 checked, 31 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
-  P5-03 through P5-05 release workflow slice.
+  P5-03 through P5-05 release workflow slice and consumer artifact verifier.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
   independent substeps. The release rows remain unchecked pending exact-tag
   hosted acceptance; the full project still has 31 open rows.
@@ -34,7 +34,8 @@ compatibility expiry automation, machine-readable evidence, governance files,
 and dependency/security workflows. The tag-gated release workflow now adds
 exact identity checks, SPDX/binary-vulnerability evidence, keyless
 attestations, and an Ubuntu/macOS byte-for-byte reproducibility comparison.
-That is implementation progress, not release acceptance.
+The consumer verifier binds checksums to the exact workflow, tag, and source
+commit. That is implementation progress, not release acceptance.
 
 ## Evidence warning
 

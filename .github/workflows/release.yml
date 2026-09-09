@@ -257,6 +257,19 @@ jobs:
         with:
           subject-checksums: dist/SHA256SUMS
           sbom-path: dist/autogit.spdx.json
+      - name: verify generated provenance as a consumer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash scripts/verify-release-artifacts.sh \
+            --directory dist \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" \
+            --commit "$RELEASE_SHA"
       - name: upload release evidence bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

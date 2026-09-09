@@ -2,6 +2,8 @@ package scripts_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,6 +82,90 @@ func TestArtifactSmokeRejectsMissingBinaryBeforeCreatingState(t *testing.T) {
 	if err == nil || !bytes.Contains(output, []byte("artifact binary is missing")) {
 		t.Fatalf("missing binary result=%v output=%s", err, output)
 	}
+}
+
+func TestReleaseVerifierRejectsChecksumMismatchBeforeAttestation(t *testing.T) {
+	directory := writeReleaseEvidenceFixture(t)
+	if err := os.WriteFile(filepath.Join(directory, releaseEvidenceNames[0]), []byte("tampered"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runShellScript(t, nil, "verify-release-artifacts.sh", "--directory", directory, "--repo", "owner/repo", "--tag", "v1.2.3", "--commit", strings.Repeat("a", 40))
+	if err == nil || !bytes.Contains(output, []byte("release checksum verification failed")) {
+		t.Fatalf("checksum mismatch result=%v output=%s", err, output)
+	}
+}
+
+func TestReleaseVerifierBindsAttestationIdentity(t *testing.T) {
+	directory := writeReleaseEvidenceFixture(t)
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "gh.log")
+	fakeGH := filepath.Join(fakeBin, "gh")
+	if err := os.WriteFile(fakeGH, []byte("#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> \"$AUTOGIT_GH_LOG\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runShellScript(t, []string{
+		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"AUTOGIT_GH_LOG=" + logPath,
+	}, "verify-release-artifacts.sh", "--directory", directory, "--repo", "owner/repo", "--tag", "v1.2.3", "--commit", strings.Repeat("a", 40))
+	if err != nil || !bytes.Contains(output, []byte("release checksums and provenance verified")) {
+		t.Fatalf("valid release result=%v output=%s", err, output)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
+	if len(lines) != 8 {
+		t.Fatalf("attestation calls=%d log=%s", len(lines), log)
+	}
+	for _, line := range lines[1:] {
+		for _, required := range []string{
+			"--repo owner/repo",
+			"--signer-workflow owner/repo/.github/workflows/release.yml",
+			"--source-ref refs/tags/v1.2.3",
+			"--source-digest " + strings.Repeat("a", 40),
+			"--predicate-type https://slsa.dev/provenance/v1",
+			"--deny-self-hosted-runners",
+		} {
+			if !strings.Contains(line, required) {
+				t.Fatalf("attestation call missing %q: %s", required, line)
+			}
+		}
+	}
+}
+
+var releaseEvidenceNames = []string{
+	"autogit-linux-amd64",
+	"autogit-linux-arm64",
+	"autogit-darwin-amd64",
+	"autogit-darwin-arm64",
+	"autogit-windows-amd64.exe",
+	"autogit-windows-arm64.exe",
+	"autogit.spdx.json",
+	"autogit-linux-amd64.govulncheck.txt",
+	"autogit-linux-arm64.govulncheck.txt",
+	"autogit-darwin-amd64.govulncheck.txt",
+	"autogit-darwin-arm64.govulncheck.txt",
+	"autogit-windows-amd64.exe.govulncheck.txt",
+	"autogit-windows-arm64.exe.govulncheck.txt",
+}
+
+func writeReleaseEvidenceFixture(t *testing.T) string {
+	t.Helper()
+	directory := t.TempDir()
+	var manifest strings.Builder
+	for _, name := range releaseEvidenceNames {
+		content := []byte("release evidence: " + name)
+		if err := os.WriteFile(filepath.Join(directory, name), content, 0600); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(content)
+		manifest.WriteString(fmt.Sprintf("%x  %s\n", sum, name))
+	}
+	if err := os.WriteFile(filepath.Join(directory, "SHA256SUMS"), []byte(manifest.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return directory
 }
 
 func TestArtifactSmokeRejectsGitBelowCompatibilityFloor(t *testing.T) {
