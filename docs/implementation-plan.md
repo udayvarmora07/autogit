@@ -5,7 +5,7 @@ current exact-commit, evidence, count, and next-action snapshot. Do not use an
 older evidence commit in this document as proof of current HEAD status.
 
 Status: Active; release posture is NO-GO for private alpha
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
