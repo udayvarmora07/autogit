@@ -46,6 +46,13 @@ jobs:
           set -euo pipefail
           test_json="$RUNNER_TEMP/autogit-go-test.json"
           if ! go test -count=1 -json ./... >"$test_json" 2>&1; then
+            echo "go test failure records:"
+            failures="$(awk '/"Action":"fail"/ || /"Action":"output"/ && /FAIL/ {print}' "$test_json" | tail -n 80)"
+            if [[ -n "$failures" ]]; then
+              printf '%s\n' "$failures"
+            else
+              echo "no structured failure record was emitted"
+            fi
             echo "go test JSON output (tail):"
             tail -n 200 "$test_json"
             exit 1
