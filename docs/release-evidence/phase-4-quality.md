@@ -76,6 +76,10 @@ not current-HEAD canary evidence. The former `ded26c3` manifest and hosted
 run `34327518122` remain historical records. These records do not claim a live
 provider canary, signing, published provenance, or named release review.
 
+The hosted compatibility-window review `34347979343` passed at the current
+branch commit `211fb69b9cc2d23813c7feda5dc4831357a586ff`; all advertised
+windows were current and no expiry issue was generated.
+
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:
 

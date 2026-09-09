@@ -49,6 +49,8 @@ acceptance.
   snapshot and failed before mutation because the dedicated
   `AUTOGIT_CANARY_TOKEN` secret was empty; the allowlisted canary repository
   was confirmed absent. It is not current-HEAD canary evidence.
+- Hosted compatibility-window review `34347979343` passed at current branch
+  commit `211fb69`; no expiry issue was generated.
 
 ## Immediate continuation order
 
