@@ -8,8 +8,9 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-09.
 - Repository: `/home/uday-varmora/autogit`.
-- HEAD and `origin/main`: `1427097b42b427054f0d508b6de9c90d7a1c0cce`.
-- Working tree: clean at the last audit.
+- HEAD and `origin/main`: `94712bf8c1517f516eb1035772912ded1ad95b8b`.
+- Working tree: documentation/evidence refresh changes are uncommitted; the
+  manifest collection itself ran against a clean tree at the recorded commit.
 - Overall release posture: **NO-GO for private alpha**.
 - Tracker: 96 total checklist rows, 65 checked, 31 open.
 - User-assigned implementation scope: 10 work packages—P4-01 through P4-08,
@@ -34,28 +35,29 @@ acceptance.
 
 ## Evidence warning
 
-- The last successful full hosted matrix was run for commit `5635fe0` and had
-  19/19 jobs pass.
-- Current HEAD `1427097` contains the corrected fuzz-evidence selector, but no
-  hosted run for this exact commit was present at the last audit.
-- [phase-4-quality.json](release-evidence/phase-4-quality.json) is stale and
-  still identifies commit `6d44b15`. Do not cite it as current exact-HEAD
-  evidence and do not edit its commit field by hand.
-- The previous long run was interrupted while refreshing the evidence bundle.
-  A metadata typo was subsequently corrected in commit `1427097`.
+- The exact-HEAD full hosted matrix is run `34314582591`, with all 19 jobs
+  passing, including fuzz, soak, native artifact, scenario, and performance
+  jobs. The exact-HEAD security workflow is `34314583318`, with CodeQL and
+  Scorecard passing and dependency review skipped because it is pull-request
+  only.
+- [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
+  generated collection for exact commit `94712bf`; it records 10/10 local
+  suites and six artifact hashes with a clean tree at collection time.
+- Exact-HEAD canary dispatch `34314717400` failed before mutation because the
+  dedicated `AUTOGIT_CANARY_TOKEN` secret is empty; the allowlisted canary
+  repository was confirmed absent.
 
 ## Immediate continuation order
 
 1. Re-read `todo.md`, this handoff, and the relevant Phase 4/5 sections of
    `implementation-plan.md`; inspect the current evidence generator and its
    output contract before running it.
-2. Regenerate the machine-readable and human-readable Phase 4 evidence for the
-   exact current HEAD, using the corrected selector and the configured 45-second
-   fuzz budget. Verify the manifest's commit, dirty-tree state, suite results,
-   artifact identities, and control statuses before replacing stale checked-in
-   evidence.
-3. Run or dispatch hosted CI for exact HEAD `1427097`; retain the run URL/ID
-   and verify all required jobs, not only the aggregate conclusion.
+2. Preserve the fresh exact-HEAD local manifest and hosted records above; if
+   source or toolchain changes, regenerate with the configured 45-second fuzz
+   budget and verify its commit, dirty-tree state, suite results, artifact
+   identities, and control statuses before replacement.
+3. Supply the dedicated canary credential and rerun the private canary; retain
+   its exact owner/name/visibility/ref/SHA and cleanup evidence.
 4. Reconcile the evidence against each P4-01..P4-08, P5-01, and P5-02
    acceptance condition. Check only rows whose evidence is genuinely complete.
 5. Handle the remaining external gates separately: exact release tag,

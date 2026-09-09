@@ -47,9 +47,9 @@ python3 -m json.tool docs/release-evidence/phase-4-quality.json
 git diff --check
 ```
 
-The regenerated JSON manifest currently in this working tree is a clean
-collection for exact commit
-`01035c6250407f5d1b40a02ace8ae97d924b15b2`. Its ten local suite results include
+The JSON manifest in this worktree records a clean collection performed at
+exact commit
+`94712bf8c1517f516eb1035772912ded1ad95b8b`. Its ten local suite results include
 the corrected 45-second fuzz budget for all 11 targets, the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
 artifact smoke, and the 20-case six-client final-state scenario matrix. The
@@ -59,17 +59,19 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The exact-commit full hosted CI dispatch `34312141862` passed all 19/19 jobs:
+The exact-commit full hosted CI dispatch `34314582591` passed all 19/19 jobs:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-separate exact-commit security workflow `34312149484` passed CodeQL and
+separate exact-commit security workflow `34314583318` passed CodeQL and
 OpenSSF Scorecard; its dependency-review job was skipped because that job is
 restricted to pull requests. `tag_verified` remains false because this is
-implementation evidence, not release-tag approval. These records do not claim
-a live provider canary, signing, published provenance, or named release
-review.
+implementation evidence, not release-tag approval. The exact-HEAD private
+canary dispatch `34314717400` stopped at authentication: the dedicated
+`AUTOGIT_CANARY_TOKEN` secret was empty, so the canary did not run and the
+allowlisted repository was confirmed absent. These records do not claim a live
+provider canary, signing, published provenance, or named release review.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:

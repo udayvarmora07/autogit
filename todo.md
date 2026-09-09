@@ -12,8 +12,9 @@ before starting work. Current audit: 96 total rows, 65 checked, 31 open; the
 user-assigned batch is 10 work packages occupying 11 open rows. The local
 implementation exists, but formal acceptance is still 0/10 because exact-HEAD
 evidence, native/provider/release checks, and named review are still required.
-The checked-in Phase 4 machine manifest is stale and must be regenerated for
-the current HEAD; never update its commit identity by hand.
+The checked-in Phase 4 machine manifest records a generated clean collection
+for the current HEAD. If source or toolchain inputs change, regenerate it with
+the evidence command; never update its commit identity by hand.
 
 This tracker contains remaining work, not the project's historical changelog.
 Completed implementation history remains in Git. Check an item only when its
@@ -281,18 +282,23 @@ named-review requirements are executed and reviewed.
   restore/reproducibility evidence, support/deprecation policy, and signed
   evidence manifest for the exact release tag.
 
-### 2026-09-08 local implementation slice
+### 2026-09-09 exact-HEAD validation refresh
 
 The next ten actionable work packages (P4-01 through P4-08 and P5-01 through
-P5-02) now have local implementations and a fresh Linux full-suite evidence
-bundle in [phase-4-quality.md](docs/release-evidence/phase-4-quality.md): named
+P5-02) have local implementations and fresh exact-HEAD evidence in
+[phase-4-quality.md](docs/release-evidence/phase-4-quality.md): named
 test tiers, ShellCheck/failure tests, built-artifact smoke with the manifest's
 system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. Their checkboxes remain open until the plan's native execution,
-exact-tag, provider, signing, and named-review acceptance evidence is executed.
+workflows. Exact HEAD `94712bf` passed the full 19-job hosted matrix
+(`34314582591`) and security workflow (`34314583318`); the local manifest
+records 10/10 suites and six artifact hashes. The private canary dispatch
+(`34314717400`) stopped before mutation because the dedicated token secret was
+empty, and the allowlisted repository was confirmed absent. Their checkboxes
+remain open until the plan's exact-tag, provider, signing, and named-review
+acceptance evidence is executed.
 
 ## Immediate PR queue
 
