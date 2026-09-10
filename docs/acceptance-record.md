@@ -61,3 +61,37 @@ approve public beta or GA and does not replace the exact-tag release evidence.
 Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
+
+## Dependency and workflow policy review
+
+The owner reviewed the dependency and workflow controls for the bounded
+private-alpha scope. The review covered `docs/dependency-policy.md`,
+`docs/dependency-licenses.json`, `.github/dependabot.yml`, all five files in
+`.github/workflows/`, `scripts/check-dependencies.sh`, and the
+[`gosec` suppression register](release-evidence/gosec-suppressions.md).
+
+The reviewed baseline has a documented SPDX allowlist, direct license
+inventory, `go mod verify`, weekly Dependabot proposals capped at five open
+pull requests per ecosystem, high-severity dependency-review blocking,
+CodeQL and OpenSSF Scorecard jobs, least-privilege permissions, and full-SHA
+action pinning. Open Dependabot proposals remain subject to the policy job and
+deliberate maintainer review; no repository workflow performs automatic
+merges. The current action-update proposals are tracked in pull requests
+[#2](https://github.com/udayvarmora07/autogit/pull/2),
+[#3](https://github.com/udayvarmora07/autogit/pull/3),
+[#4](https://github.com/udayvarmora07/autogit/pull/4), and
+[#5](https://github.com/udayvarmora07/autogit/pull/5).
+
+The policy exceptions are justified and bounded: the 28 `gosec` suppressions
+are line-scoped false positives at documented compatibility or security
+boundaries, each has linked tests, and the register defines review triggers.
+The workflow security review found no exploitable external-attacker path in
+the reviewed triggers, permissions, secrets, or action references.
+
+Decision: accepted for the bounded private-alpha scope. This decision does
+not approve public beta or GA and does not permit unreviewed dependency or
+workflow updates.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-10

@@ -128,9 +128,9 @@
       "id": "P5-02",
       "checklist_rows": ["P5-02"],
       "implementation_status": "verified",
-      "acceptance_status": "pending_review",
-      "acceptance_blockers": ["reviewed automated-update flow", "justified policy exceptions"],
-      "next_action": "Record maintainer review of dependency and workflow policy."
+      "acceptance_status": "accepted",
+      "acceptance_blockers": [],
+      "next_action": "Retain the owner review with the private-alpha release evidence."
     }
   ]
 }

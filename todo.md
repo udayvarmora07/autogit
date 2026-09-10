@@ -12,15 +12,15 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 67 checked, 29 open; the
-user-assigned batch is 10 work packages occupying 9 open rows. The local
-implementation exists, and formal acceptance is 1/10 after P5-01 governance
-acceptance; exact-tag evidence, signing/provenance, and remaining named review
-are still required.
+before starting work. Current audit: 96 total rows, 68 checked, 28 open; the
+user-assigned batch is 10 work packages occupying 8 open rows. The local
+implementation exists, and formal acceptance is 2/10 after P5-01 governance
+and P5-02 dependency/workflow acceptance; exact-tag evidence,
+signing/provenance, and remaining named review are still required.
 Implementation state for that batch is tracked separately in the
 [Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
 10/10 packages are verified against the recorded implementation evidence;
-9 release-acceptance rows remain pending review.
+8 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `6fc197b`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
@@ -260,9 +260,9 @@ named-review requirements are executed and reviewed.
 - [x] P5-01 Add SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, CODEOWNERS,
   support policy, and CHANGELOG.md. Evidence: [governance and security-contact
   review](docs/acceptance-record.md#governance-and-security-contact-review).
-- [ ] P5-02 Add controlled dependency updates, license policy, dependency
+- [x] P5-02 Add controlled dependency updates, license policy, dependency
   review, CodeQL, OpenSSF Scorecard, least workflow permissions, and pinned
-  action update review.
+  action update review. Evidence: [dependency and workflow policy review](docs/acceptance-record.md#dependency-and-workflow-policy-review).
 - [ ] P5-03 Build a tag-gated clean-room release workflow that rejects dirty,
   reused, version-mismatched, or incompletely tested artifacts.
 - [ ] P5-04 Produce SPDX/CycloneDX SBOMs, binary govulncheck evidence, signed

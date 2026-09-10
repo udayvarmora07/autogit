@@ -27,7 +27,7 @@ public beta or GA.
 | P4-07 | Compatibility checks and expiry automation are recorded in the manifest; the compatibility contract has no due or expired window. | Implementation evidenced; named review still required by the promotion rule. |
 | P4-08 | The manifest binds requirements, threats, controls, suites, commit, and artifact hashes. | Open: `tag_verified` is false because no exact release tag exists. |
 | P5-01 | LICENSE, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, CODEOWNERS, support policy, and CHANGELOG.md are present. | Accepted for the bounded private-alpha scope by the named release owner; public beta/GA review remains separate. |
-| P5-02 | Dependabot, dependency review, CodeQL, Scorecard, pinned-action enforcement, module verification, and license policy are present and passed. | Open: reviewed automated-update flow and justified policy exceptions are not recorded. |
+| P5-02 | Dependabot, dependency review, CodeQL, Scorecard, pinned-action enforcement, module verification, and license policy are present and passed. | Accepted for the bounded private-alpha scope by the named release owner; automated-update review and policy exceptions are recorded. Public beta/GA review remains separate. |
 
 The following evidence is intentionally not claimed: a live provider canary
 with the dedicated token, a release-environment approval, keyless hosted
