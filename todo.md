@@ -12,15 +12,15 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 68 checked, 28 open; the
-user-assigned batch is 10 work packages occupying 8 open rows. The local
-implementation exists, and formal acceptance is 2/10 after P5-01 governance
-and P5-02 dependency/workflow acceptance; exact-tag evidence,
+before starting work. Current audit: 96 total rows, 69 checked, 27 open; the
+user-assigned batch is 10 work packages occupying 7 open rows. The local
+implementation exists, and formal acceptance is 3/10 after P4-01 quality-tier,
+P5-01 governance, and P5-02 dependency/workflow acceptance; exact-tag evidence,
 signing/provenance, and remaining named review are still required.
 Implementation state for that batch is tracked separately in the
 [Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
 10/10 packages are verified against the recorded implementation evidence;
-8 release-acceptance rows remain pending review.
+7 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `6fc197b`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
@@ -236,8 +236,9 @@ named-review requirements are executed and reviewed.
 
 ## Phase 4 — verification, evals, and continuous quality
 
-- [ ] P4-01 Split fast presubmit, race, integration, 1,000-schedule soak,
+- [x] P4-01 Split fast presubmit, race, integration, 1,000-schedule soak,
   fuzz, canary, and release suites; keep presubmit p95 below five minutes.
+  Evidence: [P4-01 quality-tier review](docs/acceptance-record.md#p4-01-quality-tier-review).
 - [ ] P4-02 Add shellcheck and direct failure/safety tests for canary,
   performance, and release shell scripts.
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
@@ -315,8 +316,9 @@ core and security runs (`34481728077`, `34481728025`) and compatibility review
 (`34483444477`) also passed at the same commit. The current dedicated-token
 private canary dispatch (`34489797141`) passed against `36c045f` for owner
 `udayvarmora07`, and the allowlisted repository was confirmed absent after
-cleanup. The checkboxes remain open until the plan's exact-tag, signing, and
-remaining named-review acceptance evidence is executed. The P5-03/P5-05
+cleanup. The remaining P4 checkboxes stay open until the plan's exact-tag,
+native, signing, and remaining named-review acceptance evidence is executed.
+The P5-03/P5-05
 implementation details and local checks are in
 [phase-5-release-workflow.md](docs/release-evidence/phase-5-release-workflow.md);
 they do not represent hosted signing or cross-runner evidence.
