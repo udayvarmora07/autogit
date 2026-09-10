@@ -4,6 +4,10 @@ Source of truth: [world-class implementation plan](docs/implementation-plan.md)
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Last updated: 2026-09-10
 Release posture: NO-GO for private alpha
+Private-alpha review policy: the documented single-maintainer exception allows
+named release-owner approval; it does not waive exact-tag, canary, provenance,
+reproducibility, or consumer-verification evidence and does not apply to beta
+or GA.
 
 ## New-chat continuation handoff
 

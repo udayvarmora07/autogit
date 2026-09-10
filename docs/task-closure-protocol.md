@@ -167,7 +167,10 @@ controls:
 2. **PR-only implementation flow.** Protect `main`, require the quality and
    evidence checks, and require an independent review for rows that claim
    acceptance. This makes implementation review an actual transition rather
-   than an unrecorded direct push.
+   than an unrecorded direct push. The documented single-maintainer
+   private-alpha exception may substitute named release-owner approval for
+   this reviewer field; that approval must not be described as independent and
+   the exception does not apply to public beta or GA.
 3. **Release-only protected environment.** Permit the tag-gated release job to
    proceed only after the exact commit/version checks pass and a release
    reviewer approves the environment. Keep the canary credential in that

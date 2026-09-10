@@ -11,6 +11,11 @@ This matrix separates implementation evidence from the tracker’s promotion
 rule. A row stays unchecked when the evidence is present but the plan still
 requires a release owner, provider authorization, exact tag, or named review.
 
+For the bounded private-alpha candidate, the documented single-maintainer
+exception permits named release-owner approval in place of independent review.
+This is an owner decision, not independent evidence, and it does not apply to
+public beta or GA.
+
 | Package | Evidence at the exact snapshot | Acceptance status |
 | --- | --- | --- |
 | P4-01 | Manifest records the presubmit, core, race, integration, soak, fuzz, canary, and release tiers; the hosted matrix exercises the bounded native quality path. | Implementation evidenced; named review still required by the promotion rule. |

@@ -24,3 +24,16 @@ live provider canary, or release artifact.
 The acceptance is limited to the stated baseline. A document or command must
 not infer phase promotion from this record; promotion still requires the
 phase-specific evidence listed in [todo.md](../todo.md).
+
+## Private-alpha release-owner exception
+
+For this single-maintainer repository, the owner may serve as the named
+release reviewer for the bounded private-alpha candidate. This is an explicit
+owner approval and must not be described as independent review. It does not
+waive the exact-tag, provider-canary, signed-provenance, reproducibility, or
+consumer-verification requirements, and it does not apply to public beta or
+GA. Public beta and GA still require independent security/release review.
+
+Decision owner: Uday Varmora (`@udayvarmora07`)
+
+Decision date: 2026-09-10
