@@ -255,7 +255,8 @@ named-review requirements are executed and reviewed.
 
 ## Phase 5 — supply chain, governance, and distribution
 
-- [ ] P5-01 Decide and add LICENSE.
+- [x] P5-01 Decide and add LICENSE. Evidence: [Apache License 2.0](LICENSE)
+  and the license statement in [README.md](README.md).
 - [ ] P5-01 Add SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, CODEOWNERS,
   support policy, and CHANGELOG.md.
 - [ ] P5-02 Add controlled dependency updates, license policy, dependency

@@ -37,3 +37,12 @@ GA. Public beta and GA still require independent security/release review.
 Decision owner: Uday Varmora (`@udayvarmora07`)
 
 Decision date: 2026-09-10
+
+## License decision
+
+The project license is Apache License 2.0. The repository `LICENSE` file and
+the license statement in `README.md` agree on that decision.
+
+Accepted by: Uday Varmora (`@udayvarmora07`)
+
+Accepted on: 2026-09-10
