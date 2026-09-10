@@ -46,3 +46,18 @@ the license statement in `README.md` agree on that decision.
 Accepted by: Uday Varmora (`@udayvarmora07`)
 
 Accepted on: 2026-09-10
+
+## Governance and security-contact review
+
+The owner reviewed the repository governance baseline for the private-alpha
+scope. `SECURITY.md` selects private GitHub Security Advisories as the security
+contact, `docs/support-policy.md` defines supported versions and response
+handling, `.github/CODEOWNERS` names the maintainer, and the contribution,
+conduct, and changelog documents are present and linked from the README.
+
+Decision: accepted for the bounded private-alpha scope. This decision does not
+approve public beta or GA and does not replace the exact-tag release evidence.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-10

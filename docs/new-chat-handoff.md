@@ -13,14 +13,16 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
 - Overall release posture: **NO-GO for private alpha**.
-- Tracker: 96 total checklist rows, 65 checked, 31 open.
+- Tracker: 96 total checklist rows, 67 checked, 29 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
   plus hosted macOS Bash portability and deterministic fuzz-floor fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
-  independent substeps. The release rows remain unchecked pending exact-tag
-  hosted acceptance; the full project still has 31 open rows.
+  independent substeps. P5-01 is accepted for the bounded private-alpha scope
+  under the documented owner-review exception; the remaining release rows stay
+  open pending exact-tag hosted acceptance. The full project still has 29 open
+  rows.
 
 ## Why the tracker is still open
 
@@ -41,7 +43,7 @@ commit. That is implementation progress, not release acceptance.
 The package-by-package reconciliation is recorded in the [Phase 4/5
 acceptance matrix](release-evidence/phase-4-5-acceptance-matrix.md). It keeps
 P4-01 through P4-07 tied to the exact quality evidence while leaving P4-08 and
-P5-01/P5-02 open for their distinct tag and named-review requirements.
+P5-02 open for their distinct tag and named-review requirements.
 
 ## Evidence warning
 
@@ -55,10 +57,10 @@ P5-01/P5-02 open for their distinct tag and named-review requirements.
   generated collection for evidence snapshot commit `6fc197b`; it records
   10/10 local suites and six artifact hashes with a clean tree at collection
   time.
-- The last canary dispatch, `34324968472`, targeted the earlier `1ec8c39`
-  snapshot and failed before mutation because the dedicated
-  `AUTOGIT_CANARY_TOKEN` secret was empty; the allowlisted canary repository
-  was confirmed absent. It is not current-HEAD canary evidence.
+- The current dedicated-token private canary dispatch, `34489797141`, passed
+  against `36c045f` for owner `udayvarmora07`; the allowlisted canary
+  repository was confirmed absent after cleanup. The earlier failed dispatch
+  `34324968472` remains historical only.
 - Hosted compatibility-window review `34483444477` passed at current branch
   commit `6fc197b`; no expiry issue was generated.
 

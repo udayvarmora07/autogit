@@ -120,9 +120,9 @@
       "id": "P5-01",
       "checklist_rows": ["P5-01#1", "P5-01#2"],
       "implementation_status": "verified",
-      "acceptance_status": "pending_review",
-      "acceptance_blockers": ["named product/maintainer review"],
-      "next_action": "Record governance and security-contact review."
+      "acceptance_status": "accepted",
+      "acceptance_blockers": [],
+      "next_action": "Retain the owner review with the private-alpha release evidence."
     },
     {
       "id": "P5-02",

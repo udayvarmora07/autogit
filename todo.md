@@ -12,15 +12,15 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 65 checked, 31 open; the
-user-assigned batch is 10 work packages occupying 11 open rows. The local
-implementation exists, but formal acceptance is still 0/10 because exact-tag
-evidence, provider authorization, signing/provenance, and named review are
-still required.
+before starting work. Current audit: 96 total rows, 67 checked, 29 open; the
+user-assigned batch is 10 work packages occupying 9 open rows. The local
+implementation exists, and formal acceptance is 1/10 after P5-01 governance
+acceptance; exact-tag evidence, signing/provenance, and remaining named review
+are still required.
 Implementation state for that batch is tracked separately in the
 [Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
 10/10 packages are verified against the recorded implementation evidence;
-the 11 release-acceptance rows remain pending review.
+9 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `6fc197b`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
@@ -257,8 +257,9 @@ named-review requirements are executed and reviewed.
 
 - [x] P5-01 Decide and add LICENSE. Evidence: [Apache License 2.0](LICENSE)
   and the license statement in [README.md](README.md).
-- [ ] P5-01 Add SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, CODEOWNERS,
-  support policy, and CHANGELOG.md.
+- [x] P5-01 Add SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, CODEOWNERS,
+  support policy, and CHANGELOG.md. Evidence: [governance and security-contact
+  review](docs/acceptance-record.md#governance-and-security-contact-review).
 - [ ] P5-02 Add controlled dependency updates, license policy, dependency
   review, CodeQL, OpenSSF Scorecard, least workflow permissions, and pinned
   action update review.
@@ -311,13 +312,12 @@ workflows. The latest hosted evidence snapshot `6fc197b` passed the full
 20-job matrix (`34481766917`); the current local manifest was regenerated at
 `6fc197b` and records 10/10 suites and six artifact hashes. The push-triggered
 core and security runs (`34481728077`, `34481728025`) and compatibility review
-(`34483444477`) also passed at the same commit. The last private
-canary
-dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
-before mutation because the dedicated token secret was empty, and the
-allowlisted repository was confirmed absent. The checkboxes remain open until
-the plan's exact-tag, provider, signing, and named-review acceptance evidence
-is executed. The P5-03/P5-05 implementation details and local checks are in
+(`34483444477`) also passed at the same commit. The current dedicated-token
+private canary dispatch (`34489797141`) passed against `36c045f` for owner
+`udayvarmora07`, and the allowlisted repository was confirmed absent after
+cleanup. The checkboxes remain open until the plan's exact-tag, signing, and
+remaining named-review acceptance evidence is executed. The P5-03/P5-05
+implementation details and local checks are in
 [phase-5-release-workflow.md](docs/release-evidence/phase-5-release-workflow.md);
 they do not represent hosted signing or cross-runner evidence.
 
