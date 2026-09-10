@@ -73,8 +73,8 @@
       "checklist_rows": ["P4-03"],
       "implementation_status": "verified",
       "acceptance_status": "pending_review",
-      "acceptance_blockers": ["release acceptance of native artifacts"],
-      "next_action": "Promote the exact tagged artifact evidence after release review."
+      "acceptance_blockers": ["approved exact stable release tag", "tag-gated hosted artifact evidence"],
+      "next_action": "Supply an approved vMAJOR.MINOR.PATCH and run the tag-gated release workflow."
     },
     {
       "id": "P4-04",

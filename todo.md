@@ -245,6 +245,7 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
 - [ ] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
 - [ ] P4-05 Add disk-full, permission-loss, clock-change, lock-contention,

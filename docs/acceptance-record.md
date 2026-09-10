@@ -62,6 +62,32 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
 
+## P4-03 native-artifact review
+
+The owner reviewed P4-03 against the clean evidence snapshot
+`6fc197b281065a03dccb8bad68984222bc8c786d`. The machine manifest records six
+artifact hashes and the hosted run
+[`34481766917`](https://github.com/udayvarmora07/autogit/actions/runs/34481766917)
+passed all six native-artifact jobs: Linux amd64/arm64, macOS amd64/arm64,
+and Windows amd64/arm64. The fresh local release suite rebuilt all six
+targets, verified `SHA256SUMS`, and passed host artifact smoke on system Git
+2.43.0. The full Go test suite also passed.
+
+Acceptance remains pending because the release plan requires the native
+artifacts to be bound to an approved exact stable `vMAJOR.MINOR.PATCH` tag and
+to a tag-gated hosted release run. No local tag, GitHub release, or
+`release.yml` run currently exists, and the manifest correctly records
+`tag_verified: false`.
+
+Decision: implementation evidence accepted as verified; release acceptance is
+blocked on the approved release-version decision and its resulting
+tag-bound hosted artifact evidence. The owner-review exception does not waive
+that release identity requirement.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-10
+
 ## P4-02 shell-safety review
 
 The owner reviewed P4-02 against the clean evidence snapshot
