@@ -1197,7 +1197,8 @@ func TestPublishPrivateUsesExactCommitAndRecordsDurablePush(t *testing.T) {
 	var out bytes.Buffer
 	if err := run([]string{"publish", "--id", "commit-publish", "--repo", root, "--remote", "origin", "--owner", "owner", "--name", "repo", "--ref", "main", "--visibility", "private"}, strings.NewReader(""), &out); err != nil {
 		if log, readErr := os.ReadFile(filepath.Join(fakeBin, "git-log")); readErr == nil {
-			t.Fatalf("publish: %v output=%s git-log=%s", err, out.String(), log)
+			fixtureLog, _ := os.ReadFile(filepath.Join(fakeBin, "fixture-log"))
+			t.Fatalf("publish: %v output=%s git-log=%s fixture-log=%s", err, out.String(), log, fixtureLog)
 		}
 		t.Fatalf("publish: %v output=%s", err, out.String())
 	}
@@ -1243,10 +1244,15 @@ const (
 	testGHSHA = ` + strconv.Quote(sha) + `
 	testRealGit = ` + strconv.Quote(realGit) + `
 	testGitLog = ` + strconv.Quote(filepath.Join(dir, "git-log")) + `
+	testFixtureLog = ` + strconv.Quote(filepath.Join(dir, "fixture-log")) + `
 )
 
 func main() {
 	name := strings.TrimSuffix(strings.ToLower(filepath.Base(os.Args[0])), ".exe")
+	if f, err := os.OpenFile(testFixtureLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
+		defer f.Close()
+		fmt.Fprintf(f, "%s state=%t args=%q\\n", name, fileExists(testGHState), os.Args[1:])
+	}
 	if logPath := testGitLog; name == "git" && logPath != "" {
 		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err == nil {
@@ -1273,6 +1279,10 @@ func main() {
 		return
 	}
 	if hasFixtureArgs(args, "push", "--", "origin", testGHSHA+":refs/heads/main") {
+		if f, err := os.OpenFile(testFixtureLog, os.O_APPEND|os.O_WRONLY, 0600); err == nil {
+			fmt.Fprintln(f, "push-match")
+			f.Close()
+		}
 		if err := os.WriteFile(testGHState, []byte{}, 0600); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -1289,7 +1299,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 func hasFixtureArgs(args []string, expected ...string) bool {
 	for start := 0; start+len(expected) <= len(args); start++ {
