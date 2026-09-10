@@ -13,16 +13,16 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
 - Overall release posture: **NO-GO for private alpha**.
-- Tracker: 96 total checklist rows, 73 checked, 23 open.
+- Tracker: 96 total checklist rows, 74 checked, 22 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
   plus hosted macOS Bash portability and deterministic fuzz-floor fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
-  independent substeps. P4-01, P4-02, P4-04, P4-05, P4-06, P5-01, and P5-02 are
+  independent substeps. P4-01, P4-02, P4-04, P4-05, P4-06, P4-07, P5-01, and P5-02 are
   accepted for the bounded private-alpha scope under the documented owner-
-  review exception; P4-03 and P4-07 through P4-08 stay open pending their
-  distinct release gates. The full project still has 23 open rows.
+  review exception; P4-03 and P4-08 stay open pending their distinct release
+  gates. The full project still has 22 open rows.
 
 ## Why the tracker is still open
 

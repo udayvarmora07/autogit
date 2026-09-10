@@ -62,6 +62,32 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
 
+## P4-07 compatibility-window review
+
+The owner reviewed P4-07 against the clean implementation evidence snapshot
+`6fc197b281065a03dccb8bad68984222bc8c786d`. The compatibility contract
+validates seven advertised windows covering Go, Git, SQLite, GitHub REST, MCP,
+and the event/result schema majors. Fresh `scripts/check-compatibility.sh`
+verification passed; the machine-readable report returned `due=false` and
+`expired=false` for every window, and no expiry issue body was generated. The
+focused expiry/manifest tests and the release compatibility-contract test also
+passed. Hosted compatibility review
+[`34483444477`](https://github.com/udayvarmora07/autogit/actions/runs/34483444477)
+passed against the exact evidence snapshot.
+
+The post-snapshot history contains documentation and evidence-record updates
+only; no source, workflow, or toolchain input changed after the reviewed
+snapshot.
+
+Decision: accepted for the bounded private-alpha scope under the documented
+single-maintainer owner-review exception. This does not approve public beta
+or GA and does not waive future expiry review, exact-tag, or
+release-provenance requirements.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-11
+
 ## P4-06 scenario-evaluation review
 
 The owner reviewed P4-06 against the clean implementation evidence snapshot
