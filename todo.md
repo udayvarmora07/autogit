@@ -12,16 +12,16 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 72 checked, 24 open; the
-user-assigned batch is 10 work packages occupying 4 open rows. The local
-implementation exists, and formal acceptance is 6/10 after P4-01 quality-tier,
-P4-02 shell-safety, P4-04 fuzz-floor, P4-05 chaos/recovery, P5-01 governance,
-and P5-02 dependency/workflow acceptance; exact-tag evidence,
+before starting work. Current audit: 96 total rows, 73 checked, 23 open; the
+user-assigned batch is 10 work packages occupying 3 open rows. The local
+implementation exists, and formal acceptance is 7/10 after P4-01 quality-tier,
+P4-02 shell-safety, P4-04 fuzz-floor, P4-05 chaos/recovery, P4-06 scenario,
+P5-01 governance, and P5-02 dependency/workflow acceptance; exact-tag evidence,
 signing/provenance, and remaining named review are still required.
 Implementation state for that batch is tracked separately in the
 [Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
 10/10 packages are verified against the recorded implementation evidence;
-4 release-acceptance rows remain pending review.
+3 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `6fc197b`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
@@ -252,8 +252,9 @@ named-review requirements are executed and reviewed.
 - [x] P4-05 Add disk-full, permission-loss, clock-change, lock-contention,
   signal/kill, network-stall, rate-limit, and partial-response chaos tests.
   Evidence: [P4-05 chaos and recovery review](docs/acceptance-record.md#p4-05-chaos-and-recovery-review).
-- [ ] P4-06 Build client/OS scenario evals that inspect final
+- [x] P4-06 Build client/OS scenario evals that inspect final
   repository/index/ref/provider state rather than model narration.
+  Evidence: [P4-06 scenario-evaluation review](docs/acceptance-record.md#p4-06-scenario-evaluation-review).
 - [ ] P4-07 Automate compatibility-window testing and expiry issues for Go,
   Git, SQLite, clients, GitHub API, MCP, and durable schemas.
 - [ ] P4-08 Publish machine-readable requirement/threat/test evidence for the

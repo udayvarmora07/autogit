@@ -96,9 +96,9 @@
       "id": "P4-06",
       "checklist_rows": ["P4-06"],
       "implementation_status": "verified",
-      "acceptance_status": "pending_review",
-      "acceptance_blockers": ["release acceptance of native scenario evidence"],
-      "next_action": "Promote the exact tagged scenario evidence after release review."
+      "acceptance_status": "accepted",
+      "acceptance_blockers": [],
+      "next_action": "Retain the owner review with the private-alpha release evidence."
     },
     {
       "id": "P4-07",
