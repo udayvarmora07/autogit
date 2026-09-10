@@ -13,16 +13,16 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
 - Overall release posture: **NO-GO for private alpha**.
-- Tracker: 96 total checklist rows, 69 checked, 27 open.
+- Tracker: 96 total checklist rows, 70 checked, 26 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
   plus hosted macOS Bash portability and deterministic fuzz-floor fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
-  independent substeps. P4-01, P5-01, and P5-02 are accepted for the bounded
-  private-alpha scope under the documented owner-review exception; the seven
-  remaining P4 rows stay open pending their distinct release gates. The full
-  project still has 27 open rows.
+  independent substeps. P4-01, P4-02, P5-01, and P5-02 are accepted for the
+  bounded private-alpha scope under the documented owner-review exception; the
+  six remaining P4 rows stay open pending their distinct release gates. The
+  full project still has 26 open rows.
 
 ## Why the tracker is still open
 
@@ -76,7 +76,7 @@ remaining P4 rows.
    identities, and control statuses before replacement.
 3. Retain the completed dedicated-token private-canary evidence, including its
    exact owner/name/visibility/ref/SHA and cleanup result.
-4. Reconcile the evidence against the remaining P4-02..P4-08 acceptance
+4. Reconcile the evidence against the remaining P4-03..P4-08 acceptance
    conditions. Check only rows whose evidence is genuinely complete.
 5. Handle the remaining external gates separately: exact release tag and
    release-environment approval, hosted attestation and independent-runner

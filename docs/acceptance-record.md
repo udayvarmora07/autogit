@@ -62,6 +62,34 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
 
+## P4-02 shell-safety review
+
+The owner reviewed P4-02 against the clean evidence snapshot
+`6fc197b281065a03dccb8bad68984222bc8c786d`. `scripts/check-shell.sh`
+validates every repository shell script with `bash -n` and ShellCheck, and
+the direct tests cover malformed suite dispatch, missing artifact rejection,
+canary precondition failure, performance sample-count failure, transient
+performance retry behavior, release output-directory safety, checksum
+mismatch rejection, attestation identity binding, and stock macOS Bash
+compatibility.
+
+The canary cleanup trap is restricted to the generated allowlisted repository,
+the artifact smoke path fails before creating state when its binary is absent,
+and the performance and release scripts fail closed on incomplete evidence.
+Hosted run
+[`34481766917`](https://github.com/udayvarmora07/autogit/actions/runs/34481766917)
+passed the security, policy, and presubmit jobs. Fresh current-worktree
+verification passed with required ShellCheck, the focused shell tests, and
+the full Go test suite; post-snapshot changes remain documentation-only.
+
+Decision: accepted for the bounded private-alpha scope under the documented
+single-maintainer owner-review exception. This does not approve public beta
+or GA and does not waive exact-tag or release-provenance requirements.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-10
+
 ## P4-01 quality-tier review
 
 The owner reviewed P4-01 against the clean evidence snapshot

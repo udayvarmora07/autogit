@@ -19,7 +19,7 @@ public beta or GA.
 | Package | Evidence at the exact snapshot | Acceptance status |
 | --- | --- | --- |
 | P4-01 | Manifest records the presubmit, core, race, integration, soak, fuzz, canary, and release tiers; the hosted matrix exercises the bounded native quality path. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |
-| P4-02 | Shell syntax/ShellCheck and injected failure-safety tests are recorded in the manifest and passed in hosted security/policy checks. | Implementation evidenced; named review still required by the promotion rule. |
+| P4-02 | Shell syntax/ShellCheck and injected failure-safety tests are recorded in the manifest and passed in hosted security/policy checks. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |
 | P4-03 | Six native artifact jobs passed in the hosted matrix, with system-Git floor and built-artifact smoke checks. | Native implementation evidence complete; release acceptance remains open. |
 | P4-04 | The hosted fuzz job passed the 100,000-input floor for each target; the local manifest records the fuzz suite. | Implementation evidenced; named review still required by the promotion rule. |
 | P4-05 | Chaos, recovery, permission-loss, clock, lock, signal, network-stall, and partial-response tests are covered by the implementation and quality suites. | Implementation evidenced; named review still required by the promotion rule. |

@@ -12,15 +12,16 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 69 checked, 27 open; the
-user-assigned batch is 10 work packages occupying 7 open rows. The local
-implementation exists, and formal acceptance is 3/10 after P4-01 quality-tier,
+before starting work. Current audit: 96 total rows, 70 checked, 26 open; the
+user-assigned batch is 10 work packages occupying 6 open rows. The local
+implementation exists, and formal acceptance is 4/10 after P4-01 quality-tier,
+P4-02 shell-safety,
 P5-01 governance, and P5-02 dependency/workflow acceptance; exact-tag evidence,
 signing/provenance, and remaining named review are still required.
 Implementation state for that batch is tracked separately in the
 [Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
 10/10 packages are verified against the recorded implementation evidence;
-7 release-acceptance rows remain pending review.
+6 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `6fc197b`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
@@ -239,8 +240,9 @@ named-review requirements are executed and reviewed.
 - [x] P4-01 Split fast presubmit, race, integration, 1,000-schedule soak,
   fuzz, canary, and release suites; keep presubmit p95 below five minutes.
   Evidence: [P4-01 quality-tier review](docs/acceptance-record.md#p4-01-quality-tier-review).
-- [ ] P4-02 Add shellcheck and direct failure/safety tests for canary,
+- [x] P4-02 Add shellcheck and direct failure/safety tests for canary,
   performance, and release shell scripts.
+  Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
 - [ ] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,

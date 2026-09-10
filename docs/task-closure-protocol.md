@@ -19,12 +19,12 @@ This is the best fit for AutoGit because it preserves the existing fail-closed
 release policy while preventing completed local implementation from being
 reported as unfinished engineering.
 
-## Root cause of the persistent “27 open” count
+## Root cause of the persistent “26 open” count
 
 The number is accurate for the current representation, but it is easy to
 misread:
 
-- `todo.md` contains 96 checklist rows: 69 checked and 27 unchecked.
+- `todo.md` contains 96 checklist rows: 70 checked and 26 unchecked.
 - The user-assigned batch names 10 work packages: P4-01 through P4-08,
   P5-01, and P5-02.
 - P5-01 is represented by two independently checkable rows, so those 10
@@ -37,8 +37,8 @@ misread:
   proving the same implementation state again without acquiring the missing
   external state.
 
-Therefore, “27 tasks remain” is not the precise statement. The precise
-statement is: **27 release-acceptance rows are unchecked; the local
+Therefore, “26 tasks remain” is not the precise statement. The precise
+statement is: **26 release-acceptance rows are unchecked; the local
 implementation subset is substantially further along.**
 
 ## Why this setup follows the research
@@ -178,7 +178,7 @@ controls:
 4. **Evidence-first reporting.** Every completion message must include the
    stable ID, old/new status, exact commit, test/CI run, evidence path, and any
    remaining external gate. The headline should say “31 unchecked acceptance
-   rows,” not “27 unfinished tasks.”
+   rows,” not “26 unfinished tasks.”
 
 The current implementation ledger for the assigned Phase 4/5 batch is
 [`phase-4-5-implementation-ledger.json`](release-evidence/phase-4-5-implementation-ledger.json).
@@ -198,7 +198,7 @@ The current evidence supports this report:
 - The 10 requested package areas have local implementation/evidence work.
 - The acceptance matrix is the correct place to see which package-specific
   gates remain.
-- The 27-row number will not decrease until either the strict acceptance gates
+- The 26-row number will not decrease until either the strict acceptance gates
   are supplied or the project adopts the two-ledger policy and records the
   implementation rows as verified in a separate implementation ledger.
 - It would be incorrect to check the release rows merely to make the number
