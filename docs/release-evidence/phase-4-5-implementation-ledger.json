@@ -80,9 +80,9 @@
       "id": "P4-04",
       "checklist_rows": ["P4-04"],
       "implementation_status": "verified",
-      "acceptance_status": "pending_review",
-      "acceptance_blockers": ["named review"],
-      "next_action": "Record named review against the exact release snapshot."
+      "acceptance_status": "accepted",
+      "acceptance_blockers": [],
+      "next_action": "Retain the owner review with the private-alpha release evidence."
     },
     {
       "id": "P4-05",

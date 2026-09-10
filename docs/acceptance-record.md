@@ -62,6 +62,31 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
 
+## P4-04 fuzz-floor review
+
+The owner reviewed P4-04 against the clean evidence snapshot
+`6fc197b281065a03dccb8bad68984222bc8c786d`. The fuzz suite covers the
+canonical event/JSON, adapter, provider identity/ref, Git push-argument,
+policy, configuration-path, migration, state/status, and scanner boundaries;
+each target retains an embedded seed corpus. The fresh local command
+`AUTOGIT_FUZZ_TIME=40s bash scripts/test-suites.sh fuzz` passed all ten targets
+at the required 100,000 executions per target, including the security target.
+The hosted matrix run
+[`34481766917`](https://github.com/udayvarmora07/autogit/actions/runs/34481766917)
+also passed its fuzz job, and the full Go test suite passed.
+
+The post-snapshot history contains documentation and evidence-record updates
+only; no source, workflow, or toolchain input changed after the reviewed
+snapshot.
+
+Decision: accepted for the bounded private-alpha scope under the documented
+single-maintainer owner-review exception. This does not approve public beta
+or GA and does not waive exact-tag or release-provenance requirements.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-10
+
 ## P4-03 native-artifact review
 
 The owner reviewed P4-03 against the clean evidence snapshot
