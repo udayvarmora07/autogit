@@ -13,6 +13,10 @@ user-assigned batch is 10 work packages occupying 11 open rows. The local
 implementation exists, but formal acceptance is still 0/10 because exact-tag
 evidence, provider authorization, signing/provenance, and named review are
 still required.
+Implementation state for that batch is tracked separately in the
+[Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
+10/10 packages are verified against the recorded implementation evidence;
+the 11 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit `4817750`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it

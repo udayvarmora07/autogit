@@ -177,6 +177,11 @@ controls:
    remaining external gate. The headline should say “31 unchecked acceptance
    rows,” not “31 unfinished tasks.”
 
+The current implementation ledger for the assigned Phase 4/5 batch is
+[`phase-4-5-implementation-ledger.json`](release-evidence/phase-4-5-implementation-ledger.json).
+It is deliberately separate from `todo.md`: implementation may be `verified`
+while release acceptance remains `pending_review`.
+
 For this repository, use one primary orchestrator and at most one independent
 reviewer per package. Parallel agents may work in isolated worktrees for
 independent experiments, but they should not mutate the same tracker or branch.
