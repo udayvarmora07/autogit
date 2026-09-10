@@ -88,6 +88,33 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-11
 
+## P4-08 evidence-manifest review
+
+The owner reviewed P4-08 against the clean implementation evidence snapshot
+`6fc197b281065a03dccb8bad68984222bc8c786d`. The retained machine manifest
+records the exact evidence commit, clean collection state, ten suite results,
+six artifact hashes, and ten controls with requirement, test, command, and
+threat mappings. Fresh evidence generation and schema validation also passed;
+the generated manifest retained `working_tree: "clean"`, all four executed
+suites passed, and P4-08 exposed its three evidence tests and traceability
+fields without recording local paths.
+
+Acceptance remains pending because P4-08 requires the evidence to be bound to
+an approved exact stable `vMAJOR.MINOR.PATCH` tag and its release artifacts.
+The retained manifest correctly records `tag_verified: false`, and no approved
+exact release tag or tag-bound artifact bundle currently exists. The
+single-maintainer owner-review exception does not waive that release identity
+requirement.
+
+Decision: implementation evidence accepted as verified; release acceptance is
+blocked on the approved release-version decision and regenerated tag-bound
+evidence manifest. This does not approve private-alpha release artifacts,
+public beta, or GA.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-11
+
 ## P4-06 scenario-evaluation review
 
 The owner reviewed P4-06 against the clean implementation evidence snapshot
