@@ -2,10 +2,10 @@
   "schema_version": "autogit.implementation-ledger/1",
   "batch": "P4-01..P4-08,P5-01,P5-02",
   "source_of_truth": "../implementation-plan.md",
-  "verification_commit": "308898175ea92b418a391cce027df33038b9dc9a",
-  "verification_worktree": "clean before ledger creation",
-  "verified_at": "2026-09-10T12:29:26Z",
-  "evidence_snapshot_commit": "48177501564cda9aa5507ab789c71ce3f285a0d5",
+  "verification_commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+  "verification_worktree": "clean before evidence generation",
+  "verified_at": "2026-09-10T13:33:22Z",
+  "evidence_snapshot_commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
   "evidence": [
     "phase-4-quality.md",
     "phase-4-quality.json",
@@ -13,26 +13,26 @@
   ],
   "hosted_evidence": [
     {
-      "run": "34388511108",
-      "commit": "48177501564cda9aa5507ab789c71ce3f285a0d5",
+      "run": "34481766917",
+      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
       "status": "passed",
       "scope": "20-job Phase 4/5 quality matrix"
     },
     {
-      "run": "34388483045",
-      "commit": "48177501564cda9aa5507ab789c71ce3f285a0d5",
+      "run": "34481728077",
+      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
       "status": "passed",
       "scope": "push-triggered core checks"
     },
     {
-      "run": "34388482915",
-      "commit": "48177501564cda9aa5507ab789c71ce3f285a0d5",
+      "run": "34481728025",
+      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
       "status": "passed",
       "scope": "security checks"
     },
     {
-      "run": "34347979343",
-      "commit": "211fb69b9cc2d23813c7feda5dc4831357a586ff",
+      "run": "34483444477",
+      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
       "status": "passed",
       "scope": "compatibility-window review"
     }
@@ -41,8 +41,10 @@
     "status": "passed",
     "commands": [
       "go test ./...",
+      "go test -tags soak -count=1 ./...",
       "go vet ./...",
       "bash scripts/test-suites.sh presubmit",
+      "AUTOGIT_FUZZ_TIME=40s bash scripts/generate-evidence.sh --full",
       "bash scripts/check-dependencies.sh",
       "bash scripts/check-shell.sh",
       "actionlint .github/workflows/*.yml",

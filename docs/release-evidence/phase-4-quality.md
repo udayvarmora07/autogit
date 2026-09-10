@@ -52,7 +52,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`48177501564cda9aa5507ab789c71ce3f285a0d5`. Its ten local suite results use
+`6fc197b281065a03dccb8bad68984222bc8c786d`. Its ten local suite results use
 the deterministic 100,000-input fuzz floor for all 10 targets while retaining
 the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -63,14 +63,14 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The latest exact-snapshot full hosted CI dispatch `34388511108` passed all
+The latest exact-snapshot full hosted CI dispatch `34481766917` passed all
 20/20 jobs against
-`48177501564cda9aa5507ab789c71ce3f285a0d5`:
+`6fc197b281065a03dccb8bad68984222bc8c786d`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-push-triggered core run `34388483045` and security run `34388482915` also passed
+The push-triggered core run `34481728077` and security run `34481728025` also passed
 against the same exact SHA. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
@@ -80,8 +80,8 @@ not current-HEAD canary evidence. The former `ded26c3` manifest and hosted
 run `34327518122` remain historical records. These records do not claim a live
 provider canary, signing, published provenance, or named release review.
 
-The hosted compatibility-window review `34347979343` passed at branch commit
-`211fb69b9cc2d23813c7feda5dc4831357a586ff`; all advertised windows were
+The hosted compatibility-window review `34483444477` passed at branch commit
+`6fc197b281065a03dccb8bad68984222bc8c786d`; all advertised windows were
 current and no expiry issue was generated. The compatibility contract is
 unchanged by the later evidence-only and test-runner portability fixes.
 

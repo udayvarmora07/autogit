@@ -8,7 +8,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-10.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `48177501564cda9aa5507ab789c71ce3f285a0d5`.
+- Evidence snapshot commit: `6fc197b281065a03dccb8bad68984222bc8c786d`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
@@ -45,22 +45,22 @@ P5-01/P5-02 open for their distinct tag and named-review requirements.
 
 ## Evidence warning
 
-- The current exact-snapshot full hosted matrix is run `34388511108`, with all
+- The current exact-snapshot full hosted matrix is run `34481766917`, with all
  20 jobs passing against
-  `48177501564cda9aa5507ab789c71ce3f285a0d5`, including
+  `6fc197b281065a03dccb8bad68984222bc8c786d`, including
   fuzz, soak, native artifact, scenario, and performance jobs. Its security
   and dependency-policy jobs also passed. The push-triggered core run
-  `34388483045` and security run `34388482915` passed against the same SHA.
+  `34481728077` and security run `34481728025` passed against the same SHA.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for evidence snapshot commit `4817750`; it records
+  generated collection for evidence snapshot commit `6fc197b`; it records
   10/10 local suites and six artifact hashes with a clean tree at collection
   time.
 - The last canary dispatch, `34324968472`, targeted the earlier `1ec8c39`
   snapshot and failed before mutation because the dedicated
   `AUTOGIT_CANARY_TOKEN` secret was empty; the allowlisted canary repository
   was confirmed absent. It is not current-HEAD canary evidence.
-- Hosted compatibility-window review `34347979343` passed at current branch
-  commit `211fb69`; no expiry issue was generated.
+- Hosted compatibility-window review `34483444477` passed at current branch
+  commit `6fc197b`; no expiry issue was generated.
 
 ## Immediate continuation order
 

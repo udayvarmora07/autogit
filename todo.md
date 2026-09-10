@@ -18,7 +18,7 @@ Implementation state for that batch is tracked separately in the
 10/10 packages are verified against the recorded implementation evidence;
 the 11 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `4817750`. Documentation commits may advance the
+for evidence snapshot commit `6fc197b`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 The package-level reconciliation is recorded in the [Phase 4/5 acceptance
@@ -302,9 +302,11 @@ system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. The latest hosted evidence snapshot `4817750` passed the full
-20-job matrix (`34388511108`); the current local manifest was regenerated at
-`4817750` and records 10/10 suites and six artifact hashes. The last private
+workflows. The latest hosted evidence snapshot `6fc197b` passed the full
+20-job matrix (`34481766917`); the current local manifest was regenerated at
+`6fc197b` and records 10/10 suites and six artifact hashes. The push-triggered
+core and security runs (`34481728077`, `34481728025`) and compatibility review
+(`34483444477`) also passed at the same commit. The last private
 canary
 dispatch (`34324968472`) targeted the earlier `1ec8c39` snapshot and stopped
 before mutation because the dedicated token secret was empty, and the
