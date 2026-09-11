@@ -50,3 +50,10 @@ supported targets (Linux, macOS, and Windows amd64/arm64) and retains one
 redacted JSON evidence artifact per native runner. This validates the raw-binary
 lifecycle on each claimed host; package channels, clean-machine installation,
 and signed-release identity review remain separate acceptance requirements.
+
+Hosted matrix run `34604368677` passed all six native lifecycle jobs. The
+retained evidence files each report schema
+`autogit.release-install-drill/1`, `status: "passed"`,
+`sensitive_data_recorded: false`, and passed initial-install, upgrade,
+tampered-upgrade rejection, downgrade, rollback-preservation, and uninstall
+checks for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64/arm64.

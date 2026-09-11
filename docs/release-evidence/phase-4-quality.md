@@ -15,7 +15,7 @@ The package-by-package acceptance reconciliation is recorded in the
 | --- | --- |
 | P4-01 | `scripts/test-suites.sh` names presubmit, core, race, integration, soak, fuzz, canary, and release suites. The default process-boundary matrices use 50 representative schedules; `-tags soak` runs the retained 1,000-schedule Linux/macOS matrix. CI runs the fast path on changes and the soak/fuzz jobs only on schedule or manual dispatch. |
 | P4-02 | `scripts/check-shell.sh` runs `bash -n` and ShellCheck when available/required. `scripts/shell_scripts_test.go` injects malformed suite, artifact, canary, performance, and release conditions and checks fail-closed behavior. |
-| P4-03 | `scripts/artifact-smoke.sh` verifies SHA-256 manifests, checks the live system Git version against the minimum in `docs/compatibility-manifest.json`, and executes the built binary through version, doctor, explicit local init, plan, and status. Native CI jobs run this against their built artifact; the manual/scheduled native artifact matrix covers Linux amd64/arm64, macOS Intel/arm64, and Windows amd64/arm64; release integration tests retain cross-target build checks. |
+| P4-03 | `scripts/artifact-smoke.sh` verifies SHA-256 manifests, checks the live system Git version against the minimum in `docs/compatibility-manifest.json`, and executes the built binary through version, doctor, explicit local init, plan, and status. Native CI jobs run this against their built artifact; the manual/scheduled native artifact matrix covers Linux amd64/arm64, macOS Intel/arm64, and Windows amd64/arm64, and now runs the raw-binary install lifecycle drill for each target; release integration tests retain cross-target build checks. |
 | P4-04 | Fuzz targets now cover canonical events/JSON, adapters, provider identities/refs, Git push arguments, policy merge/validation, config paths, migration/version boundaries, state/status identities, and scanner inputs. Seed corpora are embedded in the fuzz tests and `test-suites.sh fuzz` enforces at least 100,000 generated inputs per target by default. |
 | P4-05 | `internal/provider/chaos_test.go` covers network stalls, partial responses, response redaction, rate-limit metadata through the existing REST contract tests, and duplicate push replay without a second effect. `internal/securefs` injects permission loss, `internal/coordinator` advances the lease clock, and `internal/process` uses an isolated file-size ceiling as the deterministic disk-full/write-exhaustion proxy. Existing state/process recovery matrices cover signal/kill and lock contention boundaries. |
 | P4-06 | `scripts/scenario-eval.sh` grades final branch, index, AutoGit ref, consent, provider-effect absence, and client configuration outcomes for all six registered clients. It records only bounded scenario IDs and pass/fail facts, never source or raw paths; `--trace` emits a bounded platform/Git/client diagnostic artifact for native CI retention. |
@@ -55,7 +55,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`16c6325952b7937cdf8333b12cc7de0189b91f2b`. Its ten local suite results use
+`0d40d6af1ae38618edfa904f28fd7267e41e179e`. Its ten local suite results use
 the deterministic 100,000-input fuzz floor for all 10 targets while retaining
 the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -66,18 +66,25 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The latest exact-snapshot full hosted CI dispatch `34600488282` passed all
-20/20 jobs against
-`16c6325952b7937cdf8333b12cc7de0189b91f2b`:
+The earlier exact-snapshot full hosted CI dispatch `34600488282` passed all
+20/20 jobs against `16c6325952b7937cdf8333b12cc7de0189b91f2b`. The follow-up
+full dispatch `34603093643` passed all 20/20 jobs against
+`c0822118b04743406b5fb88b3ed30d79e4a5486d`, including the six-target native
+install lifecycle drill. The current-source full dispatch `34604368677`
+also passed all 20/20 jobs against
+`0d40d6af1ae38618edfa904f28fd7267e41e179e`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
-the native scenario traces and performance artifacts for the exact SHA. The
-push-triggered core run `34600109706` and security run `34600109672` also passed
-against the same exact SHA. The hosted compatibility-window review
+the native scenario traces, performance artifacts, and six redacted install
+drill records for the exact SHA. The current-source push run `34604333600`
+also passed its native Linux/macOS/Windows core checks, and the security run
+`34604333592` passed against the same source SHA. The hosted
+compatibility-window review
 `34590952233` remains historical evidence for the preceding snapshot; the
-current local compatibility suite passed in the manifest. `tag_verified` remains false because this is
-implementation evidence, not release-tag approval. The private canary
+current local compatibility suite passed in the manifest.
+`tag_verified` remains false because this is implementation evidence, not
+release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
 authentication: the dedicated `AUTOGIT_CANARY_TOKEN` secret was empty, so the
 canary did not run and the allowlisted repository was confirmed absent. It is

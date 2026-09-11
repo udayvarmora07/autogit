@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "16c6325952b7937cdf8333b12cc7de0189b91f2b",
+  "commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-11T12:43:54.705777819Z",
+  "generated_at": "2026-09-11T13:35:42.078131028Z",
   "go_version": "go1.26.8",
   "platform": "linux/amd64",
   "suites": [
@@ -51,32 +51,32 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "6762fc17fd427798e2ecedcf65df1b8a836655ce44cf811e7dbaeec9f5014aaf",
+      "sha256": "5d8dfb62c8b2eabef70d1c69feeddd556b05798625313842c72ac80447fb539f",
       "size": 16002432
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "068d62629400a6c27dfa94be91f5224ab8a3d4126bac555b1e49a18335e3071a",
+      "sha256": "bd8d3de37774a4cc38cd4b20516e5c0f0c66fd6936c06563395ca1da2d8b15ff",
       "size": 15358194
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "cc6850bdbe55d0b510045faf98a0954c0752e6a78255a2ca630b8c558350f831",
-      "size": 15736040
+      "sha256": "8f3af23d44a0003938b628bf3f774b4a4171464c0b5f617ade2746b96001f43e",
+      "size": 15735976
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "12f7566fa7c1cc966cdb4682530a2a967984fcf5d62293b5062fc34396ba5887",
-      "size": 15008444
+      "sha256": "4236cad960de16dbc673b3f8c2e4cdf23d5c8cda0668e6cbb45e14cfca883bd8",
+      "size": 15008292
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "b5fd64cad8942c0849f5307a967efcdb5298b00446cc533859f7d3b21c371cba",
+      "sha256": "37796810e8af33ce08b93ddcc3b674deb2e38ebcc20cfc154cfb1ad6ac6d3189",
       "size": 16174080
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "b072883a47162a5a9f31a5e8fb79d0f8f214dd30f938f8570b3ce824f17431d2",
+      "sha256": "048830be924b9d00422465d12111ac606b575b3053a55515a1b6dd20919f358e",
       "size": 15185408
     }
   ],
@@ -94,6 +94,7 @@
         "TestTrustedRegistryRecordsAchievedProcessBoundedTier",
         "TestTrustedEvidenceInvalidatesEveryBindingDimension",
         "TestRunEnforcesFilesystemAllowlistAndNetworkDenial",
+        "TestRunRejectsNestedUserNamespaceCreation",
         "TestLandlockABIProbeIsNonMutatingAndExplicit",
         "TestWindowsSupervisorTerminatesDescendants"
       ],

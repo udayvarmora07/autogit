@@ -1,11 +1,15 @@
 # Phase 4/5 acceptance matrix
 
-Snapshot: `16c6325952b7937cdf8333b12cc7de0189b91f2b`
+Snapshot: `0d40d6af1ae38618edfa904f28fd7267e41e179e`
 Local manifest: [phase-4-quality.json](phase-4-quality.json)
-Hosted matrix: [run 34600488282](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
-Hosted result: 20/20 jobs passed, including native Linux/macOS/Windows tests,
-six native artifact targets, three soak targets, fuzz, scenario evaluation,
-performance gates, reproducible builds, security, and dependency policy.
+Hosted lifecycle matrix: [run 34604368677](https://github.com/udayvarmora07/autogit/actions/runs/34604368677)
+Hosted result: 20/20 jobs passed against the exact source snapshot
+`0d40d6af1ae38618edfa904f28fd7267e41e179e`, including native
+Linux/macOS/Windows tests, six native artifact targets with raw-binary
+install drills, three soak targets, fuzz, scenario evaluation, performance
+gates, reproducible builds, security, and dependency policy. The earlier
+workflow-introduction run `34603093643` also passed all 20 jobs and retained
+the same six lifecycle records.
 
 This matrix separates implementation evidence from the tracker’s promotion
 rule. A row stays unchecked when the evidence is present but the plan still
@@ -20,7 +24,7 @@ public beta or GA.
 | --- | --- | --- |
 | P4-01 | Manifest records the presubmit, core, race, integration, soak, fuzz, canary, and release tiers; the hosted matrix exercises the bounded native quality path. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |
 | P4-02 | Shell syntax/ShellCheck and injected failure-safety tests are recorded in the manifest and passed in hosted security/policy checks. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |
-| P4-03 | Six native artifact jobs passed in the hosted matrix, with system-Git floor and built-artifact smoke checks. | Native implementation evidence complete; release acceptance remains open pending an approved exact stable tag and tag-gated hosted artifact evidence. |
+| P4-03 | Six native artifact jobs passed in the hosted matrix, with system-Git floor, built-artifact smoke checks, and six native raw-binary lifecycle drills. | Native implementation evidence complete; release acceptance remains open pending an approved exact stable tag and tag-gated hosted artifact evidence. |
 | P4-04 | The hosted fuzz job passed the 100,000-input floor for each target; the local manifest records the fuzz suite. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |
 | P4-05 | Chaos, recovery, permission-loss, clock, lock, signal, network-stall, and partial-response tests are covered by the implementation and quality suites. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |
 | P4-06 | Native scenario jobs passed and retained bounded traces for the six registered clients. | Accepted for the bounded private-alpha scope by the named release owner against the exact evidence snapshot; public beta/GA review remains separate. |

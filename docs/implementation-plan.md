@@ -56,6 +56,18 @@ the native supervisor before advertising it; Windows Job Objects remain
 explicitly distinct from the still-unimplemented AppContainer boundary, and
 stronger Windows/macOS tiers remain fail-closed.
 
+The follow-up 2026-09-11 isolation/release slice adds a trusted Linux
+bubblewrap launcher contract: only fixed root-owned, non-writable system
+paths are accepted, nested user namespaces are disabled and asserted, and a
+native regression test proves an inner `unshare` request is rejected. The
+capability report records that lockout while continuing to distinguish the
+Landlock ABI probe from an in-process Landlock ruleset. The native artifact
+workflow now runs the raw-binary install lifecycle drill for all six claimed
+OS/architecture targets; exact-source hosted run `34604368677` passed all 20
+jobs and retained one redacted lifecycle record per target. The current implementation
+evidence snapshot is `0d40d6af1ae38618edfa904f28fd7267e41e179e`; no exact
+release tag or protected release approval exists yet.
+
 ## 1. Executive decision
 
 AutoGit already has an unusually strong safety-oriented foundation: explicit
@@ -78,8 +90,10 @@ current release-blocking gaps are:
    bubblewrap namespace primitive, a detected-but-not-enforced Landlock ABI,
    Windows job-object controls without AppContainer, and the macOS
    process-group fallback; trusted verifier evidence binds those observations
-   into its digest. Native execution and independent attestation of those
-   platform-specific claims remain incomplete.
+   into its digest. Native tests for those implemented primitives now pass in
+   exact-source hosted run `34604368677`; AppContainer-specific enforcement,
+   an in-process Landlock ruleset, independent attestation, and named
+   platform-owner acceptance remain incomplete.
 3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
    named review for the exact alpha-supported client/provider subset. The
    historical provider canary is retained, but the current dedicated-token

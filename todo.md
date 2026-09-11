@@ -24,7 +24,7 @@ Implementation state for that batch is tracked separately in the
 10/10 packages are verified against the recorded implementation evidence;
 2 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `16c6325`. Documentation commits may advance the
+for evidence snapshot commit `0d40d6a`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 The package-level reconciliation is recorded in the [Phase 4/5 acceptance
@@ -120,7 +120,9 @@ All items are release blockers.
 - [ ] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
   AppContainer/job controls, and an honest macOS fallback. Local capability
   evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md);
-  native AppContainer/macOS runtime validation and independent attestation
+  exact-source hosted run `34604368677` validates the implemented Linux
+  namespace, Windows job-object, and macOS process-group paths; AppContainer,
+  in-process Landlock enforcement, independent attestation, and named review
   remain open.
 - [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
   candidate blobs and reachable history; keep online validation separately
@@ -249,7 +251,7 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
-  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
 - [x] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
   Evidence: [P4-04 fuzz-floor review](docs/acceptance-record.md#p4-04-fuzz-floor-review).
@@ -299,9 +301,7 @@ named-review requirements are executed and reviewed.
   runner; package channels and native clean-machine install evidence remain open.
 - [ ] P5-07 Test native install, upgrade, downgrade, uninstall, checksum,
   signature, and rollback paths. Local raw-binary lifecycle evidence:
-  [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md);
-  package-channel, clean-machine, native cross-OS, and signed-release checks
-  remain open.
+  [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md); exact-source hosted run `34604368677` passed the six-target raw-binary drill; package-channel, clean-machine, and signed-release checks remain open.
 - [ ] P5-07 Define disclosure/patch SLAs, signing identity recovery, release
   rollback, and compromised-release drills. Evidence: [rollback and disclosure
   implementation evidence](docs/release-evidence/phase-5-rollback-drill.md),

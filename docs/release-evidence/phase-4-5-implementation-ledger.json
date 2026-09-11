@@ -2,16 +2,28 @@
   "schema_version": "autogit.implementation-ledger/1",
   "batch": "P4-01..P4-08,P5-01,P5-02",
   "source_of_truth": "../implementation-plan.md",
-  "verification_commit": "16c6325952b7937cdf8333b12cc7de0189b91f2b",
+  "verification_commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
   "verification_worktree": "clean before evidence generation",
-  "verified_at": "2026-09-11T12:43:54Z",
-  "evidence_snapshot_commit": "16c6325952b7937cdf8333b12cc7de0189b91f2b",
+  "verified_at": "2026-09-11T13:35:42Z",
+  "evidence_snapshot_commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
   "evidence": [
     "phase-4-quality.md",
     "phase-4-quality.json",
     "phase-4-5-acceptance-matrix.md"
   ],
   "hosted_evidence": [
+    {
+      "run": "34604368677",
+      "commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
+      "status": "passed",
+      "scope": "20-job exact-source quality matrix with six native install drills"
+    },
+    {
+      "run": "34604333600",
+      "commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
+      "status": "passed",
+      "scope": "push-triggered native core and security checks"
+    },
     {
       "run": "34600488282",
       "commit": "16c6325952b7937cdf8333b12cc7de0189b91f2b",
