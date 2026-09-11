@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -82,6 +83,33 @@ func TestRunEnforcesFilesystemAllowlistAndNetworkDenial(t *testing.T) {
 	})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("sandbox probe failed: result=%+v err=%v", result, err)
+	}
+}
+
+func TestRunRejectsNestedUserNamespaceCreation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("nested user-namespace lockout is Linux-specific")
+	}
+	if _, err := sandboxExecutable(); err != nil || !NamespaceSandboxAvailable() {
+		t.Skip("Linux namespace sandbox unavailable")
+	}
+	unshare, err := exec.LookPath("unshare")
+	if err != nil {
+		t.Skip("unshare is not installed")
+	}
+	unshare, err = filepath.EvalSymlinks(unshare)
+	if err != nil {
+		t.Skipf("unshare path is unavailable: %v", err)
+	}
+	work := t.TempDir()
+	result, runErr := Run(context.Background(), Options{
+		Executable:          unshare,
+		Dir:                 work,
+		Args:                []string{"--user", "--map-root-user", "/usr/bin/true"},
+		FilesystemAllowlist: []string{work, "/usr"},
+	})
+	if runErr == nil || result.ExitCode == 0 {
+		t.Fatalf("nested user namespace creation was not rejected: result=%+v err=%v", result, runErr)
 	}
 }
 

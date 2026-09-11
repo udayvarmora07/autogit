@@ -90,6 +90,7 @@ func linuxFilesystemCapability(tier IsolationTier, networkDisabled bool) Isolati
 		observations["landlock_enforced"] = false
 		observations["landlock_reason"] = "kernel Landlock ABI unavailable; bubblewrap namespace enforcement remains the achieved primitive"
 	}
+	observations["nested_user_namespaces"] = "disabled-and-asserted"
 	return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: reason, Primitive: primitive, Observations: observations}
 }
 

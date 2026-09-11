@@ -34,6 +34,9 @@ func TestIsolationCapabilitiesAreExplicitAndFailClosed(t *testing.T) {
 		if capability.Observations["landlock_enforced"] != false {
 			t.Fatalf("Landlock was overstated: %+v", capability.Observations)
 		}
+		if capability.Observations["nested_user_namespaces"] != "disabled-and-asserted" {
+			t.Fatalf("nested user-namespace lockout was not recorded: %+v", capability.Observations)
+		}
 	} else if _, err := RequireCapability(TierFilesystemNetworkIsolated); err == nil {
 		t.Fatal("unavailable filesystem/network tier accepted")
 	}
