@@ -66,8 +66,9 @@ remaining P4 rows.
   against `36c045f` for owner `udayvarmora07`; the allowlisted canary
   repository was confirmed absent after cleanup. The earlier failed dispatch
   `34324968472` remains historical only.
-- Hosted compatibility-window review `34590952233` passed at the same exact
-  commit; no expiry issue was generated.
+- Hosted compatibility-window review `34590952233` is historical evidence for
+  the preceding `97ea27f` snapshot; the current local compatibility suite
+  passed in the regenerated manifest and no expiry issue was generated.
 
 ## Immediate continuation order
 
