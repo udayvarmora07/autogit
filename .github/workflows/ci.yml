@@ -78,7 +78,7 @@ jobs:
           trace="$RUNNER_TEMP/autogit-scenario-${{ matrix.os }}.json"
           bash scripts/scenario-eval.sh --binary "$PWD/autogit" --trace "$trace"
       - name: retain scenario trace
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scenario-trace-${{ matrix.os }}
           path: ${{ runner.temp }}/autogit-scenario-${{ matrix.os }}.json
@@ -100,7 +100,7 @@ jobs:
           AUTOGIT_PERF_RETRIES: ${{ matrix.os == 'windows-latest' && '4' || '2' }}
         run: AUTOGIT_PERF_OUTPUT=performance-results.tsv bash scripts/performance-gate.sh
       - name: retain performance budget artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: performance-results-${{ matrix.os }}
           path: performance-results.tsv
@@ -162,7 +162,7 @@ jobs:
           trace="$RUNNER_TEMP/autogit-scenario-${AUTOGIT_TARGET//\//-}.json"
           bash scripts/scenario-eval.sh --binary "$binary" --trace "$trace"
       - name: retain native artifact scenario trace
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-artifact-scenario-trace-${{ matrix.os }}
           path: ${{ runner.temp }}/autogit-scenario-*.json
@@ -191,7 +191,7 @@ jobs:
             --output "$evidence"
           python3 -m json.tool "$evidence" >/dev/null
       - name: retain native install lifecycle evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-install-drill-${{ matrix.os }}
           if-no-files-found: error
