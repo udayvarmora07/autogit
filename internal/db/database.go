@@ -35,6 +35,11 @@ const (
 
 var ErrUnsafePath = errors.New("unsafe database path")
 
+// migrationTestHook is intentionally nil in production. Tests use it to
+// stop a subprocess at the transaction boundary where crash recovery matters
+// without adding a public control surface to database opening.
+var migrationTestHook func(string)
+
 // Open opens the shared state database, applies the connection contract, and
 // runs all durable schema migrations. It is the only production database
 // opener used by both state and event repositories.
@@ -237,6 +242,9 @@ func migrateOnce(ctx context.Context, database *sql.DB) error {
 	}
 	if err := ensureColumns(ctx, tx); err != nil {
 		return err
+	}
+	if migrationTestHook != nil {
+		migrationTestHook("before-schema-version-update")
 	}
 	if version != 0 && version < 1 {
 		return fmt.Errorf("unsupported state schema version %d", version)

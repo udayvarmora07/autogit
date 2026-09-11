@@ -35,15 +35,25 @@ dependency, CodeQL, and Scorecard controls. The corresponding evidence is in
 [the Phase 4/5 bundle](release-evidence/phase-4-quality.md). Artifact smoke now
 checks the live system Git against the advertised minimum, and the scenario
 evaluator covers all six registered clients with bounded native platform
-traces. The latest hosted evidence snapshot `4817750` passed the full 20-job
-hosted matrix in run `34388511108`, including fuzz, soak, native artifact,
+traces. The latest hosted evidence snapshot `97ea27f` passed the full 20-job
+hosted matrix in run `34589870316`, including fuzz, soak, native artifact,
 scenario, p95, reproducible-build, security, and dependency-policy jobs. The
 machine manifest was regenerated at evidence snapshot
-`48177501564cda9aa5507ab789c71ce3f285a0d5`, where it records a clean 10/10
+`97ea27f23359db321b2654a9628b0e78310a4ea6`, where it records a clean 10/10
 local suite collection and six artifact hashes. No exact release tag exists
 yet. Live provider
 execution, signing, and named review remain release evidence rather than
 claims made by this slice.
+
+The 2026-09-11 PR-011/PR-012 slice hardens maintenance publication and
+interruption recovery: Unix directory synchronization follows atomic backup
+and restore renames, stale private maintenance artifacts are recovered only
+after a conservative age check, and subprocess crash tests cover backup and
+migration boundaries. Restore tests include durable jobs, receipts, pending
+events, and outbox rows. The verifier process-bounded capability now probes
+the native supervisor before advertising it; Windows Job Objects remain
+explicitly distinct from the still-unimplemented AppContainer boundary, and
+stronger Windows/macOS tiers remain fail-closed.
 
 ## 1. Executive decision
 
@@ -53,7 +63,7 @@ durable intent records, exact-SHA publication, redacted state, deterministic
 recovery tests, and native CI. It is not yet ready for alpha distribution.
 
 The original baseline review identified nine technical gaps. The local
-implementation work in PR-001 through PR-010 and the linked Phase 1–4 bundles
+implementation work in PR-001 through PR-012 and the linked Phase 1–4 bundles
 addresses the SQLite, filesystem, Git, lifecycle, deadline, adapter/provider,
 static-analysis, test-tier, and governance implementation findings. The
 current release-blocking gaps are:

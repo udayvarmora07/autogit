@@ -12,7 +12,7 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 74 checked, 22 open; the
+before starting work. Current audit: 96 total rows, 76 checked, 20 open; the
 user-assigned batch is 10 work packages occupying 2 open rows. The local
 implementation exists, and formal acceptance is 8/10 after P4-01 quality-tier,
 P4-02 shell-safety, P4-04 fuzz-floor, P4-05 chaos/recovery, P4-06 scenario,
@@ -376,8 +376,13 @@ they do not represent hosted signing or cross-runner evidence.
   P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
 - [x] PR-010 Contract acceptance plus new architecture decisions. Evidence:
   [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
-- [ ] PR-011 Backup/restore/integrity/retention.
-- [ ] PR-012 Verification isolation capability baseline.
+- [x] PR-011 Backup/restore/integrity/retention, including durable jobs/receipts
+  restore checks and subprocess crash-recovery coverage. Evidence: [Phase 1
+  P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
+- [x] PR-012 Verification isolation capability baseline, including a native
+  process-supervisor capability probe and fail-closed stronger-tier behavior.
+  Windows AppContainer and native macOS acceptance remain open under P1-04.
+  Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
 
 ## Promotion rule
 

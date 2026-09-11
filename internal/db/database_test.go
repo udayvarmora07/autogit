@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -83,6 +85,73 @@ func TestOpenContextDoesNotCreateStateAfterCancellation(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("canceled open created state directory: %v", err)
+	}
+}
+
+func TestMigrationCrashRollsBackAndReopens(t *testing.T) {
+	if os.Getenv("AUTOGIT_DB_TEST_CHILD") == "migration" {
+		migrationTestHook = func(stage string) {
+			if stage != "before-schema-version-update" {
+				return
+			}
+			if err := os.WriteFile(os.Getenv("AUTOGIT_DB_TEST_MARKER"), []byte("ready"), 0600); err != nil {
+				os.Exit(125)
+			}
+			select {}
+		}
+		_, _ = Open(os.Getenv("AUTOGIT_DB_TEST_SOURCE"))
+		os.Exit(126)
+	}
+
+	path := filepath.Join(t.TempDir(), "state.db")
+	database, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`UPDATE state_meta SET value='6' WHERE key='schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(filepath.Dir(path), "migration-ready")
+	command := exec.Command(os.Args[0], "-test.run=^TestMigrationCrashRollsBackAndReopens$")
+	command.Env = append(os.Environ(),
+		"AUTOGIT_DB_TEST_CHILD=migration",
+		"AUTOGIT_DB_TEST_SOURCE="+path,
+		"AUTOGIT_DB_TEST_MARKER="+marker,
+	)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	}()
+	waitForDatabaseTestFile(t, marker)
+	if err := command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err == nil {
+		t.Fatal("migration child survived forced termination")
+	}
+
+	database, err = Open(path)
+	if err != nil {
+		t.Fatalf("database did not recover after migration crash: %v", err)
+	}
+	defer database.Close()
+	var version string
+	if err := database.QueryRow(`SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != strconv.Itoa(CurrentSchemaVersion) {
+		t.Fatalf("schema version=%q, want %d after recovery", version, CurrentSchemaVersion)
+	}
+	if _, err := Inspect(context.Background(), path); err != nil {
+		t.Fatalf("recovered database failed integrity inspection: %v", err)
 	}
 }
 

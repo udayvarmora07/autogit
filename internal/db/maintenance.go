@@ -20,6 +20,11 @@ import (
 	"autogit/internal/securefs"
 )
 
+// maintenanceTestHook is intentionally nil in production. Tests use it to
+// stop a subprocess at crash-sensitive boundaries without adding a public
+// control surface to the maintenance API.
+var maintenanceTestHook func(string)
+
 // HealthReport is a redacted, read-only view of the SQLite durability
 // contract. It contains no database paths or application payloads.
 type HealthReport struct {
@@ -232,6 +237,9 @@ func Backup(ctx context.Context, sourcePath, destinationPath string) (BackupRepo
 	if err := os.Chmod(temporary, 0600); err != nil && runtime.GOOS != "windows" {
 		return BackupReport{}, err
 	}
+	if maintenanceTestHook != nil {
+		maintenanceTestHook("backup-created")
+	}
 	report, err := Inspect(ctx, temporary)
 	if err != nil {
 		return BackupReport{}, fmt.Errorf("validate backup: %w", err)
@@ -435,6 +443,9 @@ func prepareNewMaintenancePath(path string) (string, error) {
 	if err := ensureMaintenanceParent(filepath.Dir(absolute)); err != nil {
 		return "", err
 	}
+	if err := cleanupStaleMaintenancePaths(filepath.Dir(absolute)); err != nil {
+		return "", err
+	}
 	if _, err := os.Lstat(absolute); err == nil {
 		return "", fmt.Errorf("maintenance destination already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -451,6 +462,9 @@ func prepareRestorePath(path string) (string, error) {
 	if err := ensureMaintenanceParent(filepath.Dir(absolute)); err != nil {
 		return "", err
 	}
+	if err := cleanupStaleMaintenancePaths(filepath.Dir(absolute)); err != nil {
+		return "", err
+	}
 	if info, err := os.Lstat(absolute); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || !sameOwnerAndMode(info) || !securefs.OwnedByCurrentUser(info) {
 			return "", fmt.Errorf("%w: unsafe restore destination", ErrUnsafePath)
@@ -459,6 +473,43 @@ func prepareRestorePath(path string) (string, error) {
 		return "", err
 	}
 	return absolute, nil
+}
+
+const (
+	maintenanceTempPrefix = ".autogit-maint-"
+	maintenanceTempAge    = 24 * time.Hour
+)
+
+// cleanupStaleMaintenancePaths removes only old, private regular files left
+// by an interrupted process. A recent file is never touched, which avoids
+// racing a live backup or restore; unexpected file types are left in place so
+// recovery cannot delete an operator-created path accidentally.
+func cleanupStaleMaintenancePaths(parent string) error {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return err
+	}
+	cutoff := time.Now().Add(-maintenanceTempAge)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), maintenanceTempPrefix) {
+			continue
+		}
+		path := filepath.Join(parent, entry.Name())
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || !sameOwnerAndMode(info) || !securefs.OwnedByCurrentUser(info) || info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureMaintenanceParent(parent string) error {
@@ -475,7 +526,7 @@ func allocateMaintenancePath(destination string) (string, func(), error) {
 		if _, err := rand.Read(random[:]); err != nil {
 			return "", func() {}, err
 		}
-		path := filepath.Join(parent, ".autogit-maint-"+hex.EncodeToString(random[:]))
+		path := filepath.Join(parent, maintenanceTempPrefix+hex.EncodeToString(random[:]))
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600) // #nosec G304 -- parent is a validated private maintenance directory and the filename is cryptographically random.
 		if errors.Is(err, os.ErrExist) {
 			continue
@@ -507,7 +558,10 @@ func publishMaintenancePath(temporary, destination string) error {
 	if err := os.Rename(temporary, destination); err != nil {
 		return err
 	}
-	return restrictDatabaseArtifacts(destination)
+	if err := restrictDatabaseArtifacts(destination); err != nil {
+		return err
+	}
+	return syncMaintenanceDirectory(destination)
 }
 
 func replaceMaintenancePath(temporary, destination string) error {
@@ -537,7 +591,10 @@ func replaceMaintenancePath(temporary, destination string) error {
 	if err := os.Rename(temporary, destination); err != nil {
 		return err
 	}
-	return restrictDatabaseArtifacts(destination)
+	if err := restrictDatabaseArtifacts(destination); err != nil {
+		return err
+	}
+	return syncMaintenanceDirectory(destination)
 }
 
 func copyMaintenanceFile(source, destination string) (int64, error) {

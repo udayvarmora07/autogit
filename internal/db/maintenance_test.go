@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -50,6 +51,17 @@ func TestBackupRestoreRoundTripPreservesDurableState(t *testing.T) {
 	if _, err := database.Exec(`INSERT INTO audit(id,repository_id,reason_code,metadata,at) VALUES('audit-1','repo','TEST','{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',10)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := database.Exec(`
+		INSERT INTO remote_jobs(id,repository_id,owner,name,alias,visibility,url,hosted_identity,state,created_at,updated_at)
+		VALUES('job-1','repo','owner','name','alias','private','https://example.invalid/owner/name','hosted','queued',10,10);
+		INSERT INTO event_receipts(event_id,idempotency_key,payload_digest,disposition,revision,created_at)
+		VALUES('event-1','key-1','sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','accepted',1,'2026-09-01T00:00:00Z');
+		INSERT INTO pending_events(event_id,causation_id,payload)
+		VALUES('pending-1','event-0',X'7B7D');
+		INSERT INTO outbox(id,kind,aggregate_id,payload,created_at,published_at)
+		VALUES('outbox-1','job.created','job-1',X'7B7D',10,NULL);`); err != nil {
+		t.Fatal(err)
+	}
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +94,22 @@ func TestBackupRestoreRoundTripPreservesDurableState(t *testing.T) {
 	}
 	if !strings.Contains(metadata, "sha256:") {
 		t.Fatalf("restored metadata=%q", metadata)
+	}
+	var jobState, receiptDisposition, pendingPayload, outboxPayload string
+	if err := check.QueryRow(`SELECT state FROM remote_jobs WHERE id='job-1'`).Scan(&jobState); err != nil {
+		t.Fatal(err)
+	}
+	if err := check.QueryRow(`SELECT disposition FROM event_receipts WHERE event_id='event-1'`).Scan(&receiptDisposition); err != nil {
+		t.Fatal(err)
+	}
+	if err := check.QueryRow(`SELECT hex(payload) FROM pending_events WHERE event_id='pending-1'`).Scan(&pendingPayload); err != nil {
+		t.Fatal(err)
+	}
+	if err := check.QueryRow(`SELECT hex(payload) FROM outbox WHERE id='outbox-1'`).Scan(&outboxPayload); err != nil {
+		t.Fatal(err)
+	}
+	if jobState != "queued" || receiptDisposition != "accepted" || pendingPayload != "7B7D" || outboxPayload != "7B7D" {
+		t.Fatalf("restored durable state mismatch: job=%q receipt=%q pending=%q outbox=%q", jobState, receiptDisposition, pendingPayload, outboxPayload)
 	}
 	if info, err := os.Stat(backup); err != nil {
 		t.Fatalf("backup stat: info=%v err=%v", info, err)
@@ -120,6 +148,94 @@ func TestBackupRejectsExistingDestinationAndSymlink(t *testing.T) {
 		if _, err := Backup(context.Background(), source, link); err == nil {
 			t.Fatal("backup accepted symlink destination")
 		}
+	}
+}
+
+func TestBackupCrashBeforePublishLeavesSourceUsableAndRecoversOrphan(t *testing.T) {
+	if os.Getenv("AUTOGIT_DB_TEST_CHILD") == "backup" {
+		maintenanceTestHook = func(stage string) {
+			if stage != "backup-created" {
+				return
+			}
+			if err := os.WriteFile(os.Getenv("AUTOGIT_DB_TEST_MARKER"), []byte("ready"), 0600); err != nil {
+				os.Exit(125)
+			}
+			select {}
+		}
+		_, _ = Backup(context.Background(), os.Getenv("AUTOGIT_DB_TEST_SOURCE"), os.Getenv("AUTOGIT_DB_TEST_DESTINATION"))
+		os.Exit(126)
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "state.db")
+	backupDir := filepath.Join(root, "backups")
+	backup := filepath.Join(backupDir, "state.db")
+	marker := filepath.Join(root, "backup-ready")
+	database, err := Open(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO audit(id,reason_code,metadata,at) VALUES('audit-crash','TEST','{}',1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	command := exec.Command(os.Args[0], "-test.run=^TestBackupCrashBeforePublishLeavesSourceUsableAndRecoversOrphan$")
+	command.Env = append(os.Environ(),
+		"AUTOGIT_DB_TEST_CHILD=backup",
+		"AUTOGIT_DB_TEST_SOURCE="+source,
+		"AUTOGIT_DB_TEST_DESTINATION="+backup,
+		"AUTOGIT_DB_TEST_MARKER="+marker,
+	)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	}()
+	waitForDatabaseTestFile(t, marker)
+	if err := command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err == nil {
+		t.Fatal("backup child survived forced termination")
+	}
+
+	if _, err := os.Stat(backup); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("crashed backup published destination: %v", err)
+	}
+	if _, err := Inspect(context.Background(), source); err != nil {
+		t.Fatalf("source became unusable after backup crash: %v", err)
+	}
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var orphan string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), maintenanceTempPrefix) {
+			orphan = filepath.Join(backupDir, entry.Name())
+			break
+		}
+	}
+	if orphan == "" {
+		t.Fatal("crashed backup left no recoverable temporary artifact")
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(orphan, old, old); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(backupDir, "state-second.db")
+	if _, err := Backup(context.Background(), source, second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(orphan); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale backup artifact was not recovered: %v", err)
 	}
 }
 
@@ -216,4 +332,16 @@ func TestExportIsRedactedAndRepairOnlyRunsSafeMaintenance(t *testing.T) {
 
 func runtimeSymlinkSupported() bool {
 	return runtime.GOOS != "windows"
+}
+
+func waitForDatabaseTestFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for database test marker %s", path)
 }

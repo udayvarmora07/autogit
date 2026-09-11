@@ -39,6 +39,9 @@ func CapabilityFor(tier IsolationTier) IsolationCapability {
 	case TierNone:
 		return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: "no isolation was requested; only an explicit local exception may use this tier", Primitive: "none"}
 	case TierProcessBounded:
+		if !process.ProcessBoundedAvailable() {
+			return IsolationCapability{Tier: tier, Reason: fmt.Sprintf("native process supervisor is unavailable on %s", runtime.GOOS), Limitations: []string{"process-bounded execution is unavailable; verification must fail closed"}}
+		}
 		reason := fmt.Sprintf("argv, scrubbed environment, timeout, bounded output, descendant cleanup, and process limits supported on %s", runtime.GOOS)
 		primitive := "process-group"
 		limitations := []string(nil)
