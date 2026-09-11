@@ -81,8 +81,8 @@ P4-08, P1-04, and the P5 exact-tag, attestation, independent-reproducibility,
 package-channel, native-install, and named-review gates remain open.
 
 The subsequent manual full matrix `34627202246` passed all 20/20 jobs against
-current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a documentation-only
-descendant of the implementation snapshot. It retained native Linux/macOS/
+then-current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a
+documentation-only descendant of the implementation snapshot. It retained native Linux/macOS/
 Windows checks, all six native artifact lifecycle drills, fuzz, soak,
 reproducibility, security, and dependency-policy results. This is stronger
 current-tree validation for the Phase 0, Phase 1, and P4-03 reviews; it does

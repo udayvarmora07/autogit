@@ -77,8 +77,8 @@ attestation, independent-runner, package-channel, native clean-machine, or
 named-review gates.
 
 The subsequent manual full matrix `34627202246` passed all 20/20 jobs against
-current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a documentation-only
-descendant of the evidence snapshot. It retained native Linux/macOS/Windows
+then-current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a
+documentation-only descendant of the evidence snapshot. It retained native Linux/macOS/Windows
 checks, all six native artifact lifecycle drills, fuzz, soak, reproducibility,
 security, and dependency-policy results. This strengthens the current-tree
 validation for the Phase 0, Phase 1, and P4-03 gate reviews without changing

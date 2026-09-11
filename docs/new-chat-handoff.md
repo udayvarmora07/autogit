@@ -66,9 +66,9 @@ remaining P4 rows.
   package-metadata regression. The preceding `e432bf5` core failure was caused
   by the Windows Git Bash hash-path incompatibility and is retained only as
   diagnostic history.
-- Manual full matrix run `34627202246` passed all 20 jobs against current HEAD
-  `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a documentation-only descendant
-  of the evidence snapshot. It retained all six native artifact lifecycle
+- Manual full matrix run `34627202246` passed all 20 jobs against then-current
+  HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a documentation-only
+  descendant of the evidence snapshot. It retained all six native artifact lifecycle
   drills plus native platform, fuzz, soak, reproducibility, security, and
   dependency-policy results.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is the fresh
