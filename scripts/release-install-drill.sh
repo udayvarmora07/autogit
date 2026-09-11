@@ -50,7 +50,29 @@ for artifact in "$previous" "$candidate"; do
   [[ -x "$artifact" ]] || { echo "release binary is not executable: $artifact" >&2; exit 2; }
 done
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 sha256_file() {
+  if is_windows_shell; then
+    local path_windows powershell
+    path_windows="$(cygpath -w "$1")"
+    if command -v powershell.exe >/dev/null 2>&1; then
+      powershell=powershell.exe
+    elif command -v pwsh >/dev/null 2>&1; then
+      powershell=pwsh
+    else
+      echo "PowerShell is required for Windows SHA-256 verification" >&2
+      exit 1
+    fi
+    AUTOGIT_HASH_PATH="$path_windows" "$powershell" -NoLogo -NoProfile -NonInteractive -Command \
+      '$ErrorActionPreference = "Stop"; (Get-FileHash -LiteralPath $env:AUTOGIT_HASH_PATH -Algorithm SHA256).Hash.ToLowerInvariant()' | tr -d '\r\n'
+    return
+  fi
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
     return
@@ -77,13 +99,6 @@ candidate_version="$(version_of "$candidate")"
 [[ "$previous_version" != "$candidate_version" ]] || { echo "previous and candidate versions must differ" >&2; exit 1; }
 previous_checksum="$(sha256_file "$previous")"
 candidate_checksum="$(sha256_file "$candidate")"
-
-is_windows_shell() {
-  case "$(uname -s 2>/dev/null || true)" in
-    MINGW*|MSYS*|CYGWIN*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 root="$(mktemp -d "${TMPDIR:-/tmp}/autogit-install-drill.XXXXXX")"
 temporary_output=""
@@ -151,6 +166,7 @@ install_atomic() {
     chmod 0755 "$staged" 2>/dev/null || true
     cmp -- "$source" "$staged" || { echo "staged binary differs from source" >&2; return 1; }
     move_windows_binary "$staged" "$installed"
+    cmp -- "$source" "$installed" || { echo "installed binary differs from source" >&2; return 1; }
   else
     install -m 0755 "$source" "$staged"
     chmod 0755 "$staged"
@@ -161,10 +177,14 @@ install_atomic() {
 assert_installed() {
   local expected_version=$1
   local expected_checksum=$2
-  local actual_checksum actual_version
+  local actual_checksum actual_size actual_version
   [[ -f "$installed" && ! -L "$installed" ]] || { echo "installed binary is missing or a symlink" >&2; return 1; }
   actual_checksum="$(sha256_file "$installed")"
-  [[ "$actual_checksum" == "$expected_checksum" ]] || { echo "installed checksum mismatch" >&2; return 1; }
+  if [[ "$actual_checksum" != "$expected_checksum" ]]; then
+    actual_size="$(wc -c < "$installed")"
+    echo "installed checksum mismatch: expected=$expected_checksum actual=$actual_checksum bytes=$actual_size" >&2
+    return 1
+  fi
   actual_version="$(version_of "$installed")"
   [[ "$actual_version" == "$expected_version" ]] || { echo "installed version mismatch" >&2; return 1; }
 }
