@@ -407,6 +407,61 @@ func TestPackageMetadataGeneratorUsesReleaseManifest(t *testing.T) {
 	}
 }
 
+func TestPackageMetadataGeneratorUsesPowerShellHashOnWindowsShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the shimmed Windows shell is only needed for non-Windows hosts")
+	}
+	dist := filepath.Join(t.TempDir(), "dist")
+	if err := os.Mkdir(dist, 0700); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{
+		"autogit-linux-amd64",
+		"autogit-linux-arm64",
+		"autogit-darwin-amd64",
+		"autogit-darwin-arm64",
+		"autogit-windows-amd64.exe",
+		"autogit-windows-arm64.exe",
+	}
+	var manifest strings.Builder
+	for _, name := range names {
+		content := []byte("Windows shell fixture: " + name)
+		if err := os.WriteFile(filepath.Join(dist, name), content, 0700); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(content)
+		manifest.WriteString(fmt.Sprintf("%x  %s\n", sum, name))
+	}
+	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(manifest.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	binDir := t.TempDir()
+	writeExecutable := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeExecutable("uname", "#!/usr/bin/env bash\nprintf '%s\\n' MSYS_NT-10.0\n")
+	writeExecutable("cygpath", "#!/usr/bin/env bash\nprintf '%s\\n' \"$2\"\n")
+	writeExecutable("powershell.exe", "#!/usr/bin/env bash\nsha256sum \"$AUTOGIT_HASH_PATH\" | awk '{print $1}'\n")
+	metadata := filepath.Join(t.TempDir(), "package-metadata")
+	env := []string{"PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH")}
+	output, err := runShellScript(t, env, "generate-package-metadata.sh",
+		"--version", "v1.2.3",
+		"--repo", "owner/repo",
+		"--directory", dist,
+		"--output", metadata,
+	)
+	if err != nil || len(output) != 0 {
+		t.Fatalf("Windows-shell package metadata result=%v output=%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(metadata, "autogit.rb")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPackageMetadataGeneratorRejectsInvalidTag(t *testing.T) {
 	output, err := runShellScript(t, nil, "generate-package-metadata.sh",
 		"--version", "release-1.2.3",

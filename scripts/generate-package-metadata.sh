@@ -85,7 +85,29 @@ manifest="$release_directory/SHA256SUMS"
   exit 2
 }
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 sha256_file() {
+  if is_windows_shell; then
+    local path_windows powershell
+    path_windows="$(cygpath -w "$1")"
+    if command -v powershell.exe >/dev/null 2>&1; then
+      powershell=powershell.exe
+    elif command -v pwsh >/dev/null 2>&1; then
+      powershell=pwsh
+    else
+      echo "PowerShell is required for Windows SHA-256 verification" >&2
+      exit 1
+    fi
+    AUTOGIT_HASH_PATH="$path_windows" "$powershell" -NoLogo -NoProfile -NonInteractive -Command \
+      '$ErrorActionPreference = "Stop"; (Get-FileHash -LiteralPath $env:AUTOGIT_HASH_PATH -Algorithm SHA256).Hash.ToLowerInvariant()' | tr -d '\r\n'
+    return
+  fi
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
     return
