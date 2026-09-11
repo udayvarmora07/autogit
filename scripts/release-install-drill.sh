@@ -137,10 +137,13 @@ copy_windows_binary() {
 move_windows_binary() {
   local source=$1
   local destination=$2
-  local source_windows destination_windows powershell
+  local backup source_windows destination_windows backup_windows powershell
+  backup="$destination.backup"
+  [[ ! -e "$backup" && ! -L "$backup" ]] || { echo "stale Windows replacement backup exists" >&2; return 1; }
   command -v cygpath >/dev/null 2>&1 || { echo "cygpath is required for Windows binary installation" >&2; return 1; }
   source_windows="$(cygpath -w "$source")"
   destination_windows="$(cygpath -w "$destination")"
+  backup_windows="$(cygpath -w "$backup")"
   if command -v powershell.exe >/dev/null 2>&1; then
     powershell=powershell.exe
   elif command -v pwsh >/dev/null 2>&1; then
@@ -149,9 +152,9 @@ move_windows_binary() {
     echo "PowerShell is required for Windows binary installation" >&2
     return 1
   fi
-  AUTOGIT_MOVE_SOURCE="$source_windows" AUTOGIT_MOVE_DEST="$destination_windows" \
+  AUTOGIT_MOVE_SOURCE="$source_windows" AUTOGIT_MOVE_DEST="$destination_windows" AUTOGIT_MOVE_BACKUP="$backup_windows" \
     "$powershell" -NoLogo -NoProfile -NonInteractive -Command \
-    '$ErrorActionPreference = "Stop"; if ([System.IO.File]::Exists($env:AUTOGIT_MOVE_DEST)) { [System.IO.File]::Replace($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST, $null, $true) } else { [System.IO.File]::Move($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST) }'
+    '$ErrorActionPreference = "Stop"; if ([System.IO.File]::Exists($env:AUTOGIT_MOVE_DEST)) { [System.IO.File]::Replace($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST, $env:AUTOGIT_MOVE_BACKUP, $true); [System.IO.File]::Delete($env:AUTOGIT_MOVE_BACKUP) } else { [System.IO.File]::Move($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST) }'
 }
 
 install_atomic() {
