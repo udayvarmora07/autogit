@@ -12,11 +12,11 @@ Status: local implementation slices present; exact-tag hosted acceptance remains
 | Clean, non-reused build | Both jobs reject a dirty checkout; the artifact job requires that `dist` does not exist before invoking `scripts/release-build.sh`. |
 | Complete quality gate | The read-only job runs uncached tests, race tests, vet, build, release integration/artifact smoke, source govulncheck, ShellCheck/syntax, and dependency/workflow policy checks. |
 | Release identity | The artifact job injects the exact tag and event SHA into all six reproducible binaries and checks the native binary's reported identity. |
-| SPDX SBOM | `cmd/autogit-sbom` consumes the Go module graph, sorts module identities, records no local filesystem paths, and emits SPDX 2.3 JSON. A fixed creation time makes the document reproducible. |
+| SPDX/CycloneDX SBOMs | `cmd/autogit-sbom` consumes the Go module graph, sorts module identities, records no local filesystem paths, and emits deterministic SPDX 2.3 and CycloneDX 1.5 JSON documents. A fixed creation time makes both documents reproducible. |
 | Binary vulnerability evidence | Each Linux, macOS, and Windows release binary is scanned with `golang.org/x/vuln/cmd/govulncheck@v1.7.0 -mode=binary`; reports are included in the checksum manifest. |
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
-| Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe or incomplete manifests, verifies all six binaries plus SBOM/vulnerability reports, and invokes `gh attestation verify` with the exact repository, release workflow, tag, source commit, SLSA predicate, and hosted-runner requirement. The release workflow runs this verifier after both attestations and before final evidence upload. |
+| Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe or incomplete manifests, verifies checksums for all six binaries, both SBOMs, and vulnerability reports, then verifies binary provenance plus SPDX and CycloneDX predicates against a release binary with the exact repository, workflow, tag, source commit, and hosted-runner requirement. The release workflow runs this verifier after all attestations and before final evidence upload. |
 | Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS` and the embedded tag/commit identity, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` only on this final job; package channels remain deferred until demand and native install evidence exist. |
 
 ## Local verification
@@ -40,8 +40,8 @@ bash scripts/verify-release-artifacts.sh --directory DIST \
 ```
 
 The SBOM generator was also run against the repository's complete Go module
-graph. It emitted a valid SPDX-shaped JSON document with 29 module packages,
-stable ordering, and no `/home/` or `/tmp/` path disclosure.
+graph. It emitted valid SPDX 2.3 and CycloneDX 1.5 documents with 29 module
+packages, stable ordering, and no `/home/` or `/tmp/` path disclosure.
 
 The existing local release integration suite also builds the supported target
 set twice with separate output directories and verifies matching bytes. The

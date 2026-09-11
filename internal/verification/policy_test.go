@@ -140,6 +140,14 @@ func TestTrustedEvidenceInvalidatesEveryBindingDimension(t *testing.T) {
 			t.Fatalf("mutation %d reused evidence", i)
 		}
 	}
+	mutatedResult := result
+	mutatedResult.Evidence = append([]TrustedEvidence(nil), result.Evidence...)
+	mutatedResult.Evidence[0].IsolationPrimitive = "unattested-primitive"
+	mutatedResult.Evidence[0].EvidenceDigest = digestCanonical(evidenceWithoutDigest(mutatedResult.Evidence[0]))
+	mutatedResult.EvidenceDigest = digestCanonical(mutatedResult.Evidence)
+	if mutatedResult.ValidFor(req, policy, reg) {
+		t.Fatal("unattested isolation primitive reused evidence")
+	}
 }
 
 func TestTrustedVerifyRejectsShellAndSymlinkExecutables(t *testing.T) {

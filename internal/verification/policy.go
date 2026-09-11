@@ -211,31 +211,34 @@ const (
 )
 
 type TrustedEvidence struct {
-	Verifier          string
-	VerifierVersion   string
-	CandidateDigest   string
-	BaseDigest        string
-	PolicyDigest      string
-	GuardDigest       string
-	VerifierSetDigest string
-	ExitCode          int
-	Passed            bool
-	TimedOut          bool
-	Cancelled         bool
-	OutputTruncated   bool
-	StdoutBytes       int
-	StderrBytes       int
-	StdoutDigest      string
-	StderrDigest      string
-	EvidenceDigest    string
-	IsolationTier     IsolationTier
+	Verifier              string
+	VerifierVersion       string
+	CandidateDigest       string
+	BaseDigest            string
+	PolicyDigest          string
+	GuardDigest           string
+	VerifierSetDigest     string
+	ExitCode              int
+	Passed                bool
+	TimedOut              bool
+	Cancelled             bool
+	OutputTruncated       bool
+	StdoutBytes           int
+	StderrBytes           int
+	StdoutDigest          string
+	StderrDigest          string
+	EvidenceDigest        string
+	IsolationTier         IsolationTier
+	IsolationPrimitive    string
+	IsolationLimitations  []string
+	IsolationObservations map[string]interface{}
 	// ExecutableBinding distinguishes opened-object execution from the
 	// digest-rechecked path fallback used by incompatible launchers/platforms.
 	ExecutableBinding string
 }
 
 func (e TrustedEvidence) ValidForTrusted(candidate, base, policy, guard, verifierSet string) bool {
-	return e.Passed && e.IsolationTier != "" && e.ExecutableBinding != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
+	return e.Passed && e.IsolationTier != "" && e.IsolationPrimitive != "" && e.ExecutableBinding != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
 }
 
 type VerificationResult struct {
@@ -259,7 +262,8 @@ func (r VerificationResult) ValidFor(req TrustedRequest, policy VerificationPoli
 		return false
 	}
 	for i, e := range r.Evidence {
-		if e.Verifier != plan.Specs[i].Name || e.IsolationTier != plan.Specs[i].IsolationTier || e.EvidenceDigest != digestCanonical(evidenceWithoutDigest(e)) || !e.ValidForTrusted(req.CandidateDigest, req.BaseDigest, req.PolicyDigest, req.GuardDigest, r.VerifierSetDigest) {
+		capability, capabilityErr := RequireCapability(e.IsolationTier)
+		if capabilityErr != nil || e.Verifier != plan.Specs[i].Name || e.IsolationTier != plan.Specs[i].IsolationTier || e.IsolationPrimitive != capability.Primitive || e.EvidenceDigest != digestCanonical(evidenceWithoutDigest(e)) || !e.ValidForTrusted(req.CandidateDigest, req.BaseDigest, req.PolicyDigest, req.GuardDigest, r.VerifierSetDigest) {
 			return false
 		}
 	}
@@ -337,9 +341,13 @@ func (r *VerifierRegistry) Verify(parent context.Context, policy VerificationPol
 
 func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedRequest, runner Runner) (TrustedEvidence, error) {
 	e := TrustedEvidence{Verifier: spec.Name, VerifierVersion: spec.Version, CandidateDigest: req.CandidateDigest, BaseDigest: req.BaseDigest, PolicyDigest: req.PolicyDigest, GuardDigest: req.GuardDigest, IsolationTier: spec.IsolationTier}
-	if _, err := RequireCapability(spec.IsolationTier); err != nil {
+	capability, err := RequireCapability(spec.IsolationTier)
+	if err != nil {
 		return e, err
 	}
+	e.IsolationPrimitive = capability.Primitive
+	e.IsolationLimitations = append([]string(nil), capability.Limitations...)
+	e.IsolationObservations = cloneObservations(capability.Observations)
 	// The executable is checked again at execution time to close replacement and
 	// symlink races between registry construction and verification.
 	canonical, err := canonicalTrustedExecutable(spec.Argv[0])
@@ -694,6 +702,17 @@ func cloneEnvironment(in map[string]string) map[string]string {
 }
 
 func cloneStrings(in []string) []string { return append([]string(nil), in...) }
+
+func cloneObservations(in map[string]interface{}) map[string]interface{} {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
 
 func cloneSpec(in TrustedVerifierSpec) TrustedVerifierSpec {
 	in.Argv = append([]string(nil), in.Argv...)

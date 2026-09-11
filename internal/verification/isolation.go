@@ -23,10 +23,13 @@ const (
 )
 
 type IsolationCapability struct {
-	Tier      IsolationTier `json:"tier"`
-	Available bool          `json:"available"`
-	Enforced  bool          `json:"enforced"`
-	Reason    string        `json:"reason"`
+	Tier         IsolationTier          `json:"tier"`
+	Available    bool                   `json:"available"`
+	Enforced     bool                   `json:"enforced"`
+	Reason       string                 `json:"reason"`
+	Primitive    string                 `json:"primitive,omitempty"`
+	Limitations  []string               `json:"limitations,omitempty"`
+	Observations map[string]interface{} `json:"observations,omitempty"`
 }
 
 func DefaultIsolationTier() IsolationTier { return TierProcessBounded }
@@ -34,30 +37,67 @@ func DefaultIsolationTier() IsolationTier { return TierProcessBounded }
 func CapabilityFor(tier IsolationTier) IsolationCapability {
 	switch tier {
 	case TierNone:
-		return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: "no isolation was requested; only an explicit local exception may use this tier"}
+		return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: "no isolation was requested; only an explicit local exception may use this tier", Primitive: "none"}
 	case TierProcessBounded:
 		reason := fmt.Sprintf("argv, scrubbed environment, timeout, bounded output, descendant cleanup, and process limits supported on %s", runtime.GOOS)
+		primitive := "process-group"
+		limitations := []string(nil)
 		if runtime.GOOS == "darwin" {
 			reason = "argv, scrubbed environment, timeout, bounded output, and process-group cleanup; macOS resource ceilings are unavailable"
+			limitations = []string{"resource ceilings are unavailable; filesystem and network isolation tiers are unavailable"}
 		} else if runtime.GOOS == "windows" {
 			reason = "argv, scrubbed environment, timeout, bounded output, descendant cleanup, and Windows job-object CPU/memory/process limits"
+			primitive = "job-object"
+			limitations = []string{"AppContainer is not enabled by this binary; filesystem and network isolation tiers are unavailable"}
+		} else if runtime.GOOS == "linux" {
+			primitive = "process-group+prlimit"
 		}
-		return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: reason}
+		return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: reason, Primitive: primitive, Limitations: limitations}
 	case TierFilesystemIsolated:
 		if runtime.GOOS == "linux" && process.NamespaceSandboxAvailable() {
-			return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: "Linux bubblewrap user/pid namespaces and read-only filesystem allowlist"}
+			return linuxFilesystemCapability(tier, false)
 		}
-		return IsolationCapability{Tier: tier, Reason: "filesystem isolation is unavailable on this platform or bubblewrap is not installed"}
+		return unavailableFilesystemCapability(tier, "filesystem isolation is unavailable on this platform or bubblewrap is not installed")
 	case TierFilesystemNetworkIsolated:
 		if runtime.GOOS == "linux" && process.NamespaceSandboxAvailable() {
-			return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: "Linux bubblewrap user/pid/network namespaces and read-only filesystem allowlist"}
+			return linuxFilesystemCapability(tier, true)
 		}
-		return IsolationCapability{Tier: tier, Reason: "filesystem and network isolation is unavailable on this platform or bubblewrap is not installed"}
+		return unavailableFilesystemCapability(tier, "filesystem and network isolation is unavailable on this platform or bubblewrap is not installed")
 	case TierRemoteHermetic:
 		return IsolationCapability{Tier: tier, Reason: "remote hermetic execution is outside this local binary"}
 	default:
 		return IsolationCapability{Tier: tier, Reason: "unknown isolation tier"}
 	}
+}
+
+func linuxFilesystemCapability(tier IsolationTier, networkDisabled bool) IsolationCapability {
+	primitive := "bubblewrap-user-pid-namespace"
+	reason := "Linux bubblewrap user/pid namespaces and read-only filesystem allowlist"
+	if networkDisabled {
+		primitive += "+network-namespace"
+		reason = "Linux bubblewrap user/pid/network namespaces and read-only filesystem allowlist"
+	}
+	observations := map[string]interface{}{}
+	if abi, err := process.LandlockABI(); err == nil {
+		observations["landlock_abi"] = abi
+		observations["landlock_enforced"] = false
+		observations["landlock_reason"] = "kernel ABI detected; the current launcher enforces this tier with bubblewrap namespaces, not an in-process Landlock ruleset"
+	} else {
+		observations["landlock_abi"] = 0
+		observations["landlock_enforced"] = false
+		observations["landlock_reason"] = "kernel Landlock ABI unavailable; bubblewrap namespace enforcement remains the achieved primitive"
+	}
+	return IsolationCapability{Tier: tier, Available: true, Enforced: true, Reason: reason, Primitive: primitive, Observations: observations}
+}
+
+func unavailableFilesystemCapability(tier IsolationTier, reason string) IsolationCapability {
+	limitations := []string(nil)
+	if runtime.GOOS == "windows" {
+		limitations = []string{"Windows job objects cover process/resource cleanup; AppContainer is not enabled"}
+	} else if runtime.GOOS == "darwin" {
+		limitations = []string{"macOS process-group fallback does not provide filesystem or network isolation"}
+	}
+	return IsolationCapability{Tier: tier, Reason: reason, Limitations: limitations}
 }
 
 func RequireCapability(tier IsolationTier) (IsolationCapability, error) {

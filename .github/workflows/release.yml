@@ -228,6 +228,22 @@ jobs:
             --root-module autogit \
             --version "$RELEASE_TAG" \
             --created "$created"
+      - name: generate CycloneDX dependency SBOM
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          created="$(date -u -d "@$SOURCE_DATE_EPOCH" '+%Y-%m-%dT%H:%M:%SZ')"
+          go list -m -json all | go run ./cmd/autogit-sbom \
+            --format cyclonedx \
+            --output dist/autogit.cyclonedx.json \
+            --name "autogit-${RELEASE_TAG}" \
+            --namespace "https://github.com/udayvarmora07/autogit/sbom/${RELEASE_TAG}/${RELEASE_SHA}" \
+            --root-module autogit \
+            --version "$RELEASE_TAG" \
+            --created "$created"
       - name: scan every release binary with govulncheck
         shell: bash
         run: |
@@ -244,19 +260,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd dist && sha256sum autogit-* autogit.spdx.json | LC_ALL=C sort -k2,2 > SHA256SUMS)
+          (cd dist && sha256sum autogit-* autogit.spdx.json autogit.cyclonedx.json | LC_ALL=C sort -k2,2 > SHA256SUMS)
           (cd dist && sha256sum -c SHA256SUMS)
       - name: attest SLSA provenance and checksums
         id: provenance
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: dist/SHA256SUMS
-      - name: attest SBOM
-        id: sbom
+      - name: attest SPDX SBOM
+        id: sbom_spdx
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: dist/SHA256SUMS
           sbom-path: dist/autogit.spdx.json
+      - name: attest CycloneDX SBOM
+        id: sbom_cyclonedx
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-checksums: dist/SHA256SUMS
+          sbom-path: dist/autogit.cyclonedx.json
       - name: verify generated provenance as a consumer
         shell: bash
         env:
@@ -278,7 +300,8 @@ jobs:
           path: |
             dist
             ${{ steps.provenance.outputs.bundle-path }}
-            ${{ steps.sbom.outputs.bundle-path }}
+            ${{ steps.sbom_spdx.outputs.bundle-path }}
+            ${{ steps.sbom_cyclonedx.outputs.bundle-path }}
 
   publish:
     name: publish verified GitHub Release
@@ -322,4 +345,5 @@ jobs:
             --generate-notes \
             release-bundle/dist/autogit-* \
             release-bundle/dist/autogit.spdx.json \
+            release-bundle/dist/autogit.cyclonedx.json \
             release-bundle/dist/SHA256SUMS

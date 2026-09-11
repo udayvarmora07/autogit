@@ -115,21 +115,29 @@ func TestReleaseVerifierBindsAttestationIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
-	if len(lines) != 8 {
+	if len(lines) != 9 {
 		t.Fatalf("attestation calls=%d log=%s", len(lines), log)
 	}
-	for _, line := range lines[1:] {
+	for i, line := range lines[1:] {
 		for _, required := range []string{
 			"--repo owner/repo",
 			"--signer-workflow owner/repo/.github/workflows/release.yml",
 			"--source-ref refs/tags/v1.2.3",
 			"--source-digest " + strings.Repeat("a", 40),
-			"--predicate-type https://slsa.dev/provenance/v1",
 			"--deny-self-hosted-runners",
 		} {
 			if !strings.Contains(line, required) {
 				t.Fatalf("attestation call missing %q: %s", required, line)
 			}
+		}
+		if i < 6 && !strings.Contains(line, "--predicate-type https://slsa.dev/provenance/v1") {
+			t.Fatalf("binary attestation call missing provenance predicate: %s", line)
+		}
+		if i == 6 && !strings.Contains(line, "--predicate-type https://spdx.dev/Document/v2.3") {
+			t.Fatalf("SPDX attestation call missing SPDX predicate: %s", line)
+		}
+		if i == 7 && !strings.Contains(line, "--predicate-type https://cyclonedx.org/bom") {
+			t.Fatalf("CycloneDX attestation call missing CycloneDX predicate: %s", line)
 		}
 	}
 }
@@ -178,6 +186,7 @@ var releaseEvidenceNames = []string{
 	"autogit-windows-amd64.exe",
 	"autogit-windows-arm64.exe",
 	"autogit.spdx.json",
+	"autogit.cyclonedx.json",
 	"autogit-linux-amd64.govulncheck.txt",
 	"autogit-linux-arm64.govulncheck.txt",
 	"autogit-darwin-amd64.govulncheck.txt",

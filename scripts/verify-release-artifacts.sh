@@ -64,7 +64,7 @@ release_binaries=(
   autogit-windows-amd64.exe
   autogit-windows-arm64.exe
 )
-expected_names=("${release_binaries[@]}" autogit.spdx.json)
+expected_names=("${release_binaries[@]}" autogit.spdx.json autogit.cyclonedx.json)
 for binary in "${release_binaries[@]}"; do
   expected_names+=("$binary.govulncheck.txt")
 done
@@ -136,14 +136,22 @@ if ! gh attestation verify --help >/dev/null 2>&1; then
 fi
 
 signer_workflow="$repo/.github/workflows/release.yml"
-for name in "${release_binaries[@]}" autogit.spdx.json; do
+attestation_args=(
+  --repo "$repo"
+  --signer-workflow "$signer_workflow"
+  --source-ref "refs/tags/$tag"
+  --source-digest "$commit"
+  --deny-self-hosted-runners
+)
+for name in "${release_binaries[@]}"; do
   gh attestation verify "$directory/$name" \
-    --repo "$repo" \
-    --signer-workflow "$signer_workflow" \
-    --source-ref "refs/tags/$tag" \
-    --source-digest "$commit" \
-    --predicate-type 'https://slsa.dev/provenance/v1' \
-    --deny-self-hosted-runners
+    "${attestation_args[@]}" \
+    --predicate-type 'https://slsa.dev/provenance/v1'
+done
+for predicate_type in 'https://spdx.dev/Document/v2.3' 'https://cyclonedx.org/bom'; do
+  gh attestation verify "$directory/${release_binaries[0]}" \
+    "${attestation_args[@]}" \
+    --predicate-type "$predicate_type"
 done
 
 echo "release checksums and provenance verified: $repo $tag $commit"

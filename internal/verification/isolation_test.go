@@ -28,8 +28,35 @@ func TestIsolationCapabilitiesAreExplicitAndFailClosed(t *testing.T) {
 		if !capability.Available || !capability.Enforced {
 			t.Fatalf("Linux namespace tier was not advertised as enforced: %+v", capability)
 		}
+		if capability.Primitive != "bubblewrap-user-pid-namespace+network-namespace" {
+			t.Fatalf("Linux namespace primitive=%q", capability.Primitive)
+		}
+		if capability.Observations["landlock_enforced"] != false {
+			t.Fatalf("Landlock was overstated: %+v", capability.Observations)
+		}
 	} else if _, err := RequireCapability(TierFilesystemNetworkIsolated); err == nil {
 		t.Fatal("unavailable filesystem/network tier accepted")
+	}
+}
+
+func TestIsolationCapabilityReportsPlatformFallbacks(t *testing.T) {
+	processBounded := CapabilityFor(TierProcessBounded)
+	if processBounded.Primitive == "" || processBounded.Reason == "" {
+		t.Fatalf("process-bounded capability omitted its primitive: %+v", processBounded)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		if len(processBounded.Limitations) == 0 {
+			t.Fatal("macOS process-bounded fallback omitted its limitations")
+		}
+	case "windows":
+		if processBounded.Primitive != "job-object" || len(processBounded.Limitations) == 0 {
+			t.Fatalf("Windows job/AppContainer boundary was not explicit: %+v", processBounded)
+		}
+	case "linux":
+		if processBounded.Primitive != "process-group+prlimit" {
+			t.Fatalf("Linux process-bounded primitive=%q", processBounded.Primitive)
+		}
 	}
 }
 
@@ -55,6 +82,9 @@ func TestTrustedRegistryRecordsAchievedProcessBoundedTier(t *testing.T) {
 	result, err := registry.Verify(context.Background(), VerificationPolicy{Visibility: "private"}, request, runner)
 	if err != nil || !result.Passed || result.Evidence[0].IsolationTier != TierProcessBounded {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if result.Evidence[0].IsolationPrimitive != "process-group+prlimit" {
+		t.Fatalf("recording runner primitive=%q", result.Evidence[0].IsolationPrimitive)
 	}
 	if result.Evidence[0].ExecutableBinding != "digest-rechecked-path" {
 		t.Fatalf("recording runner binding=%q", result.Evidence[0].ExecutableBinding)

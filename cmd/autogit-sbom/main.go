@@ -36,6 +36,7 @@ type options struct {
 	Namespace  string
 	RootModule string
 	Version    string
+	Format     string
 	Created    time.Time
 }
 
@@ -72,10 +73,46 @@ type relationship struct {
 	RelatedSPDXElement string `json:"relatedSpdxElement"`
 }
 
+type cyclonedxDocument struct {
+	BOMFormat    string                `json:"bomFormat"`
+	SpecVersion  string                `json:"specVersion"`
+	SerialNumber string                `json:"serialNumber"`
+	Version      int                   `json:"version"`
+	Metadata     cyclonedxMetadata     `json:"metadata"`
+	Components   []cyclonedxComponent  `json:"components"`
+	Dependencies []cyclonedxDependency `json:"dependencies"`
+}
+
+type cyclonedxMetadata struct {
+	Timestamp string             `json:"timestamp"`
+	Tools     []cyclonedxTool    `json:"tools"`
+	Component cyclonedxComponent `json:"component"`
+}
+
+type cyclonedxTool struct {
+	Vendor  string `json:"vendor"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+type cyclonedxComponent struct {
+	Type    string `json:"type"`
+	BomRef  string `json:"bom-ref"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Scope   string `json:"scope,omitempty"`
+}
+
+type cyclonedxDependency struct {
+	Ref       string   `json:"ref"`
+	DependsOn []string `json:"dependsOn"`
+}
+
 func main() {
-	output := flag.String("output", "", "write the SPDX JSON document to this path")
+	output := flag.String("output", "", "write the SBOM JSON document to this path")
+	format := flag.String("format", "spdx", "SBOM format: spdx or cyclonedx")
 	name := flag.String("name", "autogit", "SBOM document name")
-	namespace := flag.String("namespace", "", "globally unique SPDX document namespace")
+	namespace := flag.String("namespace", "", "globally unique SBOM document namespace")
 	rootModule := flag.String("root-module", "", "main Go module path; inferred when omitted")
 	version := flag.String("version", "NOASSERTION", "release version for the main module")
 	created := flag.String("created", "", "creation time in RFC3339 format")
@@ -86,6 +123,7 @@ func main() {
 		Namespace:  *namespace,
 		RootModule: *rootModule,
 		Version:    *version,
+		Format:     *format,
 		Created:    parseCreated(*created),
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -112,13 +150,25 @@ func run(input io.Reader, stdout io.Writer, output string, opts options) error {
 	if err != nil {
 		return err
 	}
-	doc, err := buildDocument(modules, opts)
+	format := strings.ToLower(opts.Format)
+	if format == "" {
+		format = "spdx"
+	}
+	var document any
+	switch format {
+	case "spdx":
+		document, err = buildDocument(modules, opts)
+	case "cyclonedx", "cyclone-dx":
+		document, err = buildCycloneDocument(modules, opts)
+	default:
+		return fmt.Errorf("unsupported SBOM format %q", opts.Format)
+	}
 	if err != nil {
 		return err
 	}
-	encoded, err := json.MarshalIndent(doc, "", "  ")
+	encoded, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode SPDX document: %w", err)
+		return fmt.Errorf("encode %s document: %w", format, err)
 	}
 	encoded = append(encoded, '\n')
 	if output == "" {
@@ -126,7 +176,7 @@ func run(input io.Reader, stdout io.Writer, output string, opts options) error {
 		return err
 	}
 	if err := os.WriteFile(output, encoded, 0600); err != nil {
-		return fmt.Errorf("write SPDX document: %w", err)
+		return fmt.Errorf("write %s document: %w", format, err)
 	}
 	return nil
 }
@@ -254,6 +304,84 @@ func buildDocument(modules []module, opts options) (document, error) {
 		Packages:      packages,
 		Relationships: relationships,
 	}, nil
+}
+
+func buildCycloneDocument(modules []module, opts options) (cyclonedxDocument, error) {
+	rootIndex := -1
+	for i := range modules {
+		if modules[i].Main && modules[i].Path == opts.RootModule {
+			rootIndex = i
+			break
+		}
+	}
+	if rootIndex < 0 {
+		return cyclonedxDocument{}, fmt.Errorf("main module %q was not found in the Go module graph", opts.RootModule)
+	}
+
+	unique := make(map[string]module, len(modules))
+	for _, item := range modules {
+		version := item.Version
+		if item.Main {
+			version = opts.Version
+		}
+		key := item.Path + "\x00" + version
+		item.Version = version
+		unique[key] = item
+	}
+	items := make([]module, 0, len(unique))
+	for _, item := range unique {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Path == items[j].Path {
+			return items[i].Version < items[j].Version
+		}
+		return items[i].Path < items[j].Path
+	})
+
+	root := module{Path: opts.RootModule, Version: opts.Version, Main: true}
+	rootRef := cycloneComponentRef(root)
+	components := make([]cyclonedxComponent, 0, len(items)-1)
+	dependsOn := make([]string, 0, len(items)-1)
+	for _, item := range items {
+		if item.Main {
+			continue
+		}
+		version := item.Version
+		if version == "" {
+			version = "NOASSERTION"
+		}
+		ref := cycloneComponentRef(module{Path: item.Path, Version: version})
+		components = append(components, cyclonedxComponent{Type: "library", BomRef: ref, Name: item.Path, Version: version, Scope: "required"})
+		dependsOn = append(dependsOn, ref)
+	}
+	return cyclonedxDocument{
+		BOMFormat:    "CycloneDX",
+		SpecVersion:  "1.5",
+		SerialNumber: cycloneSerialNumber(opts.Namespace),
+		Version:      1,
+		Metadata: cyclonedxMetadata{
+			Timestamp: opts.Created.UTC().Format(time.RFC3339),
+			Tools:     []cyclonedxTool{{Vendor: "AutoGit", Name: "autogit-sbom", Version: "1"}},
+			Component: cyclonedxComponent{Type: "application", BomRef: rootRef, Name: root.Path, Version: root.Version},
+		},
+		Components:   components,
+		Dependencies: []cyclonedxDependency{{Ref: rootRef, DependsOn: dependsOn}},
+	}, nil
+}
+
+func cycloneComponentRef(item module) string {
+	digest := sha256.Sum256([]byte(item.Path + "\x00" + item.Version))
+	return "autogit:component:" + hex.EncodeToString(digest[:12])
+}
+
+func cycloneSerialNumber(namespace string) string {
+	digest := sha256.Sum256([]byte(namespace))
+	serial := digest[:16]
+	serial[6] = (serial[6] & 0x0f) | 0x40
+	serial[8] = (serial[8] & 0x3f) | 0x80
+	hexValue := hex.EncodeToString(serial)
+	return "urn:uuid:" + hexValue[0:8] + "-" + hexValue[8:12] + "-4" + hexValue[13:16] + "-" + hexValue[16:20] + "-" + hexValue[20:32]
 }
 
 func packageID(item module) string {

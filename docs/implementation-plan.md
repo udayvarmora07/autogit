@@ -62,9 +62,13 @@ current release-blocking gaps are:
    owners; the required native hostile, crash, cancellation, privacy,
    ownership, and backup/restore matrices are not yet a release-approved
    record across every claimed platform.
-2. The advertised verifier baseline remains process-bounded. The Linux
-   Landlock/namespace, Windows AppContainer/job-control, and macOS fallback
-   capability prototype in P1-04 is not complete and independently attested.
+2. The advertised verifier baseline remains process-bounded. The local P1-04
+   capability report now distinguishes the achieved Linux
+   bubblewrap namespace primitive, a detected-but-not-enforced Landlock ABI,
+   Windows job-object controls without AppContainer, and the macOS
+   process-group fallback; trusted verifier evidence binds those observations
+   into its digest. Native execution and independent attestation of those
+   platform-specific claims remain incomplete.
 3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
    named review for the exact alpha-supported client/provider subset. The
    historical provider canary is retained, but the current dedicated-token
@@ -72,7 +76,8 @@ current release-blocking gaps are:
 4. P4-08 has implementation evidence but no exact release tag: the checked-in
    manifest deliberately has `tag_verified: false` and is snapshot-bound.
 5. P5-03 through P5-05 now have a local implementation in
-   `.github/workflows/release.yml` and `cmd/autogit-sbom`; the workflow also
+   `.github/workflows/release.yml` and `cmd/autogit-sbom` (including SPDX and
+   CycloneDX SBOM generation); the workflow also
    contains a separately protected GitHub Release publication job for the
    locally actionable part of P5-06, and `scripts/release-rollback-drill.sh`
    covers the offline technical part of P5-07. Formal acceptance still
@@ -402,7 +407,7 @@ Goal: let users verify what they install and know how the project is governed.
 | P5-01 | P1 | S | Decide and add LICENSE; add SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, CODEOWNERS, support policy, and CHANGELOG | Product owner | Repository and package metadata agree; security contact and supported versions are explicit |
 | P5-02 | P1 | M | Add dependency update policy, Dependabot/Renovate equivalent, license policy, dependency review, CodeQL, and Scorecard | P5-01 | Least CI permissions; pinned actions; reviewed automated update flow; justified exceptions |
 | P5-03 | P1 | L | Build a tag-gated release workflow in a clean environment | P0-10, P4-03 | Tag/commit/version match; dirty or reused output rejected; artifacts uploaded only after all gates |
-| P5-04 | P1 | L | Generate SPDX or CycloneDX SBOMs, binary govulncheck results, signed checksums, and hosted SLSA provenance/attestations | P5-03 | Consumers can verify artifact digest, signature/identity, SBOM, provenance, and source commit |
+| P5-04 | P1 | L | Generate SPDX and CycloneDX SBOMs, binary govulncheck results, signed checksums, and hosted SLSA provenance/attestations | P5-03 | Consumers can verify artifact digest, signature/identity, SBOM, provenance, and source commit |
 | P5-05 | P1 | M | Verify reproducibility using independent build paths/runners and publish comparison evidence | P5-03 | Matching digests or documented normalized differences; same-run double build is not sole evidence |
 | P5-06 | P2 | L | Add GitHub Releases and maintained package channels such as Homebrew and winget/Scoop after platform demand is validated | P5-03..05 | Install/upgrade/downgrade/uninstall tests and checksums on native clean machines |
 | P5-07 | P2 | M | Define vulnerability disclosure, patch SLAs, keyless signing identity recovery, release rollback, and compromised-release drill | P5-01, P5-04 | Tabletop and technical rollback drill with redacted evidence |

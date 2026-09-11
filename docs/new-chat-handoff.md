@@ -37,7 +37,7 @@ The local Phase 4/5 implementation slice exists, including test tiers, script
 failure checks, artifact/scenario evaluators, fuzz budgets, chaos cases,
 compatibility expiry automation, machine-readable evidence, governance files,
 and dependency/security workflows. The tag-gated release workflow now adds
-exact identity checks, SPDX/binary-vulnerability evidence, keyless
+exact identity checks, SPDX/CycloneDX SBOM and binary-vulnerability evidence, keyless
 attestations, and an Ubuntu/macOS byte-for-byte reproducibility comparison.
 The consumer verifier binds checksums to the exact workflow, tag, and source
 commit. That is implementation progress, not release acceptance.

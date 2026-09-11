@@ -118,7 +118,10 @@ All items are release blockers.
   limits, filesystem allowlists, and network denial for advertised tiers.
   Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
-  AppContainer/job controls, and an honest macOS fallback.
+  AppContainer/job controls, and an honest macOS fallback. Local capability
+  evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md);
+  native AppContainer/macOS runtime validation and independent attestation
+  remain open.
 - [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
   candidate blobs and reachable history; keep online validation separately
   consented. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
@@ -280,6 +283,7 @@ named-review requirements are executed and reviewed.
 - [ ] P5-04 Produce SPDX/CycloneDX SBOMs, binary govulncheck evidence, signed
   checksums, and hosted SLSA provenance/attestations. Evidence:
   [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
+  local SPDX/CycloneDX generation and consumer predicate checks are present;
   exact-tag hosted attestations remain required.
 - [ ] P5-05 Compare release artifacts across independent runners/build paths
   and publish reproducibility evidence. Evidence:
