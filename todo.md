@@ -24,9 +24,10 @@ Implementation state for that batch is tracked separately in the
 10/10 packages are verified against the recorded implementation evidence;
 2 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `0d40d6a`. Documentation commits may advance the
-branch after that snapshot. If source or toolchain inputs change, regenerate it
-with the evidence command; never update its commit identity by hand.
+for evidence snapshot commit
+`06ba87508ff53abc8b0001885e8341b6c07ad27a`. Documentation commits may advance
+the branch after that snapshot. If source or toolchain inputs change, regenerate
+it with the evidence command; never update its commit identity by hand.
 The package-level reconciliation is recorded in the [Phase 4/5 acceptance
 matrix](docs/release-evidence/phase-4-5-acceptance-matrix.md).
 The recommended two-ledger closure model and depth-first loop are documented
@@ -358,6 +359,16 @@ The P5-03/P5-05
 implementation details and local checks are in
 [phase-5-release-workflow.md](docs/release-evidence/phase-5-release-workflow.md);
 they do not represent hosted signing or cross-runner evidence.
+
+The 2026-09-11 follow-up fixed the Windows Git Bash package-metadata hashing
+path in `scripts/generate-package-metadata.sh`, using `cygpath` and PowerShell
+`Get-FileHash` with a regression test for the Windows-shell branch. The clean
+manifest now binds to `06ba87508ff53abc8b0001885e8341b6c07ad27a` and records
+10/10 local suites, six artifact hashes, and `tag_verified: false`. Core run
+`34610742466` and security run `34610742472` passed against that exact SHA;
+the earlier `e432bf5` core failure is retained as diagnostic history. This
+fixes the implementation-level CI defect without changing any acceptance
+checkbox or the NO-GO release posture.
 
 ## Immediate PR queue
 

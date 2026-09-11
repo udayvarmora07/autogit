@@ -8,10 +8,11 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-11.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `0d40d6af1ae38618edfa904f28fd7267e41e179e`.
+- Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
-  commit, so the manifest's commit identity is intentionally historical.
+  commit, so the manifest's commit identity is intentionally the clean source
+  snapshot rather than a manually edited current-HEAD value.
 - Overall release posture: **NO-GO for private alpha**.
 - Tracker: 96 total checklist rows, 76 checked, 20 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
@@ -58,16 +59,24 @@ remaining P4 rows.
 
 ## Evidence warning
 
+- The current push-triggered core run `34610742466` and security run
+  `34610742472` both passed against exact source SHA
+  `06ba87508ff53abc8b0001885e8341b6c07ad27a`. Core included native
+  Linux/macOS/Windows checks, reproducible release binaries, and the Windows
+  package-metadata regression. The preceding `e432bf5` core failure was caused
+  by the Windows Git Bash hash-path incompatibility and is retained only as
+  diagnostic history.
+- [phase-4-quality.json](release-evidence/phase-4-quality.json) is the fresh
+  generated collection for evidence snapshot commit `06ba875`; it records
+  10/10 local suites and six artifact hashes with `tag_verified: false` and a
+  clean tree at collection time.
+
 - The exact-source full matrix run `34604368677` passed all 20 jobs against
   `0d40d6af1ae38618edfa904f28fd7267e41e179e`, including fuzz, soak, native
   artifact, scenario, performance, security, and dependency-policy jobs. Its
   six native artifact jobs also retained the raw-binary lifecycle evidence.
   The source push run `34604333600` passed its native Linux/macOS/Windows
   checks against the same SHA.
-- [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for evidence snapshot commit `0d40d6a`; it records
-  10/10 local suites and six artifact hashes with a clean tree at collection
-  time.
 - The current dedicated-token private canary dispatch, `34489797141`, passed
   against `36c045f` for owner `udayvarmora07`; the allowlisted canary
   repository was confirmed absent after cleanup. The earlier failed dispatch
@@ -84,7 +93,8 @@ remaining P4 rows.
 2. Preserve the fresh exact-snapshot local manifest and hosted records above; if
    source or toolchain changes, regenerate with the configured 40-second fuzz
    budget and verify its commit, dirty-tree state, suite results, artifact
-   identities, and control statuses before replacement.
+   identities, and control statuses before replacement. Do not edit the
+   generated commit identity by hand.
 3. Retain the completed dedicated-token private-canary evidence, including its
    exact owner/name/visibility/ref/SHA and cleanup result.
 4. Reconcile the evidence against the remaining P4-03..P4-08 acceptance

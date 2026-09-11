@@ -55,7 +55,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`0d40d6af1ae38618edfa904f28fd7267e41e179e`. Its ten local suite results use
+`06ba87508ff53abc8b0001885e8341b6c07ad27a`. Its ten local suite results use
 the deterministic 100,000-input fuzz floor for all 10 targets while retaining
 the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -65,6 +65,16 @@ is achievable without weakening the quota. The performance gate uses one-
 second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
+
+The follow-up implementation commit
+`06ba87508ff53abc8b0001885e8341b6c07ad27a` fixed Windows Git Bash
+package-metadata hashing by using `cygpath` and PowerShell `Get-FileHash`; a
+controlled-shim regression test covers that branch. Core run `34610742466`
+and security run `34610742472` passed against that exact SHA, including the
+native Windows package-metadata test. The regenerated manifest remains
+implementation evidence with `tag_verified: false`; it does not satisfy the exact-tag,
+attestation, independent-runner, package-channel, native clean-machine, or
+named-review gates.
 
 The earlier exact-snapshot full hosted CI dispatch `34600488282` passed all
 20/20 jobs against `16c6325952b7937cdf8333b12cc7de0189b91f2b`. The follow-up

@@ -2,16 +2,28 @@
   "schema_version": "autogit.implementation-ledger/1",
   "batch": "P4-01..P4-08,P5-01,P5-02",
   "source_of_truth": "../implementation-plan.md",
-  "verification_commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
+  "verification_commit": "06ba87508ff53abc8b0001885e8341b6c07ad27a",
   "verification_worktree": "clean before evidence generation",
-  "verified_at": "2026-09-11T13:35:42Z",
-  "evidence_snapshot_commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
+  "verified_at": "2026-09-11T14:38:39Z",
+  "evidence_snapshot_commit": "06ba87508ff53abc8b0001885e8341b6c07ad27a",
   "evidence": [
     "phase-4-quality.md",
     "phase-4-quality.json",
     "phase-4-5-acceptance-matrix.md"
   ],
   "hosted_evidence": [
+    {
+      "run": "34610742466",
+      "commit": "06ba87508ff53abc8b0001885e8341b6c07ad27a",
+      "status": "passed",
+      "scope": "push-triggered core matrix with native Linux/macOS/Windows checks, reproducible release binaries, and package-metadata regression coverage"
+    },
+    {
+      "run": "34610742472",
+      "commit": "06ba87508ff53abc8b0001885e8341b6c07ad27a",
+      "status": "passed",
+      "scope": "CodeQL, Scorecard, and dependency/workflow security checks"
+    },
     {
       "run": "34604368677",
       "commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
@@ -52,7 +64,7 @@
   "fresh_verification": {
     "status": "passed",
     "commands": [
-      "go test ./...",
+      "go test -count=1 ./...",
       "go test -tags soak -count=1 ./...",
       "go vet ./...",
       "bash scripts/test-suites.sh presubmit",

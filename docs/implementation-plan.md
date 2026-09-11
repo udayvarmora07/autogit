@@ -65,8 +65,20 @@ Landlock ABI probe from an in-process Landlock ruleset. The native artifact
 workflow now runs the raw-binary install lifecycle drill for all six claimed
 OS/architecture targets; exact-source hosted run `34604368677` passed all 20
 jobs and retained one redacted lifecycle record per target. The current implementation
-evidence snapshot is `0d40d6af1ae38618edfa904f28fd7267e41e179e`; no exact
+evidence snapshot is `0d40d6af1ae38618edfa904f28fd7267e41e`; no exact
 release tag or protected release approval exists yet.
+
+The 2026-09-11 post-commit validation fixed a Windows Git Bash portability
+defect in `scripts/generate-package-metadata.sh`: Windows shells now hash
+release files through `cygpath` and PowerShell `Get-FileHash`, matching the
+existing install drill, with a controlled-shim regression test. The clean
+manifest was regenerated against `06ba87508ff53abc8b0001885e8341b6c07ad27a`
+at `2026-09-11T14:38:39Z`; all 10 local suites passed, with six artifact
+hashes and `tag_verified: false`. Core run `34610742466` and security run
+`34610742472` passed against that exact SHA, including the native Windows
+package-metadata test. This closes the implementation defect only; P4-03,
+P4-08, P1-04, and the P5 exact-tag, attestation, independent-reproducibility,
+package-channel, native-install, and named-review gates remain open.
 
 ## 1. Executive decision
 

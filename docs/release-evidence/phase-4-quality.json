@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "0d40d6af1ae38618edfa904f28fd7267e41e179e",
+  "commit": "06ba87508ff53abc8b0001885e8341b6c07ad27a",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-11T13:35:42.078131028Z",
+  "generated_at": "2026-09-11T14:38:39.188372739Z",
   "go_version": "go1.26.8",
   "platform": "linux/amd64",
   "suites": [
@@ -51,32 +51,32 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "5d8dfb62c8b2eabef70d1c69feeddd556b05798625313842c72ac80447fb539f",
+      "sha256": "31fd643bda561d5bfb4ec939de9ecfe098b245fe600367b44149f5177ef21034",
       "size": 16002432
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "bd8d3de37774a4cc38cd4b20516e5c0f0c66fd6936c06563395ca1da2d8b15ff",
+      "sha256": "bc637c40c85e2c79e971a9f9ea78d88d13b805529c22280a0eda1cd8032f842f",
       "size": 15358194
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "8f3af23d44a0003938b628bf3f774b4a4171464c0b5f617ade2746b96001f43e",
-      "size": 15735976
+      "sha256": "c68ff4d97dc94e943d6058dd2687ea48676583ceb123fa61f52e9df22e3c07df",
+      "size": 15760493
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "4236cad960de16dbc673b3f8c2e4cdf23d5c8cda0668e6cbb45e14cfca883bd8",
-      "size": 15008292
+      "sha256": "7774b2bf7e38dc9c437884e92c9c6f7d0d0ee65853d06d66c01361c3effdb83e",
+      "size": 15015049
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "37796810e8af33ce08b93ddcc3b674deb2e38ebcc20cfc154cfb1ad6ac6d3189",
+      "sha256": "8b13837c25b9cd28ae11b481a9e1c2534d7053fc0641daea383078a175029d0c",
       "size": 16174080
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "048830be924b9d00422465d12111ac606b575b3053a55515a1b6dd20919f358e",
+      "sha256": "4c61cd21b8737943ba2b6375e2110fd7c1e15b1b9613f8324b8bc4afdbc31d7f",
       "size": 15185408
     }
   ],
@@ -96,6 +96,7 @@
         "TestRunEnforcesFilesystemAllowlistAndNetworkDenial",
         "TestRunRejectsNestedUserNamespaceCreation",
         "TestLandlockABIProbeIsNonMutatingAndExplicit",
+        "TestLandlockDirectEnforcement",
         "TestWindowsSupervisorTerminatesDescendants"
       ],
       "commands": [
