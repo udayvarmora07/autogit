@@ -96,6 +96,17 @@ func TestReleaseVerifierRejectsChecksumMismatchBeforeAttestation(t *testing.T) {
 	}
 }
 
+func TestReleaseVerifierRejectsUnexpectedBundleEntry(t *testing.T) {
+	directory := writeReleaseEvidenceFixture(t)
+	if err := os.WriteFile(filepath.Join(directory, "unlisted.txt"), []byte("not part of the release"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runShellScript(t, nil, "verify-release-artifacts.sh", "--directory", directory, "--repo", "owner/repo", "--tag", "v1.2.3", "--commit", strings.Repeat("a", 40))
+	if err == nil || !bytes.Contains(output, []byte("release directory contains an unexpected file")) {
+		t.Fatalf("unexpected bundle entry result=%v output=%s", err, output)
+	}
+}
+
 func TestReleaseVerifierBindsAttestationIdentity(t *testing.T) {
 	directory := writeReleaseEvidenceFixture(t)
 	fakeBin := t.TempDir()

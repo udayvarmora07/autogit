@@ -80,6 +80,19 @@ is_expected_name() {
   return 1
 }
 
+# A downloaded release directory is a closed bundle. Do not let a consumer
+# silently verify the expected files while an unlisted file or directory is
+# carried alongside them. The explicit glob forms include dotfiles without
+# relying on Bash 4 features or non-portable find predicates.
+for entry in "$directory"/* "$directory"/.[!.]* "$directory"/..?*; do
+  [[ -e "$entry" || -L "$entry" ]] || continue
+  name=${entry##*/}
+  if [[ "$name" != "SHA256SUMS" ]] && ! is_expected_name "$name"; then
+    echo "release directory contains an unexpected file: $name" >&2
+    exit 1
+  fi
+done
+
 manifest_lines=0
 seen_names=()
 manifest_pattern='^([0-9a-f]{64})  ([^[:space:]]+)$'
