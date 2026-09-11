@@ -144,6 +144,32 @@ func TestReleaseVerifierStaysCompatibleWithStockMacOSBash(t *testing.T) {
 	}
 }
 
+func TestReleaseRollbackDrillProducesRedactedEvidence(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "rollback-drill.json")
+	output, err := runShellScript(t, nil, "release-rollback-drill.sh", "--output", outputPath)
+	if err != nil || len(output) != 0 {
+		t.Fatalf("rollback drill result=%v output=%s", err, output)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`"schema_version": "autogit.release-rollback-drill/1"`,
+		`"status": "passed"`,
+		`"sensitive_data_recorded": false`,
+		`"tampered_candidate_rejected": "passed"`,
+		`"channel_pointer_rolled_back": "passed"`,
+	} {
+		if !bytes.Contains(data, []byte(required)) {
+			t.Fatalf("rollback evidence missing %q: %s", required, data)
+		}
+	}
+	if bytes.Contains(data, []byte(filepath.Dir(outputPath))) {
+		t.Fatalf("rollback evidence leaked a local path: %s", data)
+	}
+}
+
 var releaseEvidenceNames = []string{
 	"autogit-linux-amd64",
 	"autogit-linux-arm64",

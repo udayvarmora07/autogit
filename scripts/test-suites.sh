@@ -76,6 +76,7 @@ EOF
     ;;
   release)
     go test -tags release_integration ./scripts -run '^TestReleaseBuild' -count=1
+    bash scripts/release-rollback-drill.sh >/dev/null
     release_output="${AUTOGIT_RELEASE_OUTPUT:-}"
     if [[ -z "$release_output" ]]; then
       release_output="$(mktemp -d "${TMPDIR:-/tmp}/autogit-release.XXXXXX")"

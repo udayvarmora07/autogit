@@ -279,3 +279,47 @@ jobs:
             dist
             ${{ steps.provenance.outputs.bundle-path }}
             ${{ steps.sbom.outputs.bundle-path }}
+
+  publish:
+    name: publish verified GitHub Release
+    needs: attest
+    runs-on: ubuntu-latest
+    environment: release-publish
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: download attested release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-release-evidence
+          path: release-bundle
+      - name: verify bundle before publication
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -d release-bundle/dist
+          test -f release-bundle/dist/SHA256SUMS
+          (cd release-bundle/dist && sha256sum -c SHA256SUMS)
+          version_output="$(release-bundle/dist/autogit-linux-amd64 version)"
+          grep -Eq '"version":"'"${RELEASE_TAG}"'"' <<<"$version_output"
+          grep -Eq '"commit":"'"${RELEASE_SHA}"'"' <<<"$version_output"
+      - name: publish verified GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            --repo "$RELEASE_REPOSITORY" \
+            --verify-tag \
+            --title "AutoGit $RELEASE_TAG" \
+            --generate-notes \
+            release-bundle/dist/autogit-* \
+            release-bundle/dist/autogit.spdx.json \
+            release-bundle/dist/SHA256SUMS

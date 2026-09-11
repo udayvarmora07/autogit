@@ -274,17 +274,27 @@ named-review requirements are executed and reviewed.
   review, CodeQL, OpenSSF Scorecard, least workflow permissions, and pinned
   action update review. Evidence: [dependency and workflow policy review](docs/acceptance-record.md#dependency-and-workflow-policy-review).
 - [ ] P5-03 Build a tag-gated clean-room release workflow that rejects dirty,
-  reused, version-mismatched, or incompletely tested artifacts.
+  reused, version-mismatched, or incompletely tested artifacts. Evidence:
+  [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
+  exact-tag hosted execution remains required.
 - [ ] P5-04 Produce SPDX/CycloneDX SBOMs, binary govulncheck evidence, signed
-  checksums, and hosted SLSA provenance/attestations.
+  checksums, and hosted SLSA provenance/attestations. Evidence:
+  [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
+  exact-tag hosted attestations remain required.
 - [ ] P5-05 Compare release artifacts across independent runners/build paths
-  and publish reproducibility evidence.
+  and publish reproducibility evidence. Evidence:
+  [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
+  exact-tag hosted execution remains required.
 - [ ] P5-06 Publish verified GitHub Releases and add tested Homebrew plus
-  winget/Scoop channels according to demonstrated platform demand.
+  winget/Scoop channels according to demonstrated platform demand. Evidence:
+  [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md);
+  package channels and native clean-machine install evidence remain open.
 - [ ] P5-07 Test native install, upgrade, downgrade, uninstall, checksum,
   signature, and rollback paths.
 - [ ] P5-07 Define disclosure/patch SLAs, signing identity recovery, release
-  rollback, and compromised-release drills.
+  rollback, and compromised-release drills. Evidence: [rollback and disclosure
+  implementation evidence](docs/release-evidence/phase-5-rollback-drill.md);
+  exact-tag hosted review remains required for release acceptance.
 
 ## Phase 6 — release progression
 

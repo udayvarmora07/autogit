@@ -17,7 +17,9 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
-  plus hosted macOS Bash portability and deterministic fuzz-floor fixes.
+  a protected GitHub Release publication slice for P5-06, and the P5-07
+  rollback/disclosure drill, plus hosted macOS Bash portability and
+  deterministic fuzz-floor fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
   independent substeps. P4-01, P4-02, P4-04, P4-05, P4-06, P4-07, P5-01, and P5-02 are
   accepted for the bounded private-alpha scope under the documented owner-

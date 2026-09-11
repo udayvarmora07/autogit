@@ -1,8 +1,8 @@
 # Phase 5 release workflow implementation evidence
 
-Date: 2026-09-09
-Scope: P5-03 through P5-05 local implementation
-Status: implementation complete; exact-tag hosted acceptance remains open
+Date: 2026-09-11
+Scope: P5-03 through P5-06 local implementation slices
+Status: local implementation slices present; exact-tag hosted acceptance remains open
 
 ## Delivered controls
 
@@ -17,6 +17,7 @@ Status: implementation complete; exact-tag hosted acceptance remains open
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
 | Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe or incomplete manifests, verifies all six binaries plus SBOM/vulnerability reports, and invokes `gh attestation verify` with the exact repository, release workflow, tag, source commit, SLSA predicate, and hosted-runner requirement. The release workflow runs this verifier after both attestations and before final evidence upload. |
+| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS` and the embedded tag/commit identity, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` only on this final job; package channels remain deferred until demand and native install evidence exist. |
 
 ## Local verification
 
@@ -45,7 +46,9 @@ stable ordering, and no `/home/` or `/tmp/` path disclosure.
 The existing local release integration suite also builds the supported target
 set twice with separate output directories and verifies matching bytes. The
 cross-runner comparison is intentionally hosted-only; it cannot be claimed
-from this Linux workstation.
+from this Linux workstation. The final GitHub Release publication job also
+cannot be claimed as executed until an approved exact tag reaches the hosted
+workflow and the protected `release-publish` environment is approved.
 
 ## Acceptance boundary
 

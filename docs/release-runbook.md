@@ -1,7 +1,7 @@
 # AutoGit v1 release and rollback runbook
 
 Status: implementation artifact; alpha/beta approval pending  
-Last updated: 2026-09-10
+Last updated: 2026-09-11
 
 This runbook covers the bounded private-alpha and public-beta gates. It does
 not authorize a live provider run or replace explicit release-owner approval.
@@ -41,7 +41,8 @@ command output, and redacted artifact links for each item:
    clean directory, produces checksums/SBOM/binary-vulnerability evidence,
    and creates keyless Sigstore-backed SLSA and SBOM attestations after the
    `release` environment gate. Inspect and retain the hosted attestation
-   bundles before any future publication step.
+   bundles; a separate protected `release-publish` environment must approve
+   the final GitHub Release publication step.
 3. After downloading the evidence bundle, run
    `bash scripts/verify-release-artifacts.sh` with the exact repository, tag,
    and commit. It validates the complete checksum manifest and requires the
@@ -108,6 +109,14 @@ local test does not authorize public publication.
    Escalate provider identity mismatches for manual review; never use a broad
    repository-delete pattern.
 
+The offline technical rollback drill is documented in
+[`phase-5-rollback-drill.md`](release-evidence/phase-5-rollback-drill.md) and
+implemented by `scripts/release-rollback-drill.sh`. Run it before a release
+review and retain its redacted JSON output with the release evidence. It
+proves candidate-integrity rejection, publication freeze, quarantine, channel
+rollback, and local-history preservation; it intentionally does not claim a
+hosted attestation or perform a live release mutation.
+
 ## Upgrade and compatibility procedure
 
 - Verify the release binary and [compatibility manifest](compatibility-manifest.json)
@@ -147,3 +156,10 @@ metadata-only and remain redacted.
    The repository has no default public disclosure deadline or key authority.
 5. Use [the release-notes template](release-notes.md) only after the response,
    compatibility, migration, and rollback outcomes are reviewed.
+
+For a suspected release-workflow or keyless-attestation compromise, follow
+the protected-environment recovery sequence in
+[`phase-5-rollback-drill.md`](release-evidence/phase-5-rollback-drill.md):
+freeze publication, quarantine the affected tag and artifacts, review the
+workflow/OIDC trust boundary, require a fresh protected approval and exact tag,
+then verify replacement artifacts as a consumer before rollout.

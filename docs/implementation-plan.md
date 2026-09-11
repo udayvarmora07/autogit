@@ -72,12 +72,14 @@ current release-blocking gaps are:
 4. P4-08 has implementation evidence but no exact release tag: the checked-in
    manifest deliberately has `tag_verified: false` and is snapshot-bound.
 5. P5-03 through P5-05 now have a local implementation in
-   `.github/workflows/release.yml` and `cmd/autogit-sbom`, but formal
-   acceptance still requires an exact tagged hosted run, release-environment
-   review, consumer verification of the resulting attestations, and retained
-   independent-runner comparison evidence. P5-06 and P5-07 remain open:
-   verified package channels and native install/rollback drill evidence are
-   not complete.
+   `.github/workflows/release.yml` and `cmd/autogit-sbom`; the workflow also
+   contains a separately protected GitHub Release publication job for the
+   locally actionable part of P5-06, and `scripts/release-rollback-drill.sh`
+   covers the offline technical part of P5-07. Formal acceptance still
+   requires an exact tagged hosted run, release-environment review, consumer
+   verification of the resulting attestations, retained independent-runner
+   comparison evidence, package-channel demand/native install evidence, and a
+   named rollback/disclosure review.
 6. P5-01 and P5-02 still require explicit product/maintainer review, including
    the security contact/support decision, automated dependency-update review,
    and documented approval of any policy exceptions.
