@@ -29,6 +29,14 @@ the dedicated `AUTOGIT_CANARY_TOKEN` secret was empty; it performed no
 repository mutation, and the generated allowlisted repository was confirmed
 absent. It is not current-HEAD canary evidence.
 
+The later release-install and publication-verification changes are not covered
+by that historical snapshot. Hosted core run
+[34577748877](https://github.com/udayvarmora07/autogit/actions/runs/34577748877)
+ran against `568c722` and terminated with staticcheck plus a
+platform-portability test failure on macOS/Windows; the working tree contains
+the corrective changes and requires a fresh hosted run after they are
+committed. No current-HEAD hosted pass is claimed here.
+
 ## Release evidence checklist
 
 Before promotion, record the commit, Go version, runner OS/architecture,

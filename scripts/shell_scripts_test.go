@@ -153,6 +153,49 @@ func TestReleaseVerifierStaysCompatibleWithStockMacOSBash(t *testing.T) {
 	}
 }
 
+func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T) {
+	workflowPath := filepath.Join(scriptsRoot(t), "..", ".github", "workflows", "release.yml")
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(data)
+	for _, required := range []string{
+		"sbom-path: dist/autogit.spdx.json",
+		"sbom-path: dist/autogit.cyclonedx.json",
+		"attestations: read",
+		"artifact-metadata: read",
+		"test \"$(git rev-parse HEAD)\" = \"$RELEASE_SHA\"",
+		"test -z \"$(git status --porcelain=v1)\"",
+		"bash scripts/verify-release-artifacts.sh",
+		"--verify-tag",
+	} {
+		if !strings.Contains(workflow, required) {
+			t.Fatalf("release workflow is missing %q", required)
+		}
+	}
+}
+
+func TestSecurityPolicyDefinesSeverityResponseTargets(t *testing.T) {
+	securityPath := filepath.Join(scriptsRoot(t), "..", "SECURITY.md")
+	data, err := os.ReadFile(securityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := string(data)
+	for _, required := range []string{
+		"| Critical | 72 hours after classification | 7 calendar days |",
+		"| High | 7 calendar days after classification | 30 calendar days |",
+		"| Medium | 30 calendar days after classification | 90 calendar days |",
+		"| Low | Next planned maintenance cycle | 180 calendar days |",
+		"private advisory",
+	} {
+		if !strings.Contains(policy, required) {
+			t.Fatalf("security policy is missing %q", required)
+		}
+	}
+}
+
 func TestReleaseRollbackDrillProducesRedactedEvidence(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "rollback-drill.json")
 	output, err := runShellScript(t, nil, "release-rollback-drill.sh", "--output", outputPath)

@@ -131,7 +131,7 @@ func TestRunWritesDeterministicCycloneDXJSON(t *testing.T) {
 	if len(got.Dependencies) != 1 || len(got.Dependencies[0].DependsOn) != 2 {
 		t.Fatalf("dependencies=%+v", got.Dependencies)
 	}
-	if strings.Contains(string(output.Bytes()), "/home/") || strings.Contains(string(output.Bytes()), "TempDir") {
+	if strings.Contains(output.String(), "/home/") || strings.Contains(output.String(), "TempDir") {
 		t.Fatalf("CycloneDX contains a local path: %s", output.Bytes())
 	}
 }

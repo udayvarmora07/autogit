@@ -291,8 +291,9 @@ named-review requirements are executed and reviewed.
   exact-tag hosted execution remains required.
 - [ ] P5-06 Publish verified GitHub Releases and add tested Homebrew plus
   winget/Scoop channels according to demonstrated platform demand. Evidence:
-  [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md);
-  package channels and native clean-machine install evidence remain open.
+  [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md)
+  now re-verifies the downloaded attested bundle on the protected publication
+  runner; package channels and native clean-machine install evidence remain open.
 - [ ] P5-07 Test native install, upgrade, downgrade, uninstall, checksum,
   signature, and rollback paths. Local raw-binary lifecycle evidence:
   [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md);
@@ -300,7 +301,8 @@ named-review requirements are executed and reviewed.
   remain open.
 - [ ] P5-07 Define disclosure/patch SLAs, signing identity recovery, release
   rollback, and compromised-release drills. Evidence: [rollback and disclosure
-  implementation evidence](docs/release-evidence/phase-5-rollback-drill.md);
+  implementation evidence](docs/release-evidence/phase-5-rollback-drill.md),
+  including explicit severity targets in [SECURITY.md](SECURITY.md);
   exact-tag hosted review remains required for release acceptance.
 
 ## Phase 6 — release progression

@@ -17,7 +17,7 @@ Status: local implementation slices present; exact-tag hosted acceptance remains
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
 | Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe or incomplete manifests, verifies checksums for all six binaries, both SBOMs, and vulnerability reports, then verifies binary provenance plus SPDX and CycloneDX predicates against a release binary with the exact repository, workflow, tag, source commit, and hosted-runner requirement. The release workflow runs this verifier after all attestations and before final evidence upload. |
-| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS` and the embedded tag/commit identity, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` only on this final job; package channels remain deferred until demand and native install evidence exist. |
+| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS`, the embedded tag/commit identity, and all required provenance/SBOM predicates on the publication runner, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` plus read-only attestation metadata only on this final job; package channels remain deferred until demand and native install evidence exist. |
 
 ## Local verification
 
@@ -29,6 +29,7 @@ actionlint .github/workflows/*.yml
 bash -n scripts/*.sh
 shellcheck --shell=bash --severity=warning scripts/*.sh
 bash scripts/check-dependencies.sh
+go test ./scripts -run TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication
 git diff --check
 ```
 

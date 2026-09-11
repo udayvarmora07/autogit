@@ -83,8 +83,16 @@ func TestTrustedRegistryRecordsAchievedProcessBoundedTier(t *testing.T) {
 	if err != nil || !result.Passed || result.Evidence[0].IsolationTier != TierProcessBounded {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if result.Evidence[0].IsolationPrimitive != "process-group+prlimit" {
-		t.Fatalf("recording runner primitive=%q", result.Evidence[0].IsolationPrimitive)
+	wantPrimitive := map[string]string{
+		"linux":  "process-group+prlimit",
+		"darwin": "process-group",
+		"windows": "job-object",
+	}[runtime.GOOS]
+	if wantPrimitive == "" {
+		t.Fatalf("test does not define a process primitive for %s", runtime.GOOS)
+	}
+	if result.Evidence[0].IsolationPrimitive != wantPrimitive {
+		t.Fatalf("recording runner primitive=%q, want %q", result.Evidence[0].IsolationPrimitive, wantPrimitive)
 	}
 	if result.Evidence[0].ExecutableBinding != "digest-rechecked-path" {
 		t.Fatalf("recording runner binding=%q", result.Evidence[0].ExecutableBinding)

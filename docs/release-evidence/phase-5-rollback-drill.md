@@ -8,7 +8,8 @@ This evidence covers the locally actionable part of P5-07:
 
 - private vulnerability reporting through GitHub Security Advisories;
 - seven-day acknowledgement and fourteen-day classification targets;
-- severity-based patch or mitigation coordination;
+- explicit severity-based containment and patched-release/mitigation targets
+  in [SECURITY.md](../../SECURITY.md);
 - publication stop, candidate quarantine, and rollback to the last approved
   release;
 - keyless signing recovery as an explicit protected-environment decision;
