@@ -78,12 +78,22 @@ EOF
     go test -tags release_integration ./scripts -run '^TestReleaseBuild' -count=1
     bash scripts/release-rollback-drill.sh >/dev/null
     release_output="${AUTOGIT_RELEASE_OUTPUT:-}"
+    cleanup_release_output=0
     if [[ -z "$release_output" ]]; then
       release_output="$(mktemp -d "${TMPDIR:-/tmp}/autogit-release.XXXXXX")"
-      trap 'rm -rf "$release_output"' EXIT
+      cleanup_release_output=1
     fi
+    install_drill_root="$(mktemp -d "${TMPDIR:-/tmp}/autogit-install-suite.XXXXXX")"
+    trap 'if [[ "$cleanup_release_output" -eq 1 ]]; then rm -rf "$release_output"; fi; rm -rf "$install_drill_root"' EXIT
     bash scripts/release-build.sh --output "$release_output"
     bash scripts/artifact-smoke.sh --directory "$release_output"
+    AUTOGIT_VERSION=drill-previous AUTOGIT_COMMIT="$(git rev-parse HEAD)" \
+      bash scripts/release-build.sh --target linux/amd64 --output "$install_drill_root/previous" >/dev/null
+    AUTOGIT_VERSION=drill-candidate AUTOGIT_COMMIT="$(git rev-parse HEAD)" \
+      bash scripts/release-build.sh --target linux/amd64 --output "$install_drill_root/candidate" >/dev/null
+    bash scripts/release-install-drill.sh \
+      --previous "$install_drill_root/previous/autogit-linux-amd64" \
+      --candidate "$install_drill_root/candidate/autogit-linux-amd64" >/dev/null
     ;;
   -h|--help)
     usage

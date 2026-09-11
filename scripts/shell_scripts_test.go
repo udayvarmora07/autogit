@@ -3,6 +3,7 @@ package scripts_test
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -175,6 +176,51 @@ func TestReleaseRollbackDrillProducesRedactedEvidence(t *testing.T) {
 	}
 	if bytes.Contains(data, []byte(filepath.Dir(outputPath))) {
 		t.Fatalf("rollback evidence leaked a local path: %s", data)
+	}
+}
+
+func TestReleaseInstallDrillCoversNativeBinaryLifecycle(t *testing.T) {
+	root := t.TempDir()
+	previous := filepath.Join(root, "previous")
+	candidate := filepath.Join(root, "candidate")
+	build := func(path, version string) {
+		t.Helper()
+		cmd := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-ldflags", "-buildid= -X main.buildVersion="+version, "-o", path, "./cmd/autogit")
+		cmd.Dir = filepath.Dir(scriptsRoot(t))
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("build %s: %v\n%s", version, err, output)
+		}
+	}
+	build(previous, "v1.2.2")
+	build(candidate, "v1.2.3")
+	evidencePath := filepath.Join(root, "install-drill.json")
+	output, err := runShellScript(t, nil, "release-install-drill.sh", "--previous", previous, "--candidate", candidate, "--output", evidencePath)
+	if err != nil || len(output) != 0 {
+		t.Fatalf("install drill result=%v output=%s", err, output)
+	}
+	data, err := os.ReadFile(evidencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		SchemaVersion         string            `json:"schema_version"`
+		Status                string            `json:"status"`
+		SensitiveDataRecorded bool              `json:"sensitive_data_recorded"`
+		Checks                map[string]string `json:"checks"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("install evidence JSON: %v", err)
+	}
+	if result.SchemaVersion != "autogit.release-install-drill/1" || result.Status != "passed" || result.SensitiveDataRecorded || len(result.Checks) != 6 {
+		t.Fatalf("install evidence=%+v", result)
+	}
+	for check, status := range result.Checks {
+		if status != "passed" {
+			t.Fatalf("install check %s=%q", check, status)
+		}
+	}
+	if bytes.Contains(data, []byte(root)) {
+		t.Fatalf("install evidence leaked a local path: %s", data)
 	}
 }
 

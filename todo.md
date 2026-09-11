@@ -294,7 +294,10 @@ named-review requirements are executed and reviewed.
   [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md);
   package channels and native clean-machine install evidence remain open.
 - [ ] P5-07 Test native install, upgrade, downgrade, uninstall, checksum,
-  signature, and rollback paths.
+  signature, and rollback paths. Local raw-binary lifecycle evidence:
+  [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md);
+  package-channel, clean-machine, native cross-OS, and signed-release checks
+  remain open.
 - [ ] P5-07 Define disclosure/patch SLAs, signing identity recovery, release
   rollback, and compromised-release drills. Evidence: [rollback and disclosure
   implementation evidence](docs/release-evidence/phase-5-rollback-drill.md);

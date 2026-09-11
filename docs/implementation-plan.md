@@ -5,7 +5,7 @@ current exact-commit, evidence, count, and next-action snapshot. Do not use an
 older evidence commit in this document as proof of current HEAD status.
 
 Status: Active; release posture is NO-GO for private alpha
-Last updated: 2026-09-10
+Last updated: 2026-09-11
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
@@ -84,7 +84,9 @@ current release-blocking gaps are:
    requires an exact tagged hosted run, release-environment review, consumer
    verification of the resulting attestations, retained independent-runner
    comparison evidence, package-channel demand/native install evidence, and a
-   named rollback/disclosure review.
+   named rollback/disclosure review. The raw-binary lifecycle drill is now
+   retained in `phase-5-install-drill.md` but does not replace those native
+   package and clean-machine checks.
 6. P5-01 and P5-02 still require explicit product/maintainer review, including
    the security contact/support decision, automated dependency-update review,
    and documented approval of any policy exceptions.

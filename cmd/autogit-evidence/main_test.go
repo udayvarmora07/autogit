@@ -89,3 +89,16 @@ func TestControlsIncludeSBOMTraceability(t *testing.T) {
 	}
 	t.Fatal("P5-04 evidence control is missing")
 }
+
+func TestControlsIncludeInstallRollbackTraceability(t *testing.T) {
+	for _, item := range controls {
+		if item.ID != "P5-07" {
+			continue
+		}
+		if item.Status != "implemented" || len(item.Requirements) == 0 || len(item.Tests) == 0 || len(item.Commands) == 0 || len(item.Threats) == 0 {
+			t.Fatalf("P5-07 evidence control is incomplete: %+v", item)
+		}
+		return
+	}
+	t.Fatal("P5-07 evidence control is missing")
+}

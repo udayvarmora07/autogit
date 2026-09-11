@@ -47,21 +47,26 @@ command output, and redacted artifact links for each item:
    `bash scripts/verify-release-artifacts.sh` with the exact repository, tag,
    and commit. It validates the complete checksum manifest and requires the
    release workflow's hosted SLSA provenance identity.
-4. Run the deterministic test-floor command from
+4. On each claimed native host, run the raw-binary lifecycle drill from
+   [`phase-5-install-drill.md`](release-evidence/phase-5-install-drill.md)
+   with the previous and candidate binaries. Retain its redacted JSON beside
+   the release evidence; this does not replace clean-machine package-channel
+   testing.
+5. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
-5. [Recorded] The native Linux, macOS, and Windows matrix passed in the
+6. [Recorded] The native Linux, macOS, and Windows matrix passed in the
    [exact-snapshot CI run 34388511108](https://github.com/udayvarmora07/autogit/actions/runs/34388511108),
    against `4817750`, including benchmark, p95-gate,
    build, artifact-smoke, and scenario steps. Cross-build output alone is not
    native evidence.
-6. The same run passed the native p95 gates. Retain the run logs with the
+7. The same run passed the native p95 gates. Retain the run logs with the
    release record; this evidence does not by itself approve alpha or beta.
-7. Run the manually dispatched
+8. Run the manually dispatched
    [GitHub canary](../.github/workflows/github-canary.yml) with the dedicated
    `AUTOGIT_CANARY_TOKEN` secret and owner. Confirm generated name, owner,
    visibility, `main` ref, exact commit SHA, and successful cleanup. A personal
    token or ambient `GH_TOKEN` is not acceptable.
-8. Obtain product acceptance of the Phase 0 contract, threat invariants, test
+9. Obtain product acceptance of the Phase 0 contract, threat invariants, test
    traceability, compatibility boundary, and release decision. Record the
    approver and date in the release record.
 
