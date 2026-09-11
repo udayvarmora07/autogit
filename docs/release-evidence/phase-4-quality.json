@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+  "commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-10T13:33:22.48071875Z",
+  "generated_at": "2026-09-11T10:28:23.49074972Z",
   "go_version": "go1.26.8",
   "platform": "linux/amd64",
   "suites": [
@@ -51,36 +51,65 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "699f7b812911869d52d31cb4b844a4fa6f5a02fa3fec6c7bd509434fc505f16b",
-      "size": 15962704
+      "sha256": "be3494e2b9eb5c3c3b4b33c8f6831463a0bcf8b36043bfbf3ca1adc30a82b22c",
+      "size": 15970848
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "88ab46f1c91351be605297a9d443af2e0705fddf37a555eb183c0718b1e4c2ed",
-      "size": 15322274
+      "sha256": "a529a7f1d0be38d66b2aa6778fc4316ce0c145c6ba5d5220d377855aa1c5dafb",
+      "size": 15338738
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "536348c033d0eff008240c01b08ae86dd51dd71fb669d86f454d03bb78eb36c0",
-      "size": 15729483
+      "sha256": "517de31d82a97dd1a149622770ade60c2daf8d3bbe366f136bb150878749cdfe",
+      "size": 15730644
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "f55704758044e607d88d59060d4524ed30f962f58a096dfbd71bb5e96431bed2",
-      "size": 15005375
+      "sha256": "dd93debb3e1dd0f288e98abd9e0f04f0c56f2110221dbedca7684b83460d2cdd",
+      "size": 15007032
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "0b492ad75a50dd2b290a22edb72576f6e2db0fe8a1ed0481ac083b8dcb9f2889",
-      "size": 16144896
+      "sha256": "4ff3fac0746e53f09e7c803a0d1b7f137548220feef774bb30c25cb1f09dceac",
+      "size": 16147968
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "1bc2f9c80c119af91475c374b48699e8f59b0d57c00da8b22367e4a04ce88d80",
-      "size": 15159296
+      "sha256": "1297b0594c7f0d9495479d1acfcf1c294543108370a9016b175c324a6f1a9d0a",
+      "size": 15163904
     }
   ],
   "controls": [
+    {
+      "id": "P1-04",
+      "status": "implemented",
+      "requirements": [
+        "FR-VER-003",
+        "NFR-SEC-001"
+      ],
+      "tests": [
+        "TestIsolationCapabilitiesAreExplicitAndFailClosed",
+        "TestIsolationCapabilityReportsPlatformFallbacks",
+        "TestTrustedRegistryRecordsAchievedProcessBoundedTier",
+        "TestTrustedEvidenceInvalidatesEveryBindingDimension",
+        "TestRunEnforcesFilesystemAllowlistAndNetworkDenial",
+        "TestLandlockABIProbeIsNonMutatingAndExplicit",
+        "TestWindowsSupervisorTerminatesDescendants"
+      ],
+      "commands": [
+        "go test ./internal/process ./internal/verification",
+        "GOOS=windows GOARCH=amd64 go test -c ./internal/process",
+        "GOOS=windows GOARCH=amd64 go test -c ./internal/verification",
+        "GOOS=darwin GOARCH=arm64 go test -c ./internal/process",
+        "GOOS=darwin GOARCH=arm64 go test -c ./internal/verification"
+      ],
+      "threats": [
+        "TM-009",
+        "TM-025",
+        "GATE-005"
+      ]
+    },
     {
       "id": "P4-01",
       "status": "implemented",
@@ -261,7 +290,8 @@
         "TestStringFlagsRejectsEmptyValues"
       ],
       "commands": [
-        "go run ./cmd/autogit-evidence --results-dir DIR --output FILE --artifact PATH"
+        "go run ./cmd/autogit-evidence --results-dir DIR --output FILE --artifact PATH",
+        "bash scripts/generate-evidence.sh --full --tag TAG --require-tag --output FILE"
       ],
       "threats": [
         "GATE-002",
@@ -305,6 +335,49 @@
       "threats": [
         "NFR-SUP-001",
         "RISK-SUPPLY-CHAIN"
+      ]
+    },
+    {
+      "id": "P5-04",
+      "status": "implemented",
+      "requirements": [
+        "NFR-SEC-001",
+        "NFR-POR-001"
+      ],
+      "tests": [
+        "TestRunWritesSPDXJSON",
+        "TestRunWritesDeterministicCycloneDXJSON",
+        "TestReleaseVerifierBindsAttestationIdentity"
+      ],
+      "commands": [
+        "go test ./cmd/autogit-sbom ./scripts",
+        "actionlint .github/workflows/*.yml",
+        "bash scripts/verify-release-artifacts.sh --directory DIST --repo OWNER/REPO --tag vMAJOR.MINOR.PATCH --commit FULL_SHA"
+      ],
+      "threats": [
+        "RISK-SUPPLY-CHAIN",
+        "RISK-RELEASE-IDENTITY"
+      ]
+    },
+    {
+      "id": "P5-07",
+      "status": "implemented",
+      "requirements": [
+        "NFR-SAF-001",
+        "NFR-REL-001"
+      ],
+      "tests": [
+        "TestSecurityPolicyDefinesSeverityResponseTargets",
+        "TestReleaseInstallDrillCoversNativeBinaryLifecycle",
+        "TestReleaseRollbackDrillProducesRedactedEvidence"
+      ],
+      "commands": [
+        "bash scripts/release-install-drill.sh --previous PATH --candidate PATH --output FILE",
+        "bash scripts/release-rollback-drill.sh --output FILE"
+      ],
+      "threats": [
+        "RISK-RELEASE-IDENTITY",
+        "GATE-006"
       ]
     }
   ]

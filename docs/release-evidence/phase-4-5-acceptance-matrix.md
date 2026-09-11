@@ -1,8 +1,8 @@
 # Phase 4/5 acceptance matrix
 
-Snapshot: `6fc197b281065a03dccb8bad68984222bc8c786d`
+Snapshot: `97ea27f23359db321b2654a9628b0e78310a4ea6`
 Local manifest: [phase-4-quality.json](phase-4-quality.json)
-Hosted matrix: [run 34481766917](https://github.com/udayvarmora07/autogit/actions/runs/34481766917)
+Hosted matrix: [run 34589870316](https://github.com/udayvarmora07/autogit/actions/runs/34589870316)
 Hosted result: 20/20 jobs passed, including native Linux/macOS/Windows tests,
 six native artifact targets, three soak targets, fuzz, scenario evaluation,
 performance gates, reproducible builds, security, and dependency policy.
@@ -32,5 +32,5 @@ public beta or GA.
 The following evidence is intentionally not claimed: a live provider canary
 with the dedicated token, a release-environment approval, keyless hosted
 attestations, independent release verification, or a named security/release
-review. The last canary attempt (`34324968472`) stopped before mutation because
-`AUTOGIT_CANARY_TOKEN` was empty.
+review. The current dedicated-token canary evidence is a separate prior
+`36c045f` run (`34489797141`) and is not silently promoted to this snapshot.

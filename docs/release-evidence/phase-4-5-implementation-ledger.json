@@ -2,10 +2,10 @@
   "schema_version": "autogit.implementation-ledger/1",
   "batch": "P4-01..P4-08,P5-01,P5-02",
   "source_of_truth": "../implementation-plan.md",
-  "verification_commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+  "verification_commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
   "verification_worktree": "clean before evidence generation",
-  "verified_at": "2026-09-10T13:33:22Z",
-  "evidence_snapshot_commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+  "verified_at": "2026-09-11T10:28:23Z",
+  "evidence_snapshot_commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
   "evidence": [
     "phase-4-quality.md",
     "phase-4-quality.json",
@@ -13,26 +13,26 @@
   ],
   "hosted_evidence": [
     {
-      "run": "34481766917",
-      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+      "run": "34589870316",
+      "commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
       "status": "passed",
       "scope": "20-job Phase 4/5 quality matrix"
     },
     {
-      "run": "34481728077",
-      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+      "run": "34588904458",
+      "commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
       "status": "passed",
       "scope": "push-triggered core checks"
     },
     {
-      "run": "34481728025",
-      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+      "run": "34588904440",
+      "commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
       "status": "passed",
       "scope": "security checks"
     },
     {
-      "run": "34483444477",
-      "commit": "6fc197b281065a03dccb8bad68984222bc8c786d",
+      "run": "34590952233",
+      "commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
       "status": "passed",
       "scope": "compatibility-window review"
     }
@@ -44,7 +44,7 @@
       "go test -tags soak -count=1 ./...",
       "go vet ./...",
       "bash scripts/test-suites.sh presubmit",
-      "AUTOGIT_FUZZ_TIME=40s bash scripts/generate-evidence.sh --full",
+      "AUTOGIT_FUZZ_TIME=40s bash scripts/generate-evidence.sh --full --output docs/release-evidence/phase-4-quality.json",
       "bash scripts/check-dependencies.sh",
       "bash scripts/check-shell.sh",
       "actionlint .github/workflows/*.yml",

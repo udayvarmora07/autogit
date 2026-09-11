@@ -1,6 +1,6 @@
 # Phase 4 and Phase 5 local implementation evidence
 
-Date: 2026-09-10
+Date: 2026-09-11
 Scope: P4-01 through P4-08 and P5-01 through P5-02
 Status: implementation complete; exact-snapshot local and hosted quality
 evidence is current; tagged-artifact, provider, signing, and named-reviewer
@@ -29,18 +29,21 @@ The package-by-package acceptance reconciliation is recorded in the
 The following checks passed during this implementation slice on Linux/amd64:
 
 ```text
-go test ./...
-go vet ./...
-go test -count=1 -json ./...                 # 859 deterministic test cases
+GOFLAGS=-mod=readonly go test -count=1 ./...
+GOFLAGS=-mod=readonly go test -race -count=1 ./...
+GOFLAGS=-mod=readonly go vet ./...
+go test -count=1 -json ./...
 bash scripts/test-suites.sh presubmit
 bash scripts/test-suites.sh integration
 bash scripts/test-suites.sh race
 bash scripts/test-suites.sh soak              # 1,000-schedule Linux matrix
 AUTOGIT_FUZZ_TIME=40s bash scripts/test-suites.sh fuzz
 bash scripts/test-suites.sh release            # six cross-target artifacts + host smoke
-PATH=... bash scripts/check-shell.sh           # ShellCheck 0.11.0
+bash scripts/check-shell.sh                   # ShellCheck 0.11.0
 bash scripts/check-dependencies.sh
 actionlint .github/workflows/*.yml
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 ./...
 trace="$(mktemp "${TMPDIR:-/tmp}/autogit-scenario-trace.XXXXXX")"
 bash scripts/scenario-eval.sh --binary <built artifact> --trace "$trace"
 python3 -m json.tool "$trace"
@@ -52,7 +55,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`6fc197b281065a03dccb8bad68984222bc8c786d`. Its ten local suite results use
+`97ea27f23359db321b2654a9628b0e78310a4ea6`. Its ten local suite results use
 the deterministic 100,000-input fuzz floor for all 10 targets while retaining
 the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -63,15 +66,16 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The latest exact-snapshot full hosted CI dispatch `34481766917` passed all
+The latest exact-snapshot full hosted CI dispatch `34589870316` passed all
 20/20 jobs against
-`6fc197b281065a03dccb8bad68984222bc8c786d`:
+`97ea27f23359db321b2654a9628b0e78310a4ea6`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-The push-triggered core run `34481728077` and security run `34481728025` also passed
-against the same exact SHA. `tag_verified` remains false because this is
+push-triggered core run `34588904458` and security run `34588904440` also passed
+against the same exact SHA. The hosted compatibility-window review
+`34590952233` passed at the same exact SHA. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
 authentication: the dedicated `AUTOGIT_CANARY_TOKEN` secret was empty, so the
@@ -79,11 +83,6 @@ canary did not run and the allowlisted repository was confirmed absent. It is
 not current-HEAD canary evidence. The former `ded26c3` manifest and hosted
 run `34327518122` remain historical records. These records do not claim a live
 provider canary, signing, published provenance, or named release review.
-
-The hosted compatibility-window review `34483444477` passed at branch commit
-`6fc197b281065a03dccb8bad68984222bc8c786d`; all advertised windows were
-current and no expiry issue was generated. The compatibility contract is
-unchanged by the later evidence-only and test-runner portability fixes.
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:

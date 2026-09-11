@@ -6,9 +6,9 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 ## Current snapshot
 
-- Snapshot date: 2026-09-10.
+- Snapshot date: 2026-09-11.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `6fc197b281065a03dccb8bad68984222bc8c786d`.
+- Evidence snapshot commit: `97ea27f23359db321b2654a9628b0e78310a4ea6`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
@@ -50,22 +50,22 @@ remaining P4 rows.
 
 ## Evidence warning
 
-- The current exact-snapshot full hosted matrix is run `34481766917`, with all
+- The current exact-snapshot full hosted matrix is run `34589870316`, with all
  20 jobs passing against
-  `6fc197b281065a03dccb8bad68984222bc8c786d`, including
+  `97ea27f23359db321b2654a9628b0e78310a4ea6`, including
   fuzz, soak, native artifact, scenario, and performance jobs. Its security
   and dependency-policy jobs also passed. The push-triggered core run
-  `34481728077` and security run `34481728025` passed against the same SHA.
+  `34588904458` and security run `34588904440` passed against the same SHA.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for evidence snapshot commit `6fc197b`; it records
+  generated collection for evidence snapshot commit `97ea27f`; it records
   10/10 local suites and six artifact hashes with a clean tree at collection
   time.
 - The current dedicated-token private canary dispatch, `34489797141`, passed
   against `36c045f` for owner `udayvarmora07`; the allowlisted canary
   repository was confirmed absent after cleanup. The earlier failed dispatch
   `34324968472` remains historical only.
-- Hosted compatibility-window review `34483444477` passed at current branch
-  commit `6fc197b`; no expiry issue was generated.
+- Hosted compatibility-window review `34590952233` passed at the same exact
+  commit; no expiry issue was generated.
 
 ## Immediate continuation order
 
@@ -91,6 +91,10 @@ remaining P4 rows.
 
 ## Important recent changes
 
+- `97ea27f`: retries transient provider read-after-write missing-ref
+  postconditions after an exact push, eliminating the hosted publish race.
+- `60abf2d`: uses native Windows file replacement semantics for upgrade and
+  rollback verification.
 - `c09c059`: kept the release verifier compatible with stock macOS Bash 3.2.
 - `4817750`: made fuzz execution floors deterministic with an explicit input
   count and retained timeout budget.
