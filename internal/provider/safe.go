@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"autogit/internal/process"
 )
@@ -556,7 +557,7 @@ func (g GH) Push(ctx context.Context, remote, sha, ref string) error {
 	if err := g.pushDirect(ctx, remote, sha, ref); err != nil {
 		return err
 	}
-	outcome, err = g.ConfirmPush(ctx, request)
+	outcome, err = g.confirmPushAfterMutation(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -588,7 +589,7 @@ func (g GH) Publish(ctx context.Context, r PushRequest) error {
 	if err := g.pushDirect(ctx, r.Owner+"/"+r.Name, r.SHA, r.Ref); err != nil {
 		return err
 	}
-	outcome, err = g.ConfirmPush(ctx, r)
+	outcome, err = g.confirmPushAfterMutation(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -597,6 +598,34 @@ func (g GH) Publish(ctx context.Context, r PushRequest) error {
 	}
 	return nil
 }
+
+// confirmPushAfterMutation tolerates a short provider read-after-write
+// propagation window without weakening the exact-SHA postcondition. Only a
+// successful missing-ref observation is retried; conflicts and provider
+// errors remain fail-closed immediately.
+func (g GH) confirmPushAfterMutation(ctx context.Context, r PushRequest) (PushOutcome, error) {
+	outcome, err := g.ConfirmPush(ctx, r)
+	if err != nil || outcome != PushMissing {
+		return outcome, err
+	}
+	for _, delay := range []time.Duration{25 * time.Millisecond, 100 * time.Millisecond} {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return PushMissing, ctx.Err()
+		case <-timer.C:
+		}
+		outcome, err = g.ConfirmPush(ctx, r)
+		if err != nil || outcome != PushMissing {
+			return outcome, err
+		}
+	}
+	return outcome, err
+}
+
 func (g GH) ConfirmPush(ctx context.Context, r PushRequest) (PushOutcome, error) {
 	if err := validPushRequest(r); err != nil {
 		return "", err

@@ -195,6 +195,18 @@ func TestGHPublishConfirmsExactRemoteSHA(t *testing.T) {
 	}
 }
 
+func TestGHPublishRetriesTransientMissingPostcondition(t *testing.T) {
+	sha := strings.Repeat("f", 40)
+	r := &argRunner{results: []Result{{}, {}, {Output: sha + "\n"}}}
+	p := &recordingPusher{}
+	if err := (GH{Runner: r, Pusher: p}).Publish(context.Background(), PushRequest{Owner: "owner", Name: "repo", Ref: "main", SHA: sha}); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.calls) != 3 || p.remote != "owner/repo" || p.sha != sha || p.ref != "main" {
+		t.Fatalf("calls=%#v push=%#v", r.calls, p)
+	}
+}
+
 func TestGHPublishExistingExactRefIsIdempotentWithoutPush(t *testing.T) {
 	sha := strings.Repeat("c", 40)
 	r := &argRunner{results: []Result{{Output: sha + "\n"}}}
