@@ -83,13 +83,27 @@ temporary_output=""
 trap 'rm -rf "$root" "$temporary_output"' EXIT
 bin_dir="$root/bin"
 installed="$bin_dir/autogit"
-mkdir -m 0700 "$bin_dir"
+
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+mkdir "$bin_dir"
+if ! is_windows_shell; then
+  chmod 0700 "$bin_dir"
+fi
 
 install_atomic() {
   local source=$1
   local staged="$bin_dir/autogit.new"
   [[ ! -e "$staged" && ! -L "$staged" ]] || { echo "stale staged binary exists" >&2; return 1; }
-  install -m 0755 "$source" "$staged"
+  cp -- "$source" "$staged"
+  if ! is_windows_shell; then
+    chmod 0755 "$staged"
+  fi
   mv "$staged" "$installed"
 }
 

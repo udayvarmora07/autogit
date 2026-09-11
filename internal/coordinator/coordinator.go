@@ -369,7 +369,7 @@ func (c Coordinator) Push(ctx context.Context, r PushRequest) (err error) {
 	if err := c.Provider.Push(ctx, r); err != nil {
 		return c.recordPushFailure(ctx, r.ID, err)
 	}
-	outcome, err = c.Provider.ConfirmPush(ctx, r)
+	outcome, err = confirmPushAfterMutation(ctx, c.Provider, r)
 	if outcome == PushConflict {
 		cause := error(ErrPushConflict)
 		if err != nil {
@@ -384,6 +384,33 @@ func (c Coordinator) Push(ctx context.Context, r PushRequest) (err error) {
 		return c.recordPushFailure(ctx, r.ID, errors.New("remote push postcondition not met"))
 	}
 	return c.Store.MarkPushSucceeded(ctx, r.ID)
+}
+
+// confirmPushAfterMutation tolerates a short read-after-write propagation
+// window without weakening the exact-SHA postcondition. Only a successful
+// confirmation that reports the ref as missing is retried; conflicts and
+// provider errors remain fail-closed immediately.
+func confirmPushAfterMutation(ctx context.Context, p Provider, r PushRequest) (ConfirmPushOutcome, error) {
+	outcome, err := p.ConfirmPush(ctx, r)
+	if err != nil || outcome != PushMissing {
+		return outcome, err
+	}
+	for _, delay := range []time.Duration{25 * time.Millisecond, 100 * time.Millisecond} {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return PushMissing, ctx.Err()
+		case <-timer.C:
+		}
+		outcome, err = p.ConfirmPush(ctx, r)
+		if err != nil || outcome != PushMissing {
+			return outcome, err
+		}
+	}
+	return outcome, err
 }
 
 // RetryPush resumes only a durable transient-failure intent. The stored

@@ -517,6 +517,18 @@ func TestPushRequiresExactPostconditionAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPushRetriesOnlyMissingReadAfterWrite(t *testing.T) {
+	s := newMemoryStore()
+	p := &fakeProvider{confirmOutcomes: []ConfirmPushOutcome{PushMissing, PushMissing, PushPresent}}
+	r := PushRequest{ID: "eventual", Owner: "o", Name: "n", Ref: "main", CommitSHA: strings.Repeat("a", 40)}
+	if err := (Coordinator{Store: s, Provider: p}).Push(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if s.status[r.ID] != state.PushSucceeded || p.calls != 1 || p.confirms != 3 {
+		t.Fatalf("status=%q pushes=%d confirms=%d", s.status[r.ID], p.calls, p.confirms)
+	}
+}
+
 func TestPushSerializesProviderEffectsWithWriterLease(t *testing.T) {
 	s := newMemoryStore()
 	lease := &recordingLease{}
@@ -1008,18 +1020,24 @@ func (g *fakeGit) Commit(_ context.Context, _ CommitRequest) (string, error) {
 func (g *fakeGit) Inspect(_ context.Context, _ CommitRequest) (string, error) { return g.inspect, nil }
 
 type fakeProvider struct {
-	calls          int
-	confirms       int
-	confirmed      bool
-	confirmOutcome ConfirmPushOutcome
-	confirmErr     error
-	confirmErrors  []error
-	pushErr        error
+	calls           int
+	confirms        int
+	confirmed       bool
+	confirmOutcomes []ConfirmPushOutcome
+	confirmOutcome  ConfirmPushOutcome
+	confirmErr      error
+	confirmErrors   []error
+	pushErr         error
 }
 
 func (p *fakeProvider) Push(_ context.Context, _ PushRequest) error { p.calls++; return p.pushErr }
 func (p *fakeProvider) ConfirmPush(_ context.Context, _ PushRequest) (ConfirmPushOutcome, error) {
 	p.confirms++
+	if len(p.confirmOutcomes) > 0 {
+		outcome := p.confirmOutcomes[0]
+		p.confirmOutcomes = p.confirmOutcomes[1:]
+		return outcome, nil
+	}
 	if len(p.confirmErrors) > 0 {
 		err := p.confirmErrors[0]
 		p.confirmErrors = p.confirmErrors[1:]
