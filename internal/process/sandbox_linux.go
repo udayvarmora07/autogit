@@ -10,29 +10,33 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // sandboxExecutable returns the canonical bubblewrap executable. Bubblewrap
 // supplies Linux user/pid/network namespaces and read-only bind mounts; it is
 // itself only a launcher and is never selected as a verifier executable.
 func sandboxExecutable() (string, error) {
-	path, err := exec.LookPath("bwrap")
-	if err != nil {
-		return "", fmt.Errorf("%w: bubblewrap is not installed", ErrSandboxUnavailable)
+	for _, candidate := range []string{"/usr/bin/bwrap", "/bin/bwrap"} {
+		path, err := filepath.EvalSymlinks(candidate)
+		if err != nil {
+			continue
+		}
+		path, err = filepath.Abs(filepath.Clean(path))
+		if err != nil {
+			continue
+		}
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode().Perm()&0022 != 0 {
+			continue
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != 0 {
+			continue
+		}
+		return path, nil
 	}
-	path, err = filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", fmt.Errorf("%w: bubblewrap path is not trusted", ErrSandboxUnavailable)
-	}
-	path, err = filepath.Abs(filepath.Clean(path))
-	if err != nil {
-		return "", fmt.Errorf("%w: bubblewrap path is not trusted", ErrSandboxUnavailable)
-	}
-	info, err := os.Lstat(path)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
-		return "", fmt.Errorf("%w: bubblewrap is not a regular executable", ErrSandboxUnavailable)
-	}
-	return path, nil
+	return "", fmt.Errorf("%w: trusted bubblewrap is not installed", ErrSandboxUnavailable)
 }
 
 func NamespaceSandboxAvailable() bool {
@@ -43,7 +47,7 @@ func NamespaceSandboxAvailable() bool {
 	if _, err := sandboxPrlimitExecutable(); err != nil {
 		return false
 	}
-	probe := exec.Command(bwrap, "--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev", "--clearenv", "--", "/bin/true") // #nosec G204 -- bwrap is canonicalized and the probe argv is fixed.
+	probe := exec.Command(bwrap, "--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid", "--disable-userns", "--assert-userns-disabled", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev", "--clearenv", "--", "/bin/true") // #nosec G204 -- bwrap is canonicalized and the probe argv is fixed.
 	probe.Dir = string(filepath.Separator)
 	probe.Env = []string{}
 	return probe.Run() == nil
@@ -70,7 +74,7 @@ func prepareSandbox(command *exec.Cmd, options Options) error {
 	if err != nil {
 		return err
 	}
-	args := []string{"--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid"}
+	args := []string{"--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid", "--disable-userns", "--assert-userns-disabled"}
 	if options.NetworkDisabled {
 		args = append(args, "--unshare-net")
 	}
@@ -126,7 +130,11 @@ func prepareSandbox(command *exec.Cmd, options Options) error {
 func sandboxPrlimitExecutable() (string, error) {
 	for _, candidate := range []string{"/usr/bin/prlimit", "/bin/prlimit"} {
 		info, err := os.Stat(candidate)
-		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode().Perm()&0022 != 0 {
+			continue
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if ok && stat.Uid == 0 {
 			return candidate, nil
 		}
 	}
