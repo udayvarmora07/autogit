@@ -9,3 +9,9 @@ import "errors"
 func LandlockABI() (int, error) {
 	return 0, errors.New("Landlock is unavailable on this platform")
 }
+
+func LandlockAvailable() bool { return false }
+
+func enforceLandlock([]string, bool) error {
+	return errors.New("Landlock is unavailable on this platform")
+}

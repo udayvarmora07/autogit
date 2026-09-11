@@ -26,8 +26,10 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   accepted for the bounded private-alpha scope under the documented owner-
   review exception; P4-03 and P4-08 stay open pending their distinct release
   gates. PR-011 and the process-bounded PR-012 baseline are now checked;
-  Windows AppContainer and native macOS acceptance remain separate open P1-04
-  work. The full project still has 20 open rows.
+  Linux now has an ABI-gated in-process Landlock ruleset behind the existing
+  bubblewrap namespace path, while Windows AppContainer and native macOS
+  acceptance remain separate open P1-04 work. The full project still has 20
+  open rows.
 
 ## Why the tracker is still open
 
@@ -109,8 +111,9 @@ remaining P4 rows.
 - Current PR-011/PR-012 slice: directory-durable backup/restore publication,
   stale maintenance-artifact recovery, subprocess crash tests for backup and
   migration, durable restore assertions, and a native process-supervisor
-  capability probe. Windows AppContainer and native macOS acceptance remain
-  intentionally open.
+  capability probe. The latest local P1-04 slice adds direct Linux Landlock
+  enforcement and adversarial coverage; Windows AppContainer and native macOS
+  acceptance remain intentionally open.
 
 ## Continuation rules
 

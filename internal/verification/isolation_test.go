@@ -28,11 +28,17 @@ func TestIsolationCapabilitiesAreExplicitAndFailClosed(t *testing.T) {
 		if !capability.Available || !capability.Enforced {
 			t.Fatalf("Linux namespace tier was not advertised as enforced: %+v", capability)
 		}
-		if capability.Primitive != "bubblewrap-user-pid-namespace+network-namespace" {
-			t.Fatalf("Linux namespace primitive=%q", capability.Primitive)
-		}
-		if capability.Observations["landlock_enforced"] != false {
+		wantPrimitive := "bubblewrap-user-pid-namespace+network-namespace"
+		if process.LandlockAvailable() {
+			wantPrimitive += "+landlock-ruleset"
+			if capability.Observations["landlock_enforced"] != true {
+				t.Fatalf("Landlock was not recorded as enforced: %+v", capability.Observations)
+			}
+		} else if capability.Observations["landlock_enforced"] != false {
 			t.Fatalf("Landlock was overstated: %+v", capability.Observations)
+		}
+		if capability.Primitive != wantPrimitive {
+			t.Fatalf("Linux namespace primitive=%q, want %q", capability.Primitive, wantPrimitive)
 		}
 		if capability.Observations["nested_user_namespaces"] != "disabled-and-asserted" {
 			t.Fatalf("nested user-namespace lockout was not recorded: %+v", capability.Observations)

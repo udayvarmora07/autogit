@@ -83,8 +83,14 @@ func linuxFilesystemCapability(tier IsolationTier, networkDisabled bool) Isolati
 	observations := map[string]interface{}{}
 	if abi, err := process.LandlockABI(); err == nil {
 		observations["landlock_abi"] = abi
-		observations["landlock_enforced"] = false
-		observations["landlock_reason"] = "kernel ABI detected; the current launcher enforces this tier with bubblewrap namespaces, not an in-process Landlock ruleset"
+		if process.LandlockAvailable() {
+			primitive += "+landlock-ruleset"
+			observations["landlock_enforced"] = true
+			observations["landlock_reason"] = "the child wrapper installs a deny-by-default in-process Landlock ruleset before exec"
+		} else {
+			observations["landlock_enforced"] = false
+			observations["landlock_reason"] = "kernel Landlock ABI is below the supported enforcement floor; bubblewrap namespace enforcement remains the achieved primitive"
+		}
 	} else {
 		observations["landlock_abi"] = 0
 		observations["landlock_enforced"] = false

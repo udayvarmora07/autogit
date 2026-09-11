@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -70,9 +71,31 @@ func prepareSandbox(command *exec.Cmd, options Options) error {
 	if options.Dir == "" || !filepath.IsAbs(options.Dir) || filepath.Clean(options.Dir) != options.Dir {
 		return errors.New("sandbox working directory must be an absolute clean path")
 	}
-	paths, err := canonicalSandboxPaths(options)
+	landlockEnabled := LandlockAvailable()
+	paths, err := canonicalSandboxPaths(options, landlockEnabled)
 	if err != nil {
 		return err
+	}
+	landlockPaths := append([]string(nil), paths...)
+	if landlockEnabled {
+		for _, path := range append(sandboxRuntimePaths(), "/tmp", "/dev") {
+			if _, statErr := os.Stat(path); statErr != nil {
+				continue
+			}
+			alreadyIncluded := false
+			for _, included := range landlockPaths {
+				if included == path {
+					alreadyIncluded = true
+					break
+				}
+			}
+			if !alreadyIncluded {
+				landlockPaths = append(landlockPaths, path)
+			}
+		}
+		if options.ExecutableFile != nil {
+			landlockPaths = append(landlockPaths, "/autogit-executable")
+		}
 	}
 	args := []string{"--die-with-parent", "--new-session", "--unshare-user", "--unshare-pid", "--disable-userns", "--assert-userns-disabled"}
 	if options.NetworkDisabled {
@@ -81,7 +104,7 @@ func prepareSandbox(command *exec.Cmd, options Options) error {
 	args = append(args, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp")
 	// These are immutable runtime dependencies, not user data. The candidate
 	// and every caller-supplied allowlisted path still remain explicit.
-	for _, runtimePath := range []string{"/usr", "/bin", "/lib", "/lib64", "/etc"} {
+	for _, runtimePath := range sandboxRuntimePaths() {
 		if _, statErr := os.Stat(runtimePath); statErr == nil {
 			args = append(args, "--ro-bind", runtimePath, runtimePath)
 		}
@@ -109,6 +132,21 @@ func prepareSandbox(command *exec.Cmd, options Options) error {
 	}
 	target := []string{targetExecutable}
 	target = append(target, options.Args...)
+	if landlockEnabled {
+		helper, helperErr := sandboxHelperExecutable()
+		if helperErr != nil {
+			return helperErr
+		}
+		helperArgs := []string{helper, landlockHelperArgument}
+		if options.NetworkDisabled {
+			helperArgs = append(helperArgs, landlockHelperNetworkDisabled)
+		}
+		helperArgs = append(helperArgs, landlockHelperPathCount, strconv.Itoa(len(landlockPaths)))
+		helperArgs = append(helperArgs, landlockPaths...)
+		helperArgs = append(helperArgs, landlockHelperSeparator)
+		helperArgs = append(helperArgs, target...)
+		target = helperArgs
+	}
 	if limits := sandboxResourceLimitArgs(options.Limits); len(limits) > 0 {
 		prlimit, limitErr := sandboxPrlimitExecutable()
 		if limitErr != nil {
@@ -141,6 +179,30 @@ func sandboxPrlimitExecutable() (string, error) {
 	return "", fmt.Errorf("%w: Linux prlimit is not installed", ErrSandboxUnavailable)
 }
 
+func sandboxRuntimePaths() []string {
+	return []string{"/usr", "/bin", "/lib", "/lib64", "/etc"}
+}
+
+func sandboxHelperExecutable() (string, error) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locate Landlock helper executable: %w", err)
+	}
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve Landlock helper executable: %w", err)
+	}
+	path, err = filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", fmt.Errorf("canonicalize Landlock helper executable: %w", err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+		return "", fmt.Errorf("landlock helper executable is not a regular executable: %s", path)
+	}
+	return path, nil
+}
+
 func sandboxResourceLimitArgs(limits ResourceLimits) []string {
 	args := make([]string, 0, 4)
 	if limits.CPUTime > 0 {
@@ -162,11 +224,18 @@ func sandboxResourceLimitArgs(limits ResourceLimits) []string {
 	return args
 }
 
-func canonicalSandboxPaths(options Options) ([]string, error) {
+func canonicalSandboxPaths(options Options, includeHelper bool) ([]string, error) {
 	paths := append([]string(nil), options.FilesystemAllowlist...)
 	paths = append(paths, options.Dir)
 	if options.ExecutableFile == nil {
 		paths = append(paths, options.Executable)
+	}
+	if includeHelper {
+		helper, err := sandboxHelperExecutable()
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, helper)
 	}
 	seen := make(map[string]bool, len(paths))
 	canonical := make([]string, 0, len(paths))

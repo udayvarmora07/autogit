@@ -1,13 +1,13 @@
 # Gosec suppression register
 
-Recorded: 2026-09-07
+Recorded: 2026-09-11
 Owner for all entries: Uday Varmora
 Review trigger: remove the suppression if the named boundary, input source, or
 Git compatibility requirement changes; otherwise review on every dependency
 or security-tool upgrade.
 
-These are the 28 line-scoped suppressions used by the pinned gosec job. They
-are false positives at deliberately bounded compatibility or security
+These are the line-scoped suppressions used by the pinned gosec job. They are
+false positives at deliberately bounded compatibility or security
 boundaries, not global rule exclusions.
 
 | Rule | Location / boundary | Rationale | Linked test evidence |
@@ -25,5 +25,8 @@ boundaries, not global rule exclusions.
 | G304 | `internal/db/database.go`, state-file creation | The absolute path is canonicalized and its existing ancestors are verified before exclusive creation. | `internal/db/database_test.go`: symlinked state/WAL rejection, cancellation, read-only, and serialized-open tests |
 | G703 | `internal/repository/repository.go`, linked-worktree `commondir` read | Git-resolved metadata is constrained and validated before the linked-worktree path is accepted. | `internal/repository/repository_test.go`: canonical identity, hardened linked-worktree discovery, and cancellation tests |
 | G204 | `internal/process/sandbox_linux.go`, fixed bubblewrap probe | The executable is canonicalized as a regular trusted binary and the probe arguments are fixed constants. | `internal/process/sandbox_test.go`: sandbox availability and filesystem/network enforcement tests |
+| G703 | `internal/process/landlock_linux.go`, Landlock helper path open | The helper accepts only canonical absolute paths produced by the parent sandbox boundary or fixed runtime paths before opening them for a kernel ruleset. | `internal/process/landlock_test.go`: `TestLandlockDirectEnforcement`; `internal/process/sandbox_test.go`: filesystem allowlist and nested namespace tests |
+| G103 (2) | `internal/process/landlock_linux.go`, Landlock syscall ABI buffers | The two unsafe pointers are fixed-size, call-scoped kernel ABI values: a 16-byte ruleset header and a packed 12-byte path rule. | `internal/process/landlock_test.go`: `TestLandlockDirectEnforcement`; Linux namespace sandbox tests |
+| G702/G204 | `internal/process/landlock_linux.go`, helper `syscall.Exec` | The target is parsed only after a fixed separator and is restricted to an absolute clean path (or the fixed descriptor path); arguments are passed directly to `exec`, never to a shell. | `internal/process/landlock_test.go`: direct helper and filesystem enforcement tests |
 | G202 (2) | `internal/db/maintenance.go`, receipt retention predicates | The SQL fragment is assembled only from fixed predicates; all runtime values use placeholders. | `internal/db/maintenance_test.go`: receipt tombstone, retention, and pending-recovery preservation tests |
 | G304 (3) | `internal/db/maintenance.go`, maintenance temporary/backup copies | Parent/destination paths are validated private regular-file boundaries before these operations; temporary names use exclusive creation and random bytes. | `internal/db/maintenance_test.go`: backup/restore round-trip, destination-preservation, symlink, and integrity tests |

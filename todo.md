@@ -120,10 +120,11 @@ All items are release blockers.
 - [ ] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
   AppContainer/job controls, and an honest macOS fallback. Local capability
   evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md);
-  exact-source hosted run `34604368677` validates the implemented Linux
-  namespace, Windows job-object, and macOS process-group paths; AppContainer,
-  in-process Landlock enforcement, independent attestation, and named review
-  remain open.
+  local Linux direct-enforcement and namespace tests now cover the implemented
+  Landlock/bubblewrap paths, while exact-source hosted run `34604368677`
+  validates the namespace, Windows job-object, and macOS process-group paths;
+  AppContainer, fresh hosted Landlock evidence, independent attestation, and
+  named review remain open.
 - [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
   candidate blobs and reachable history; keep online validation separately
   consented. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).

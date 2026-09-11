@@ -87,12 +87,13 @@ current release-blocking gaps are:
    record across every claimed platform.
 2. The advertised verifier baseline remains process-bounded. The local P1-04
    capability report now distinguishes the achieved Linux
-   bubblewrap namespace primitive, a detected-but-not-enforced Landlock ABI,
-   Windows job-object controls without AppContainer, and the macOS
+   bubblewrap namespace plus in-process Landlock ruleset, Windows job-object
+   controls without AppContainer, and the macOS
    process-group fallback; trusted verifier evidence binds those observations
-   into its digest. Native tests for those implemented primitives now pass in
-   exact-source hosted run `34604368677`; AppContainer-specific enforcement,
-   an in-process Landlock ruleset, independent attestation, and named
+   into its digest. The local Linux direct-enforcement and namespace tests pass;
+   the prior exact-source hosted run `34604368677` validates the namespace,
+   job-object, and process-group primitives. AppContainer-specific enforcement,
+   independent attestation, and named
    platform-owner acceptance remain incomplete.
 3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
    named review for the exact alpha-supported client/provider subset. The
@@ -210,7 +211,7 @@ Git/provider side effects:
 | Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, hardened init/worktree discovery, and HEAD/index rechecks | Native hostile-repository and differential matrices still need Phase 1 exit evidence and named acceptance | Block alpha |
 | Ownership | Source-free baseline evidence, replay deduplication, race checks, rename/delete handling, and fail-closed ambiguity | Native recovery/ownership matrix and release-owner acceptance remain open | Block alpha |
 | Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules, and supported backup/restore/integrity/retention APIs | Native backup/restore/retention runtime matrix and remaining Phase 1 recovery drills | Block alpha |
-| Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings | Filesystem/network sandbox tiers and native platform resource/isolation validation remain unavailable | Block public use |
+| Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings, bubblewrap namespaces, and Landlock filesystem rules | Windows AppContainer, macOS filesystem/network isolation, and native platform acceptance remain unavailable | Block public use |
 | Security scanning | Candidate and bounded history checks; pinned offline interface, exact-blob scope, coverage/limit evidence, redacted fingerprints | Detection engine breadth and provider-side push protection remain separately scoped; native security-tool matrix remains | Block public use |
 | Adapters | Versioned six-entry registry, sanitized versioned fixtures, canonical translation, bounded probes, and four schema-specific installers | Native all-OS/client-version installation matrix and upstream drift automation remain; OpenCode/CommandCode are intentionally observation-only | Block compatibility claim |
 | GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and retained historical private canary | Current dedicated-token canary, App permission review, native artifact execution for the exact release snapshot, and named provider review remain | Block alpha |
