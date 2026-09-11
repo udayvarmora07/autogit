@@ -24,7 +24,7 @@ Implementation state for that batch is tracked separately in the
 10/10 packages are verified against the recorded implementation evidence;
 2 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
-for evidence snapshot commit `de78567`. Documentation commits may advance the
+for evidence snapshot commit `16c6325`. Documentation commits may advance the
 branch after that snapshot. If source or toolchain inputs change, regenerate it
 with the evidence command; never update its commit identity by hand.
 The package-level reconciliation is recorded in the [Phase 4/5 acceptance
@@ -340,10 +340,10 @@ system-Git floor, enforced 100,000 input fuzz budgets, deterministic chaos
 cases, 20-case final-state scenario evaluation across all six registered
 clients, bounded native platform traces, compatibility expiry automation,
 exact-commit/artifact evidence, governance files, and dependency/security
-workflows. The latest hosted evidence snapshot `de78567` passed the full
-20-job matrix (`34597664699`); the current local manifest was regenerated at
-`de78567` and records 10/10 suites and six artifact hashes. The push-triggered
-core and security runs (`34593256987`, `34593257121`) also passed at the same
+workflows. The latest hosted evidence snapshot `16c6325` passed the full
+20-job matrix (`34600488282`); the current local manifest was regenerated at
+`16c6325` and records 10/10 suites and six artifact hashes. The push-triggered
+core and security runs (`34600109706`, `34600109672`) also passed at the same
 commit. Compatibility review `34590952233` remains historical evidence for
 `97ea27f`; the current local compatibility suite passed in the regenerated
 manifest. The current dedicated-token

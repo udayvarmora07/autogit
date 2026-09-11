@@ -8,7 +8,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-11.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `de78567ed2991fcaad917189e0cfb8348e9ff6de`.
+- Evidence snapshot commit: `16c6325952b7937cdf8333b12cc7de0189b91f2b`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally historical.
@@ -52,14 +52,14 @@ remaining P4 rows.
 
 ## Evidence warning
 
-- The current exact-snapshot full hosted matrix is run `34597664699`, with all
+- The current exact-snapshot full hosted matrix is run `34600488282`, with all
   20 jobs passing against
-  `de78567ed2991fcaad917189e0cfb8348e9ff6de`, including
+  `16c6325952b7937cdf8333b12cc7de0189b91f2b`, including
   fuzz, soak, native artifact, scenario, and performance jobs. Its security
   and dependency-policy jobs also passed. The push-triggered core run
-  `34593256987` and security run `34593257121` passed against the same SHA.
+  `34600109706` and security run `34600109672` passed against the same SHA.
 - [phase-4-quality.json](release-evidence/phase-4-quality.json) is a fresh
-  generated collection for evidence snapshot commit `de78567`; it records
+  generated collection for evidence snapshot commit `16c6325`; it records
   10/10 local suites and six artifact hashes with a clean tree at collection
   time.
 - The current dedicated-token private canary dispatch, `34489797141`, passed

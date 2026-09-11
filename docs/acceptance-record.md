@@ -65,7 +65,7 @@ Reviewed on: 2026-09-10
 ## P4-07 compatibility-window review
 
 The owner reviewed P4-07 against the clean implementation evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The compatibility contract
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The compatibility contract
 validates seven advertised windows covering Go, Git, SQLite, GitHub REST, MCP,
 and the event/result schema majors. Fresh `scripts/check-compatibility.sh`
 verification passed; the machine-readable report returned `due=false` and
@@ -75,7 +75,7 @@ passed. Hosted compatibility review
 [`34590952233`](https://github.com/udayvarmora07/autogit/actions/runs/34590952233)
 is retained as historical evidence for the preceding `97ea27f` snapshot. The
 current full hosted matrix
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 passed at the current snapshot, while the current compatibility result is
 bound by the local manifest.
 
@@ -95,7 +95,7 @@ Reviewed on: 2026-09-11
 ## P4-08 evidence-manifest review
 
 The owner reviewed P4-08 against the clean implementation evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The retained machine manifest
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The retained machine manifest
 records the exact evidence commit, clean collection state, ten suite results,
 six artifact hashes, and ten controls with requirement, test, command, and
 threat mappings. Fresh evidence generation and schema validation also passed;
@@ -122,7 +122,7 @@ Reviewed on: 2026-09-11
 ## P4-06 scenario-evaluation review
 
 The owner reviewed P4-06 against the clean implementation evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The scenario evaluator grades
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The scenario evaluator grades
 final repository branch, index, AutoGit ref, consent, provider-effect, and
 client-configuration state rather than relying on command narration. The
 fresh built-artifact run produced a redacted trace with 20/20 scenarios
@@ -130,7 +130,7 @@ passing across all six registered clients, including install/uninstall
 idempotency and observation-only behavior. Focused test
 `TestScenarioEvaluationGradesFinalRepositoryState` also passed. Hosted matrix
 run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 passed the native scenario jobs and retained bounded traces for the exact
 snapshot.
 
@@ -150,13 +150,13 @@ Reviewed on: 2026-09-11
 ## P4-05 chaos and recovery review
 
 The owner reviewed P4-05 against the clean implementation evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The retained coverage exercises
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The retained coverage exercises
 network stalls and typed timeouts, partial provider responses with redaction,
 safe rate-limit metadata, replay without a duplicate provider effect,
 permission-loss fail-closed behavior, forward-clock lease expiry, process and
 repository transaction boundaries, output/write exhaustion limits, and
 crash/recovery and lock-contention schedules. Hosted matrix run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 passed the relevant quality and recovery jobs. Fresh verification passed the
 targeted provider, secure-filesystem, coordinator, transaction, and recovery
 tests, the integration tier, and the retained 1,000-schedule soak tier.
@@ -177,14 +177,14 @@ Reviewed on: 2026-09-11
 ## P4-04 fuzz-floor review
 
 The owner reviewed P4-04 against the clean evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The fuzz suite covers the
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The fuzz suite covers the
 canonical event/JSON, adapter, provider identity/ref, Git push-argument,
 policy, configuration-path, migration, state/status, and scanner boundaries;
 each target retains an embedded seed corpus. The fresh local command
 `AUTOGIT_FUZZ_TIME=40s bash scripts/test-suites.sh fuzz` passed all ten targets
 at the required 100,000 executions per target, including the security target.
 The hosted matrix run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 also passed its fuzz job, and the full Go test suite passed.
 
 The post-snapshot history contains documentation and evidence-record updates
@@ -202,9 +202,9 @@ Reviewed on: 2026-09-10
 ## P4-03 native-artifact review
 
 The owner reviewed P4-03 against the clean evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The machine manifest records six
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The machine manifest records six
 artifact hashes and the hosted run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 passed all six native-artifact jobs: Linux amd64/arm64, macOS amd64/arm64,
 and Windows amd64/arm64. The fresh local release suite rebuilt all six
 targets, verified `SHA256SUMS`, and passed host artifact smoke on system Git
@@ -228,7 +228,7 @@ Reviewed on: 2026-09-10
 ## P4-02 shell-safety review
 
 The owner reviewed P4-02 against the clean evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. `scripts/check-shell.sh`
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. `scripts/check-shell.sh`
 validates every repository shell script with `bash -n` and ShellCheck, and
 the direct tests cover malformed suite dispatch, missing artifact rejection,
 canary precondition failure, performance sample-count failure, transient
@@ -240,7 +240,7 @@ The canary cleanup trap is restricted to the generated allowlisted repository,
 the artifact smoke path fails before creating state when its binary is absent,
 and the performance and release scripts fail closed on incomplete evidence.
 Hosted run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 passed the security, policy, and presubmit jobs. Fresh current-worktree
 verification passed with required ShellCheck, the focused shell tests, and
 the full Go test suite; post-snapshot changes remain documentation-only.
@@ -256,21 +256,21 @@ Reviewed on: 2026-09-10
 ## P4-01 quality-tier review
 
 The owner reviewed P4-01 against the clean evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. The manifest records separate
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The manifest records separate
 presubmit, core, race, integration, soak, fuzz, canary, and release commands;
 all 10 recorded suite results are passed. Hosted run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 passed all 20 jobs, including the bounded presubmit path, scheduled/manual
 long-running matrices, native quality jobs, and the p95 performance gates.
 
-The post-snapshot history contains documentation and evidence-record updates
-only; no source, workflow, or toolchain input changed after the reviewed
-snapshot. Fresh current-worktree checks also passed for the presubmit and
-integration tiers and for `go test -count=1 ./...`.
+The current exact-snapshot hosted run is recorded above; the post-snapshot
+history after that evidence collection contains documentation and
+evidence-record updates only. Fresh current-worktree checks also passed for
+the presubmit and integration tiers and for `go test -count=1 ./...`.
 
 Decision: accepted for the bounded private-alpha scope under the documented
-single-maintainer owner-review exception. This does not claim current-HEAD
-hosted execution, an exact release tag, or public beta/GA approval.
+single-maintainer owner-review exception. This does not claim an exact release
+tag or public beta/GA approval.
 
 Reviewed by: Uday Varmora (`@udayvarmora07`)
 

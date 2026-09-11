@@ -9,11 +9,11 @@ not authorize a live provider run or replace explicit release-owner approval.
 ## Current evidence snapshot
 
 The local evidence manifest was regenerated cleanly at commit
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`; all 10 local suites passed and it
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`; all 10 local suites passed and it
 contains six cross-target artifact hashes. The latest full hosted CI run
-[`34597664699`](https://github.com/udayvarmora07/autogit/actions/runs/34597664699)
+[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
 completed successfully for evidence snapshot
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. All 20/20 jobs passed, including
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. All 20/20 jobs passed, including
 native Linux/macOS/Windows tests, six native artifact smoke targets, three
 soak targets, fuzz, cross-builds, reproducible release binaries, security
 analysis, dependency policy, and retained scenario/performance artifacts.
@@ -56,8 +56,8 @@ command output, and redacted artifact links for each item:
 5. Run the deterministic test-floor command from
    [CI](../.github/workflows/ci.yml) and attach the count.
 6. [Recorded] The native Linux, macOS, and Windows matrix passed in the
-   [exact-snapshot CI run 34597664699](https://github.com/udayvarmora07/autogit/actions/runs/34597664699),
-   against `de78567`, including benchmark, p95-gate,
+   [exact-snapshot CI run 34600488282](https://github.com/udayvarmora07/autogit/actions/runs/34600488282),
+   against `16c6325`, including benchmark, p95-gate,
    build, artifact-smoke, and scenario steps. Cross-build output alone is not
    native evidence.
 7. The same run passed the native p95 gates. Retain the run logs with the

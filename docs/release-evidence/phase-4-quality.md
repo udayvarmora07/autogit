@@ -55,7 +55,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`. Its ten local suite results use
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`. Its ten local suite results use
 the deterministic 100,000-input fuzz floor for all 10 targets while retaining
 the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -66,14 +66,14 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The latest exact-snapshot full hosted CI dispatch `34597664699` passed all
+The latest exact-snapshot full hosted CI dispatch `34600488282` passed all
 20/20 jobs against
-`de78567ed2991fcaad917189e0cfb8348e9ff6de`:
+`16c6325952b7937cdf8333b12cc7de0189b91f2b`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-push-triggered core run `34593256987` and security run `34593257121` also passed
+push-triggered core run `34600109706` and security run `34600109672` also passed
 against the same exact SHA. The hosted compatibility-window review
 `34590952233` remains historical evidence for the preceding snapshot; the
 current local compatibility suite passed in the manifest. `tag_verified` remains false because this is
