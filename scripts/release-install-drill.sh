@@ -151,7 +151,7 @@ move_windows_binary() {
   fi
   AUTOGIT_MOVE_SOURCE="$source_windows" AUTOGIT_MOVE_DEST="$destination_windows" \
     "$powershell" -NoLogo -NoProfile -NonInteractive -Command \
-    '$ErrorActionPreference = "Stop"; [System.IO.File]::Move($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST)'
+    '$ErrorActionPreference = "Stop"; if ([System.IO.File]::Exists($env:AUTOGIT_MOVE_DEST)) { [System.IO.File]::Replace($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST, $null, $true) } else { [System.IO.File]::Move($env:AUTOGIT_MOVE_SOURCE, $env:AUTOGIT_MOVE_DEST) }'
 }
 
 install_atomic() {
