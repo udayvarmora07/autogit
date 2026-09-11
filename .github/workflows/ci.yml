@@ -166,6 +166,36 @@ jobs:
         with:
           name: native-artifact-scenario-trace-${{ matrix.os }}
           path: ${{ runner.temp }}/autogit-scenario-*.json
+      - name: native raw-binary install lifecycle drill
+        shell: bash
+        env:
+          AUTOGIT_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          previous_dir="$RUNNER_TEMP/autogit-install-previous"
+          candidate_dir="$RUNNER_TEMP/autogit-install-candidate"
+          mkdir -p "$previous_dir" "$candidate_dir"
+          commit="$(git rev-parse HEAD)"
+          AUTOGIT_VERSION=drill-previous AUTOGIT_COMMIT="$commit" \
+            bash scripts/release-build.sh --target "$AUTOGIT_TARGET" --output "$previous_dir"
+          AUTOGIT_VERSION=drill-candidate AUTOGIT_COMMIT="$commit" \
+            bash scripts/release-build.sh --target "$AUTOGIT_TARGET" --output "$candidate_dir"
+          binary="autogit-${AUTOGIT_TARGET/\//-}"
+          if [[ "$AUTOGIT_TARGET" == windows/* ]]; then
+            binary+=".exe"
+          fi
+          evidence="$RUNNER_TEMP/autogit-install-drill-${AUTOGIT_TARGET//\//-}.json"
+          bash scripts/release-install-drill.sh \
+            --previous "$previous_dir/$binary" \
+            --candidate "$candidate_dir/$binary" \
+            --output "$evidence"
+          python3 -m json.tool "$evidence" >/dev/null
+      - name: retain native install lifecycle evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-install-drill-${{ matrix.os }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/autogit-install-drill-*.json
 
   presubmit:
     name: presubmit / bounded feedback

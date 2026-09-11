@@ -44,3 +44,9 @@ rollback preservation, uninstall, and path-redaction assertions.
 The `release` test suite also runs the drill against two freshly built Linux
 amd64 candidates, so the release path exercises the same local lifecycle
 contract before hosted/native acceptance is considered.
+
+The scheduled/manual native-artifact matrix runs the same drill for all six
+supported targets (Linux, macOS, and Windows amd64/arm64) and retains one
+redacted JSON evidence artifact per native runner. This validates the raw-binary
+lifecycle on each claimed host; package channels, clean-machine installation,
+and signed-release identity review remain separate acceptance requirements.
