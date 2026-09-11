@@ -78,18 +78,21 @@ candidate_version="$(version_of "$candidate")"
 previous_checksum="$(sha256_file "$previous")"
 candidate_checksum="$(sha256_file "$candidate")"
 
-root="$(mktemp -d "${TMPDIR:-/tmp}/autogit-install-drill.XXXXXX")"
-temporary_output=""
-trap 'rm -rf "$root" "$temporary_output"' EXIT
-bin_dir="$root/bin"
-installed="$bin_dir/autogit"
-
 is_windows_shell() {
   case "$(uname -s 2>/dev/null || true)" in
     MINGW*|MSYS*|CYGWIN*) return 0 ;;
     *) return 1 ;;
   esac
 }
+
+root="$(mktemp -d "${TMPDIR:-/tmp}/autogit-install-drill.XXXXXX")"
+temporary_output=""
+trap 'rm -rf "$root" "$temporary_output"' EXIT
+bin_dir="$root/bin"
+installed="$bin_dir/autogit"
+if is_windows_shell; then
+  installed+=".exe"
+fi
 
 mkdir "$bin_dir"
 if ! is_windows_shell; then
@@ -101,7 +104,9 @@ install_atomic() {
   local staged="$bin_dir/autogit.new"
   [[ ! -e "$staged" && ! -L "$staged" ]] || { echo "stale staged binary exists" >&2; return 1; }
   if is_windows_shell; then
-    install "$source" "$staged"
+    dd if="$source" of="$staged" bs=4M status=none
+    chmod 0755 "$staged" 2>/dev/null || true
+    cmp -- "$source" "$staged" || { echo "staged binary differs from source" >&2; return 1; }
   else
     install -m 0755 "$source" "$staged"
     chmod 0755 "$staged"
