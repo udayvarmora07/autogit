@@ -115,9 +115,13 @@ current release-blocking gaps are:
    requires an exact tagged hosted run, release-environment review, consumer
    verification of the resulting attestations, retained independent-runner
    comparison evidence, package-channel demand/native install evidence, and a
-   named rollback/disclosure review. The raw-binary lifecycle drill is now
-   retained in `phase-5-install-drill.md` but does not replace those native
-   package and clean-machine checks.
+   named rollback/disclosure review. The tag-gated path now derives deterministic
+   Homebrew and Scoop metadata from the exact six-binary checksum manifest and
+   the publication runner regenerates and byte-compares both files before
+   attaching them to the GitHub Release. This prepares the channel artifacts;
+   it does not replace package-repository publication or native clean-machine
+   checks. The raw-binary lifecycle drill is retained in
+   `phase-5-install-drill.md` but does not replace those native package checks.
 6. P5-01 and P5-02 still require explicit product/maintainer review, including
    the security contact/support decision, automated dependency-update review,
    and documented approval of any policy exceptions.

@@ -177,6 +177,12 @@ func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T)
 		"generate exact-tag machine evidence",
 		"--require-tag",
 		"autogit.release-evidence.json",
+		"generate package channel metadata",
+		"scripts/generate-package-metadata.sh",
+		"package-metadata/autogit.rb",
+		"package-metadata/autogit.json",
+		"cmp release-bundle/package-metadata/autogit.rb",
+		"cmp release-bundle/package-metadata/autogit.json",
 		"attestations: read",
 		"artifact-metadata: read",
 		"test \"$(git rev-parse HEAD)\" = \"$RELEASE_SHA\"",
@@ -278,6 +284,138 @@ func TestReleaseInstallDrillCoversNativeBinaryLifecycle(t *testing.T) {
 	}
 	if bytes.Contains(data, []byte(root)) {
 		t.Fatalf("install evidence leaked a local path: %s", data)
+	}
+}
+
+func TestPackageMetadataGeneratorUsesReleaseManifest(t *testing.T) {
+	dist := filepath.Join(t.TempDir(), "dist")
+	if err := os.Mkdir(dist, 0700); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{
+		"autogit-linux-amd64",
+		"autogit-linux-arm64",
+		"autogit-darwin-amd64",
+		"autogit-darwin-arm64",
+		"autogit-windows-amd64.exe",
+		"autogit-windows-arm64.exe",
+	}
+	checksums := make(map[string]string, len(names))
+	var manifest strings.Builder
+	for _, name := range names {
+		content := []byte("fixture binary: " + name)
+		if err := os.WriteFile(filepath.Join(dist, name), content, 0700); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(content)
+		checksums[name] = fmt.Sprintf("%x", sum)
+		manifest.WriteString(fmt.Sprintf("%s  %s\n", checksums[name], name))
+	}
+	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(manifest.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	metadata := filepath.Join(t.TempDir(), "package-metadata")
+	output, err := runShellScript(t, nil, "generate-package-metadata.sh",
+		"--version", "v1.2.3",
+		"--repo", "owner/repo",
+		"--directory", dist,
+		"--output", metadata,
+	)
+	if err != nil || len(output) != 0 {
+		t.Fatalf("package metadata result=%v output=%s", err, output)
+	}
+	entries, err := os.ReadDir(metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("package metadata entries=%d, want 2", len(entries))
+	}
+	formula, err := os.ReadFile(filepath.Join(metadata, "autogit.rb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formulaText := string(formula)
+	for _, required := range []string{
+		"class Autogit < Formula",
+		"version \"1.2.3\"",
+		"https://github.com/owner/repo/releases/download/v1.2.3/autogit-linux-amd64",
+		"https://github.com/owner/repo/releases/download/v1.2.3/autogit-darwin-arm64",
+		"sha256 \"" + checksums["autogit-linux-amd64"] + "\"",
+		"sha256 \"" + checksums["autogit-darwin-arm64"] + "\"",
+		"bin.install \"autogit-darwin-arm64\" => \"autogit\"",
+	} {
+		if !strings.Contains(formulaText, required) {
+			t.Fatalf("Homebrew formula is missing %q: %s", required, formulaText)
+		}
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(metadata, "autogit.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scoop struct {
+		Version      string `json:"version"`
+		Homepage     string `json:"homepage"`
+		License      string `json:"license"`
+		Architecture map[string]struct {
+			URL  string     `json:"url"`
+			Hash string     `json:"hash"`
+			Bin  [][]string `json:"bin"`
+		} `json:"architecture"`
+	}
+	if err := json.Unmarshal(manifestData, &scoop); err != nil {
+		t.Fatalf("Scoop manifest JSON: %v", err)
+	}
+	if scoop.Version != "1.2.3" || scoop.Homepage != "https://github.com/owner/repo" || scoop.License != "Apache-2.0" {
+		t.Fatalf("Scoop metadata identity=%+v", scoop)
+	}
+	for architecture, name := range map[string]string{
+		"64bit": "autogit-windows-amd64.exe",
+		"arm64": "autogit-windows-arm64.exe",
+	} {
+		entry, ok := scoop.Architecture[architecture]
+		if !ok || entry.Hash != checksums[name] || !strings.Contains(entry.URL, "/"+name) || len(entry.Bin) != 1 || len(entry.Bin[0]) != 2 || entry.Bin[0][0] != name || entry.Bin[0][1] != "autogit" {
+			t.Fatalf("Scoop %s metadata=%+v", architecture, entry)
+		}
+	}
+	if bytes.Contains(formula, []byte(filepath.Dir(dist))) || bytes.Contains(manifestData, []byte(filepath.Dir(dist))) {
+		t.Fatal("package metadata leaked a local path")
+	}
+
+	output, err = runShellScript(t, nil, "generate-package-metadata.sh",
+		"--version", "v1.2.3",
+		"--repo", "owner/repo",
+		"--directory", dist,
+		"--output", metadata,
+	)
+	if err == nil || !bytes.Contains(output, []byte("output already exists")) {
+		t.Fatalf("metadata overwrite result=%v output=%s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(dist, names[0]), []byte("tampered binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	output, err = runShellScript(t, nil, "generate-package-metadata.sh",
+		"--version", "v1.2.3",
+		"--repo", "owner/repo",
+		"--directory", dist,
+		"--output", filepath.Join(t.TempDir(), "tampered-metadata"),
+	)
+	if err == nil || !bytes.Contains(output, []byte("checksum mismatch for "+names[0])) {
+		t.Fatalf("metadata checksum result=%v output=%s", err, output)
+	}
+}
+
+func TestPackageMetadataGeneratorRejectsInvalidTag(t *testing.T) {
+	output, err := runShellScript(t, nil, "generate-package-metadata.sh",
+		"--version", "release-1.2.3",
+		"--repo", "owner/repo",
+		"--directory", t.TempDir(),
+		"--output", filepath.Join(t.TempDir(), "package-metadata"),
+	)
+	if err == nil || !bytes.Contains(output, []byte("exact vMAJOR.MINOR.PATCH tag")) {
+		t.Fatalf("invalid tag result=%v output=%s", err, output)
 	}
 }
 

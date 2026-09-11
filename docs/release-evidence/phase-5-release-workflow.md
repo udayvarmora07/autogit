@@ -18,7 +18,8 @@ Status: local implementation slices present; exact-tag hosted acceptance remains
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
 | Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe, incomplete, or unexpectedly expanded bundles, verifies checksums for all six binaries, both SBOMs, the exact-tag machine-evidence manifest, and vulnerability reports, then verifies binary provenance plus SPDX and CycloneDX predicates against a release binary with the exact repository, workflow, tag, source commit, and hosted-runner requirement. The release workflow runs this verifier after all attestations and before final evidence upload. |
-| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS`, the embedded tag/commit identity, and all required provenance/SBOM predicates on the publication runner, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` plus read-only attestation metadata only on this final job; package channels remain deferred until demand and native install evidence exist. |
+| Package-channel metadata | `scripts/generate-package-metadata.sh` validates the exact semver tag, six binary files, and their entries in `SHA256SUMS`, then emits deterministic Homebrew and Scoop metadata with release URLs and digests. The publication runner regenerates both files from the downloaded bundle and requires byte-for-byte equality before attaching them to the release. Package-repository publication and native clean-machine package tests remain open. |
+| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS`, the embedded tag/commit identity, all required provenance/SBOM predicates, and package metadata on the publication runner, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` plus read-only attestation metadata only on this final job; package channels remain deferred until demand and native install evidence exist. |
 
 ## Local verification
 
@@ -33,6 +34,11 @@ bash scripts/check-dependencies.sh
 go test ./scripts -run TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication
 git diff --check
 ```
+
+The package metadata generator is covered by `scripts` tests using a complete
+synthetic six-binary release directory. The test parses the generated Scoop
+manifest, checks Homebrew URLs and digests, rejects invalid tags, and rejects
+output-directory reuse without contacting GitHub or a package repository.
 
 After an authorized hosted release, consumers can run:
 
@@ -55,7 +61,9 @@ workflow and the protected `release-publish` environment is approved.
 ## Acceptance boundary
 
 No release tag was created during this implementation. Consequently there is
-no hosted attestation, no release-environment approval record, and no consumer
-verification result yet. P5-03/P5-05 remain unchecked in the tracker until an
-authorized release owner runs an exact tag, verifies the independent-runner
-comparison, and checks the hosted bundles.
+no hosted attestation, no release-environment approval record, no package
+repository publication, and no consumer verification result yet. P5-03/P5-05
+remain unchecked in the tracker until an authorized release owner runs an exact
+tag, verifies the independent-runner comparison, and checks the hosted bundles;
+P5-06 additionally requires package-channel demand and native clean-machine
+install evidence.

@@ -18,8 +18,9 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
   a protected GitHub Release publication slice for P5-06, and the P5-07
-  rollback/disclosure drill, plus hosted macOS Bash portability and
-  deterministic fuzz-floor fixes.
+  rollback/disclosure drill, plus deterministic Homebrew/Scoop metadata
+  generation and hosted macOS Bash portability and deterministic fuzz-floor
+  fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
   independent substeps. P4-01, P4-02, P4-04, P4-05, P4-06, P4-07, P5-01, and P5-02 are
   accepted for the bounded private-alpha scope under the documented owner-
@@ -41,8 +42,11 @@ compatibility expiry automation, machine-readable evidence, governance files,
 and dependency/security workflows. The tag-gated release workflow now adds
 exact identity checks, SPDX/CycloneDX SBOM and binary-vulnerability evidence, keyless
 attestations, and an Ubuntu/macOS byte-for-byte reproducibility comparison.
+It also derives Homebrew and Scoop metadata from the exact release checksum
+manifest and compares regenerated metadata on the protected publication runner.
 The consumer verifier binds checksums to the exact workflow, tag, and source
-commit. That is implementation progress, not release acceptance.
+commit. That is implementation progress, not release acceptance; package
+repository publication and native clean-machine package tests remain open.
 
 The package-by-package reconciliation is recorded in the [Phase 4/5
 acceptance matrix](release-evidence/phase-4-5-acceptance-matrix.md). It keeps
@@ -86,7 +90,8 @@ remaining P4 rows.
 5. Handle the remaining external gates separately: exact release tag and
    release-environment approval, hosted attestation and independent-runner
    verification, provider/App permission review, named security/release
-   review, native install/rollback tests, and alpha
+   review, package-channel demand and publication, native install/rollback
+   tests, and alpha
    backup/restore/reconciliation/rollback drills.
 6. Report any gate that cannot be completed with the exact missing authority,
    credential, platform, reviewer, or external event. Do not loop indefinitely

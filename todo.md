@@ -298,7 +298,9 @@ named-review requirements are executed and reviewed.
   winget/Scoop channels according to demonstrated platform demand. Evidence:
   [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md)
   now re-verifies the downloaded attested bundle on the protected publication
-  runner; package channels and native clean-machine install evidence remain open.
+  runner and regenerates byte-identical Homebrew/Scoop metadata from
+  `SHA256SUMS`; package-repository publication and native clean-machine install
+  evidence remain open.
 - [ ] P5-07 Test native install, upgrade, downgrade, uninstall, checksum,
   signature, and rollback paths. Local raw-binary lifecycle evidence:
   [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md); exact-source hosted run `34604368677` passed the six-target raw-binary drill; package-channel, clean-machine, and signed-release checks remain open.

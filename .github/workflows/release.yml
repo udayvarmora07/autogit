@@ -295,6 +295,22 @@ jobs:
           set -euo pipefail
           (cd dist && sha256sum autogit-* autogit.spdx.json autogit.cyclonedx.json autogit.release-evidence.json | LC_ALL=C sort -k2,2 > SHA256SUMS)
           (cd dist && sha256sum -c SHA256SUMS)
+      - name: generate package channel metadata
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test ! -e package-metadata
+          bash scripts/generate-package-metadata.sh \
+            --version "$RELEASE_TAG" \
+            --repo "$RELEASE_REPOSITORY" \
+            --directory dist \
+            --output package-metadata
+          test -f package-metadata/autogit.rb
+          test -f package-metadata/autogit.json
+          python3 -m json.tool package-metadata/autogit.json >/dev/null
       - name: attest SLSA provenance and checksums
         id: provenance
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
@@ -332,6 +348,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist
+            package-metadata
             ${{ steps.provenance.outputs.bundle-path }}
             ${{ steps.sbom_spdx.outputs.bundle-path }}
             ${{ steps.sbom_cyclonedx.outputs.bundle-path }}
@@ -378,6 +395,16 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_SHA"
+          test -f release-bundle/package-metadata/autogit.rb
+          test -f release-bundle/package-metadata/autogit.json
+          metadata_verify="$RUNNER_TEMP/autogit-package-metadata-verify"
+          bash scripts/generate-package-metadata.sh \
+            --version "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --directory release-bundle/dist \
+            --output "$metadata_verify"
+          cmp release-bundle/package-metadata/autogit.rb "$metadata_verify/autogit.rb"
+          cmp release-bundle/package-metadata/autogit.json "$metadata_verify/autogit.json"
       - name: publish verified GitHub Release
         shell: bash
         env:
@@ -395,4 +422,6 @@ jobs:
             release-bundle/dist/autogit.spdx.json \
             release-bundle/dist/autogit.cyclonedx.json \
             release-bundle/dist/autogit.release-evidence.json \
-            release-bundle/dist/SHA256SUMS
+            release-bundle/dist/SHA256SUMS \
+            release-bundle/package-metadata/autogit.rb \
+            release-bundle/package-metadata/autogit.json
