@@ -1,9 +1,9 @@
 {
   "schema_version": "autogit.release-evidence/1",
-  "commit": "97ea27f23359db321b2654a9628b0e78310a4ea6",
+  "commit": "de78567ed2991fcaad917189e0cfb8348e9ff6de",
   "tag_verified": false,
   "working_tree": "clean",
-  "generated_at": "2026-09-11T10:28:23.49074972Z",
+  "generated_at": "2026-09-11T11:24:02.402703963Z",
   "go_version": "go1.26.8",
   "platform": "linux/amd64",
   "suites": [
@@ -51,33 +51,33 @@
   "artifacts": [
     {
       "name": "autogit-darwin-amd64",
-      "sha256": "be3494e2b9eb5c3c3b4b33c8f6831463a0bcf8b36043bfbf3ca1adc30a82b22c",
-      "size": 15970848
+      "sha256": "046d40c93a9a9d30e0a8080e0417582c943ecd2e1aad9e8612488879c5bce3ff",
+      "size": 16002432
     },
     {
       "name": "autogit-darwin-arm64",
-      "sha256": "a529a7f1d0be38d66b2aa6778fc4316ce0c145c6ba5d5220d377855aa1c5dafb",
-      "size": 15338738
+      "sha256": "ca1d9dc47d601e581e0aa92dd208698416282b6a4d26690de75c99cd2a632e46",
+      "size": 15358194
     },
     {
       "name": "autogit-linux-amd64",
-      "sha256": "517de31d82a97dd1a149622770ade60c2daf8d3bbe366f136bb150878749cdfe",
-      "size": 15730644
+      "sha256": "3275e8ca2ca84be56866f9c651f6892a732af7e7d97e31d017172c1195922efd",
+      "size": 15736040
     },
     {
       "name": "autogit-linux-arm64",
-      "sha256": "dd93debb3e1dd0f288e98abd9e0f04f0c56f2110221dbedca7684b83460d2cdd",
-      "size": 15007032
+      "sha256": "1dab356afb3fea964b5f58e1f9e3dda03dde6fb9386d2a9b51f72f376ce5c1bc",
+      "size": 15008444
     },
     {
       "name": "autogit-windows-amd64.exe",
-      "sha256": "4ff3fac0746e53f09e7c803a0d1b7f137548220feef774bb30c25cb1f09dceac",
-      "size": 16147968
+      "sha256": "a0c73bba8fcbccb128cedcbc1fc8999affa2f7c3dc2390d38ef7ff609fb8e712",
+      "size": 16174080
     },
     {
       "name": "autogit-windows-arm64.exe",
-      "sha256": "1297b0594c7f0d9495479d1acfcf1c294543108370a9016b175c324a6f1a9d0a",
-      "size": 15163904
+      "sha256": "37c7152de1bf8e62dc44105428864ba697593778ea7fc4a7957f92c6bafef7e7",
+      "size": 15185408
     }
   ],
   "controls": [

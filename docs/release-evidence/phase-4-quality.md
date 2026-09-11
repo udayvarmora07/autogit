@@ -55,7 +55,7 @@ git diff --check
 
 The checked-in JSON manifest records a clean collection performed at evidence
 snapshot commit
-`97ea27f23359db321b2654a9628b0e78310a4ea6`. Its ten local suite results use
+`de78567ed2991fcaad917189e0cfb8348e9ff6de`. Its ten local suite results use
 the deterministic 100,000-input fuzz floor for all 10 targets while retaining
 the 1,000-schedule
 Linux soak matrix, six freshly built cross-target artifact hashes, Linux/amd64
@@ -66,16 +66,17 @@ second steady-state benchmark windows and preserves the configured p95 limits;
 Windows hosted jobs collect four independent attempts for transient scheduler
 tails.
 
-The latest exact-snapshot full hosted CI dispatch `34589870316` passed all
+The latest exact-snapshot full hosted CI dispatch `34597664699` passed all
 20/20 jobs against
-`97ea27f23359db321b2654a9628b0e78310a4ea6`:
+`de78567ed2991fcaad917189e0cfb8348e9ff6de`:
 presubmit, native Linux/macOS/Windows tests, six native artifact targets,
 three soak targets, fuzz, three cross-builds, reproducible release binaries,
 security analysis, and the retained scenario/performance checks. It retained
 the native scenario traces and performance artifacts for the exact SHA. The
-push-triggered core run `34588904458` and security run `34588904440` also passed
+push-triggered core run `34593256987` and security run `34593257121` also passed
 against the same exact SHA. The hosted compatibility-window review
-`34590952233` passed at the same exact SHA. `tag_verified` remains false because this is
+`34590952233` remains historical evidence for the preceding snapshot; the
+current local compatibility suite passed in the manifest. `tag_verified` remains false because this is
 implementation evidence, not release-tag approval. The private canary
 dispatch `34324968472` was an earlier `1ec8c39` attempt and stopped at
 authentication: the dedicated `AUTOGIT_CANARY_TOKEN` secret was empty, so the
