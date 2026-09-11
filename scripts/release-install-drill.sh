@@ -100,8 +100,10 @@ install_atomic() {
   local source=$1
   local staged="$bin_dir/autogit.new"
   [[ ! -e "$staged" && ! -L "$staged" ]] || { echo "stale staged binary exists" >&2; return 1; }
-  cp -- "$source" "$staged"
-  if ! is_windows_shell; then
+  if is_windows_shell; then
+    install "$source" "$staged"
+  else
+    install -m 0755 "$source" "$staged"
     chmod 0755 "$staged"
   fi
   mv "$staged" "$installed"
