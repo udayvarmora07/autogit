@@ -99,12 +99,32 @@ if ! is_windows_shell; then
   chmod 0700 "$bin_dir"
 fi
 
+copy_windows_binary() {
+  local source=$1
+  local destination=$2
+  local source_windows destination_windows powershell
+  command -v cygpath >/dev/null 2>&1 || { echo "cygpath is required for Windows binary installation" >&2; return 1; }
+  source_windows="$(cygpath -w "$source")"
+  destination_windows="$(cygpath -w "$destination")"
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell=powershell.exe
+  elif command -v pwsh >/dev/null 2>&1; then
+    powershell=pwsh
+  else
+    echo "PowerShell is required for Windows binary installation" >&2
+    return 1
+  fi
+  AUTOGIT_COPY_SOURCE="$source_windows" AUTOGIT_COPY_DEST="$destination_windows" \
+    "$powershell" -NoLogo -NoProfile -NonInteractive -Command \
+    '$ErrorActionPreference = "Stop"; [System.IO.File]::Copy($env:AUTOGIT_COPY_SOURCE, $env:AUTOGIT_COPY_DEST, $false)'
+}
+
 install_atomic() {
   local source=$1
   local staged="$bin_dir/autogit.new"
   [[ ! -e "$staged" && ! -L "$staged" ]] || { echo "stale staged binary exists" >&2; return 1; }
   if is_windows_shell; then
-    dd if="$source" of="$staged" bs=4M status=none
+    copy_windows_binary "$source" "$staged"
     chmod 0755 "$staged" 2>/dev/null || true
     cmp -- "$source" "$staged" || { echo "staged binary differs from source" >&2; return 1; }
   else
