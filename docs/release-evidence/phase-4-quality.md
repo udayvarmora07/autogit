@@ -76,6 +76,14 @@ implementation evidence with `tag_verified: false`; it does not satisfy the exac
 attestation, independent-runner, package-channel, native clean-machine, or
 named-review gates.
 
+The subsequent manual full matrix `34627202246` passed all 20/20 jobs against
+current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a documentation-only
+descendant of the evidence snapshot. It retained native Linux/macOS/Windows
+checks, all six native artifact lifecycle drills, fuzz, soak, reproducibility,
+security, and dependency-policy results. This strengthens the current-tree
+validation for the Phase 0, Phase 1, and P4-03 gate reviews without changing
+the generated manifest identity or the remaining acceptance boundary.
+
 The earlier exact-snapshot full hosted CI dispatch `34600488282` passed all
 20/20 jobs against `16c6325952b7937cdf8333b12cc7de0189b91f2b`. The follow-up
 full dispatch `34603093643` passed all 20/20 jobs against

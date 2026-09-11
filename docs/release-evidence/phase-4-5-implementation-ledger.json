@@ -13,6 +13,12 @@
   ],
   "hosted_evidence": [
     {
+      "run": "34627202246",
+      "commit": "a07fd84cb4b345e4dccdd3f950bd82dd662f5d87",
+      "status": "passed",
+      "scope": "manual 20-job full matrix on current documentation commit: native platform checks, six native artifact lifecycle drills, fuzz, soak, reproducibility, security, and dependency policy"
+    },
+    {
       "run": "34610742466",
       "commit": "06ba87508ff53abc8b0001885e8341b6c07ad27a",
       "status": "passed",

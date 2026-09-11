@@ -80,6 +80,15 @@ package-metadata test. This closes the implementation defect only; P4-03,
 P4-08, P1-04, and the P5 exact-tag, attestation, independent-reproducibility,
 package-channel, native-install, and named-review gates remain open.
 
+The subsequent manual full matrix `34627202246` passed all 20/20 jobs against
+current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a documentation-only
+descendant of the implementation snapshot. It retained native Linux/macOS/
+Windows checks, all six native artifact lifecycle drills, fuzz, soak,
+reproducibility, security, and dependency-policy results. This is stronger
+current-tree validation for the Phase 0, Phase 1, and P4-03 reviews; it does
+not satisfy exact-tag binding, AppContainer enforcement, provider/native
+adapter acceptance, or named review.
+
 ## 1. Executive decision
 
 AutoGit already has an unusually strong safety-oriented foundation: explicit
@@ -103,9 +112,9 @@ current release-blocking gaps are:
    controls without AppContainer, and the macOS
    process-group fallback; trusted verifier evidence binds those observations
    into its digest. The local Linux direct-enforcement and namespace tests pass;
-   the prior exact-source hosted run `34604368677` validates the namespace,
-   job-object, and process-group primitives. AppContainer-specific enforcement,
-   independent attestation, and named
+   the current-tree full matrix `34627202246` validates the Linux namespace and
+   Landlock, Windows job-object, and macOS process-group primitives.
+   AppContainer-specific enforcement, independent attestation, and named
    platform-owner acceptance remain incomplete.
 3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
    named review for the exact alpha-supported client/provider subset. The

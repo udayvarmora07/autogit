@@ -99,6 +99,9 @@ All items are release blockers.
   Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
 - [ ] Phase 0 gate: all analysis/build/test/performance checks pass on native
   Linux, macOS, and Windows with zero unresolved critical/high findings.
+  Evidence: manual full matrix `34627202246` passed all 20 jobs on current
+  HEAD, including native platform, security, and performance checks; named
+  Phase 0 exit acceptance remains outstanding.
 
 ## Phase 1 — trusted local core
 
@@ -123,9 +126,10 @@ All items are release blockers.
   evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md);
   local Linux direct-enforcement and namespace tests now cover the implemented
   Landlock/bubblewrap paths, while exact-source hosted run `34604368677`
-  validates the namespace, Windows job-object, and macOS process-group paths;
-  AppContainer, fresh hosted Landlock evidence, independent attestation, and
-  named review remain open.
+  and current-tree full matrix `34627202246` validate the namespace,
+  Windows job-object, and macOS process-group paths; current-tree hosted
+  Landlock evidence is now retained. AppContainer, independent attestation,
+  and named review remain open.
 - [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
   candidate blobs and reachable history; keep online validation separately
   consented. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
@@ -145,7 +149,9 @@ All items are release blockers.
   filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
-  native platforms.
+  native platforms. Current full matrix `34627202246` passed its native
+  platform checks; the complete Phase 1 exit record and named acceptance remain
+  outstanding.
 
 ## Phase 2 — integrations and provider productization
 
@@ -253,7 +259,7 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
-  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677` and current-tree full matrix `34627202246` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
 - [x] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
   Evidence: [P4-04 fuzz-floor review](docs/acceptance-record.md#p4-04-fuzz-floor-review).
@@ -359,6 +365,15 @@ The P5-03/P5-05
 implementation details and local checks are in
 [phase-5-release-workflow.md](docs/release-evidence/phase-5-release-workflow.md);
 they do not represent hosted signing or cross-runner evidence.
+
+The current-tree manual full matrix `34627202246` passed all 20 jobs against
+`a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, including native Linux/macOS/
+Windows checks, all six native artifact lifecycle drills, fuzz, soak,
+reproducibility, security, and dependency-policy jobs. The commit is a
+documentation-only descendant of the generated evidence snapshot
+`06ba87508ff53abc8b0001885e8341b6c07ad27a`; no acceptance checkbox changes
+follow from this run. Exact-tag binding, AppContainer/native macOS acceptance,
+provider/native adapter evidence, and named review remain external gates.
 
 The 2026-09-11 follow-up fixed the Windows Git Bash package-metadata hashing
 path in `scripts/generate-package-metadata.sh`, using `cygpath` and PowerShell
