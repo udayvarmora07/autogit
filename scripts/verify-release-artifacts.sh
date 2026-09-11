@@ -64,7 +64,7 @@ release_binaries=(
   autogit-windows-amd64.exe
   autogit-windows-arm64.exe
 )
-expected_names=("${release_binaries[@]}" autogit.spdx.json autogit.cyclonedx.json)
+expected_names=("${release_binaries[@]}" autogit.spdx.json autogit.cyclonedx.json autogit.release-evidence.json)
 for binary in "${release_binaries[@]}"; do
   expected_names+=("$binary.govulncheck.txt")
 done

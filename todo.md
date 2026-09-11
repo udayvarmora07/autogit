@@ -264,7 +264,10 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-07 compatibility-window review](docs/acceptance-record.md#p4-07-compatibility-window-review).
 - [ ] P4-08 Publish machine-readable requirement/threat/test evidence for the
   exact tagged commit and artifacts.
-  Evidence: [P4-08 evidence-manifest review](docs/acceptance-record.md#p4-08-evidence-manifest-review); release acceptance still requires an approved exact stable tag and tag-bound artifact evidence.
+  Evidence: [P4-08 evidence-manifest review](docs/acceptance-record.md#p4-08-evidence-manifest-review);
+  the tag workflow now generates and retains `autogit.release-evidence.json`
+  beside the attested bundle, but release acceptance still requires an
+  approved exact stable tag and completed tag-bound run.
 
 ## Phase 5 — supply chain, governance, and distribution
 

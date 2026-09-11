@@ -163,6 +163,9 @@ func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T)
 	for _, required := range []string{
 		"sbom-path: dist/autogit.spdx.json",
 		"sbom-path: dist/autogit.cyclonedx.json",
+		"generate exact-tag machine evidence",
+		"--require-tag",
+		"autogit.release-evidence.json",
 		"attestations: read",
 		"artifact-metadata: read",
 		"test \"$(git rev-parse HEAD)\" = \"$RELEASE_SHA\"",
@@ -276,6 +279,7 @@ var releaseEvidenceNames = []string{
 	"autogit-windows-arm64.exe",
 	"autogit.spdx.json",
 	"autogit.cyclonedx.json",
+	"autogit.release-evidence.json",
 	"autogit-linux-amd64.govulncheck.txt",
 	"autogit-linux-arm64.govulncheck.txt",
 	"autogit-darwin-amd64.govulncheck.txt",

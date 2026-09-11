@@ -84,8 +84,8 @@ func TestTrustedRegistryRecordsAchievedProcessBoundedTier(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	wantPrimitive := map[string]string{
-		"linux":  "process-group+prlimit",
-		"darwin": "process-group",
+		"linux":   "process-group+prlimit",
+		"darwin":  "process-group",
 		"windows": "job-object",
 	}[runtime.GOOS]
 	if wantPrimitive == "" {

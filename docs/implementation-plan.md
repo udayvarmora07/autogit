@@ -74,7 +74,10 @@ current release-blocking gaps are:
    historical provider canary is retained, but the current dedicated-token
    canary path has not completed for the evidence snapshot.
 4. P4-08 has implementation evidence but no exact release tag: the checked-in
-   manifest deliberately has `tag_verified: false` and is snapshot-bound.
+   manifest deliberately has `tag_verified: false` and is snapshot-bound. The
+   tag-gated workflow now generates a separate exact-tag manifest and carries
+   it into the attested release bundle; that path remains unexecuted until an
+   approved stable tag exists.
 5. P5-03 through P5-05 now have a local implementation in
    `.github/workflows/release.yml` and `cmd/autogit-sbom` (including SPDX and
    CycloneDX SBOM generation); the workflow also

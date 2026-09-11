@@ -15,7 +15,7 @@ jobs:
   quality:
     name: release quality gates
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -36,6 +36,11 @@ jobs:
           test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
           test "$(git describe --exact-match --tags HEAD)" = "$RELEASE_TAG"
           test -z "$(git status --porcelain=v1)"
+          {
+            echo "AUTOGIT_VERSION=$RELEASE_TAG"
+            echo "AUTOGIT_COMMIT=$RELEASE_SHA"
+            echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)"
+          } >> "$GITHUB_ENV"
       - name: deterministic and race tests
         shell: bash
         run: |
@@ -56,6 +61,27 @@ jobs:
           set -euo pipefail
           bash scripts/check-shell.sh
           bash scripts/check-dependencies.sh
+      - name: generate exact-tag machine evidence
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/autogit-release-evidence.json"
+          bash scripts/generate-evidence.sh \
+            --full \
+            --tag "$RELEASE_TAG" \
+            --require-tag \
+            --output "$evidence"
+          test -s "$evidence"
+          grep -Eq '"tag_verified": true' "$evidence"
+      - name: retain exact-tag machine evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-machine-evidence
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/autogit-release-evidence.json
 
   reproducibility:
     name: reproducibility / ${{ matrix.label }}
@@ -187,6 +213,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: download exact-tag machine evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: autogit-${{ github.ref_name }}-machine-evidence
+          path: release-evidence
       - name: verify exact release identity
         shell: bash
         env:
@@ -209,6 +240,8 @@ jobs:
           set -euo pipefail
           test ! -e dist
           bash scripts/release-build.sh --output dist
+          test -f release-evidence/autogit-release-evidence.json
+          cp --no-clobber release-evidence/autogit-release-evidence.json dist/autogit.release-evidence.json
           bash scripts/artifact-smoke.sh --directory dist
           version_output="$(dist/autogit-linux-amd64 version)"
           grep -Eq '"version":"'"${AUTOGIT_VERSION}"'"' <<<"$version_output"
@@ -260,7 +293,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd dist && sha256sum autogit-* autogit.spdx.json autogit.cyclonedx.json | LC_ALL=C sort -k2,2 > SHA256SUMS)
+          (cd dist && sha256sum autogit-* autogit.spdx.json autogit.cyclonedx.json autogit.release-evidence.json | LC_ALL=C sort -k2,2 > SHA256SUMS)
           (cd dist && sha256sum -c SHA256SUMS)
       - name: attest SLSA provenance and checksums
         id: provenance
@@ -361,4 +394,5 @@ jobs:
             release-bundle/dist/autogit-* \
             release-bundle/dist/autogit.spdx.json \
             release-bundle/dist/autogit.cyclonedx.json \
+            release-bundle/dist/autogit.release-evidence.json \
             release-bundle/dist/SHA256SUMS
