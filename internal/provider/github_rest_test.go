@@ -264,6 +264,37 @@ func TestGitHubRESTConfirmsEmptyRepositoryAsMissing(t *testing.T) {
 	}
 }
 
+func TestGitHubRESTConfirmPushRetriesTransientEmptyRepository(t *testing.T) {
+	sha := strings.Repeat("e", 40)
+	var reads atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/repo/git/ref/heads/main" {
+			http.NotFound(w, r)
+			return
+		}
+		if reads.Add(1) < 3 {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"Git Repository is empty."}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"object":{"sha":"` + sha + `"}}`))
+	}))
+	defer server.Close()
+	provider, err := NewGitHubREST(restTestConfig(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := provider.ConfirmPush(context.Background(), PushRequest{
+		Owner: "acme", Name: "repo", Ref: "main", SHA: sha,
+	})
+	if err != nil || outcome != PushPresent {
+		t.Fatalf("outcome=%q err=%v, want present after bounded retry", outcome, err)
+	}
+	if got := reads.Load(); got != 3 {
+		t.Fatalf("ref reads=%d, want 3", got)
+	}
+}
+
 func TestGitHubRESTConditionalReadAndPagination(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

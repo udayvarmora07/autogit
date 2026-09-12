@@ -538,17 +538,42 @@ func (g *GitHubREST) ConfirmPush(ctx context.Context, request PushRequest) (Push
 	if request.Owner != g.identity.Owner || !validRef(request.Ref) || !validSHA(request.SHA) {
 		return "", errors.New("invalid push intent")
 	}
-	actual, err := g.Inspect(ctx, RemoteRequest{Owner: request.Owner, Name: request.Name, Visibility: "private"}, request.Ref)
-	if errors.Is(err, ErrRefAbsent) || errors.Is(err, ErrRepositoryEmpty) {
-		return PushMissing, nil
+	for attempt, delay := range []time.Duration{0, 25 * time.Millisecond, 100 * time.Millisecond} {
+		if delay > 0 {
+			if err := waitForProviderRetry(ctx, delay); err != nil {
+				return "", err
+			}
+		}
+		actual, err := g.Inspect(ctx, RemoteRequest{Owner: request.Owner, Name: request.Name, Visibility: "private"}, request.Ref)
+		if errors.Is(err, ErrRepositoryEmpty) {
+			if attempt < 2 {
+				continue
+			}
+			return PushMissing, nil
+		}
+		if errors.Is(err, ErrRefAbsent) {
+			return PushMissing, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if actual != request.SHA {
+			return PushConflict, nil
+		}
+		return PushPresent, nil
 	}
-	if err != nil {
-		return "", err
+	return PushMissing, nil
+}
+
+func waitForProviderRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	if actual != request.SHA {
-		return PushConflict, nil
-	}
-	return PushPresent, nil
 }
 
 // HostCapability is the result of explicit public/Enterprise server
