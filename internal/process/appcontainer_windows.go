@@ -328,6 +328,17 @@ func appContainerEnvironment(environment []string) ([]uint16, error) {
 		}
 		entries["SYSTEMROOT"] = "SystemRoot=" + systemRoot
 	}
+	if _, present := entries["LOCALAPPDATA"]; !present {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			return nil, errors.New("AppContainer requires the Windows LOCALAPPDATA environment value")
+		}
+		// CreateProcess resolves the AppContainer profile below
+		// %LOCALAPPDATA% while constructing the child token and object
+		// namespace. Keep this host-required value even when callers provide a
+		// deliberately minimal child environment.
+		entries["LOCALAPPDATA"] = "LOCALAPPDATA=" + localAppData
+	}
 	keys := make([]string, 0, len(entries))
 	for key := range entries {
 		keys = append(keys, key)
@@ -410,21 +421,12 @@ func collectAppContainerPaths(command *exec.Cmd, options Options) ([]appContaine
 	if err := add(command.Path, true); err != nil {
 		return nil, err
 	}
-	// Keep the original set separate: add mutates paths, and traversing the
-	// complete ancestor chain is intentional for executables and working
-	// directories below user-controlled temporary roots. These ACEs are
-	// non-inheritable, so granting traversal here cannot recursively change
-	// descendants; the explicit allowlist entries are the only full-access
-	// grants.
-	originalPaths := make([]string, 0, len(paths))
 	for path := range paths {
-		originalPaths = append(originalPaths, path)
-	}
-	for _, path := range originalPaths {
-		for parent := filepath.Dir(path); parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
-			if err := add(parent, false); err != nil {
-				return nil, err
-			}
+		// Windows normally grants AppContainers traversal through the system and
+		// user-profile roots. Only the immediate parent is changed here, which
+		// avoids recursive ACL propagation on broad profile directories.
+		if err := add(filepath.Dir(path), false); err != nil {
+			return nil, err
 		}
 	}
 	result := make([]appContainerPath, 0, len(paths))
