@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,7 +71,7 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if err != nil {
 		t.Fatalf("AppContainer run failed: %v; stdout=%q; stderr=%q", err, result.Stdout, result.Stderr)
 	}
-	if result.ExitCode != 0 || result.Stdout != "APPCONTAINER_PROBE_OK\n" {
+	if result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "APPCONTAINER_PROBE_OK\nPASS" {
 		t.Fatalf("unexpected AppContainer probe result: %+v", result)
 	}
 	if result.IsolationAttestation == nil || !result.IsolationAttestation.IndependentlyObserved() {
