@@ -321,6 +321,13 @@ func appContainerEnvironment(environment []string) ([]uint16, error) {
 		name := entry[:index]
 		entries[strings.ToUpper(name)] = entry
 	}
+	if _, present := entries["SYSTEMROOT"]; !present {
+		systemRoot := os.Getenv("SystemRoot")
+		if systemRoot == "" {
+			return nil, errors.New("AppContainer requires the Windows SystemRoot environment value")
+		}
+		entries["SYSTEMROOT"] = "SystemRoot=" + systemRoot
+	}
 	keys := make([]string, 0, len(entries))
 	for key := range entries {
 		keys = append(keys, key)
@@ -404,12 +411,11 @@ func collectAppContainerPaths(command *exec.Cmd, options Options) ([]appContaine
 		return nil, err
 	}
 	for path := range paths {
-		current := filepath.Dir(path)
-		for current != filepath.Dir(current) {
-			if err := add(current, false); err != nil {
-				return nil, err
-			}
-			current = filepath.Dir(current)
+		// Windows normally grants AppContainers traversal through the system and
+		// user-profile roots. Only the immediate parent is changed here, which
+		// avoids recursive ACL propagation on broad profile directories.
+		if err := add(filepath.Dir(path), false); err != nil {
+			return nil, err
 		}
 	}
 	result := make([]appContainerPath, 0, len(paths))
