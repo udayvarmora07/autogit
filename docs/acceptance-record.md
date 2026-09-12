@@ -25,6 +25,29 @@ The acceptance is limited to the stated baseline. A document or command must
 not infer phase promotion from this record; promotion still requires the
 phase-specific evidence listed in [todo.md](../todo.md).
 
+## Phase 0 exit acceptance
+
+The owner reviewed the Phase 0 exit criteria against implementation source
+`1406352345886c116ba7750369fc3a14df960b63`. The exact-source hosted matrix
+[`34682716776`](https://github.com/udayvarmora07/autogit/actions/runs/34682716776)
+passed all 20 jobs: native Linux, macOS, and Windows checks; six native
+artifact jobs; soak; fuzz; reproducible release binaries; security analysis;
+dependency/workflow policy; and scenario/performance checks. The security
+analysis job passed with no unresolved finding, and the local Phase 0 bundles
+record the static-analysis closure and adversarial test coverage. The current
+`main` descendant `2700db2` contains documentation-only changes after that
+source snapshot; fresh `go test ./...`, `go vet ./...`, and `git diff --check`
+also pass.
+
+Decision: Phase 0 exit accepted for the bounded private-alpha implementation
+scope. This approval does not accept the Phase 1 gate, AppContainer or other
+unimplemented isolation capabilities, native adapter evidence, exact-tag
+release evidence, signed provenance, public beta, or GA.
+
+Accepted by: Uday Varmora (`@udayvarmora07`)
+
+Accepted on: 2026-09-12
+
 ## Private-alpha release-owner exception
 
 For this single-maintainer repository, the owner may serve as the named

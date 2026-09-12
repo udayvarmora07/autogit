@@ -1,7 +1,7 @@
 # AutoGit v1 release and rollback runbook
 
 Status: implementation artifact; alpha/beta approval pending  
-Last updated: 2026-09-11
+Last updated: 2026-09-12
 
 This runbook covers the bounded private-alpha and public-beta gates. It does
 not authorize a live provider run or replace explicit release-owner approval.
@@ -67,18 +67,21 @@ command output, and redacted artifact links for each item:
    `AUTOGIT_CANARY_TOKEN` secret and owner. Confirm generated name, owner,
    visibility, `main` ref, exact commit SHA, and successful cleanup. A personal
    token or ambient `GH_TOKEN` is not acceptable.
-9. Obtain product acceptance of the Phase 0 contract, threat invariants, test
-   traceability, compatibility boundary, and release decision. Record the
-   approver and date in the release record.
+9. The Phase 0 contract, threat invariants, test traceability, and
+   compatibility boundary are accepted in the
+   [Phase 0 acceptance record](acceptance-record.md#phase-0-exit-acceptance).
+   Record any later release decision with its approver and date; that decision
+   is separate from the Phase 0 exit.
 
 A missing, stale, or environment-only artifact leaves its gate open. A green
 local test does not authorize public publication.
 
 ### Gate audit
 
-- Phase 0 remains open: the contract-freeze record is accepted for the
-  implementation baseline, but the native Phase 0 gate and named promotion
-  evidence remain outstanding.
+- Phase 0 exit is accepted for the bounded private-alpha implementation scope
+  in the [acceptance record](acceptance-record.md#phase-0-exit-acceptance),
+  based on exact-source hosted matrix `34682716776`. Phase 1, release, and
+  alpha-promotion gates remain open.
 - The disposable canary remains open: dedicated-token run `34489797141`
   passed against `36c045f`, but it is not current-HEAD evidence. A successful
   run against the intended release snapshot and retained cleanup evidence are

@@ -8,8 +8,8 @@ Acceptance date: 2026-09-07
 Acceptance record: [`acceptance-record.md`](acceptance-record.md)
 
 This record resolves terminology and compatibility assumptions used by the Go
-v1 implementation. It is evidence for Phase 0 review; it does not claim that
-the Phase 0 exit gate or a release phase has passed.
+v1 implementation. It is part of the accepted Phase 0 baseline and exit
+evidence; it does not claim that a release phase has passed.
 
 ## Canonical terminology
 

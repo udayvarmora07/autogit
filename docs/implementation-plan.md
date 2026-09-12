@@ -102,10 +102,12 @@ addresses the SQLite, filesystem, Git, lifecycle, deadline, adapter/provider,
 static-analysis, test-tier, and governance implementation findings. The
 current release-blocking gaps are:
 
-1. Phase 0 and Phase 1 exit evidence is not accepted by named product/security
-   owners; the required native hostile, crash, cancellation, privacy,
-   ownership, and backup/restore matrices are not yet a release-approved
-   record across every claimed platform.
+1. Phase 0 exit is accepted for the bounded private-alpha implementation scope
+   against the exact hosted matrix recorded in `acceptance-record.md`. Phase 1
+   exit evidence is not yet accepted by named product/security owners; the
+   required native hostile, crash, cancellation, privacy, ownership, and
+   backup/restore matrices are not yet a release-approved record across every
+   claimed platform.
 2. The advertised verifier baseline remains process-bounded. The local P1-04
    capability report now distinguishes the achieved Linux
    bubblewrap namespace plus in-process Landlock ruleset, Windows job-object
@@ -229,7 +231,7 @@ Git/provider side effects:
 
 | Area | Existing strength | Material gap | Release posture |
 | --- | --- | --- | --- |
-| Product contract | Detailed requirements, lifecycle, threat model, ADRs, and traceability test | Documents remain proposed and acceptance has no owner/date | Block alpha |
+| Product contract | Detailed requirements, lifecycle, threat model, ADRs, traceability test, and named Phase 0 baseline/exit acceptance | Phase 1 and release-specific acceptance remains open | Block alpha |
 | Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, hardened init/worktree discovery, and HEAD/index rechecks | Native hostile-repository and differential matrices still need Phase 1 exit evidence and named acceptance | Block alpha |
 | Ownership | Source-free baseline evidence, replay deduplication, race checks, rename/delete handling, and fail-closed ambiguity | Native recovery/ownership matrix and release-owner acceptance remain open | Block alpha |
 | Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules, and supported backup/restore/integrity/retention APIs | Native backup/restore/retention runtime matrix and remaining Phase 1 recovery drills | Block alpha |

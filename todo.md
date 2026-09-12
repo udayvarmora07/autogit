@@ -97,12 +97,12 @@ All items are release blockers.
 - [x] P0-10 Reject non-empty/stale release output and inject reproducible
   version, commit, build date, and compatibility identity into binaries.
   Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
-- [ ] Phase 0 gate: all analysis/build/test/performance checks pass on native
+- [x] Phase 0 gate: all analysis/build/test/performance checks pass on native
   Linux, macOS, and Windows with zero unresolved critical/high findings.
   Evidence: exact-SHA manual full matrix `34682716776` passed all 20 jobs on
   `1406352345886c116ba7750369fc3a14df960b63`, including native platform,
-  security, and performance checks; named Phase 0 exit acceptance remains
-  outstanding.
+  security, and performance checks; named exit acceptance is recorded in
+  [acceptance-record.md](docs/acceptance-record.md#phase-0-exit-acceptance).
 
 ## Phase 1 — trusted local core
 
