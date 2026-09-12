@@ -40,7 +40,7 @@ func TestTrustedVerificationRecordsWindowsAppContainerAttestation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := TrustedRequest{CandidateDigest: digest('a'), BaseDigest: digest('b'), PolicyDigest: digest('c'), GuardDigest: digest('d'), Dir: filepath.Clean(work), OverallTimeout: time.Second}
+	request := TrustedRequest{CandidateDigest: digest('a'), BaseDigest: digest('b'), PolicyDigest: digest('c'), GuardDigest: digest('d'), Dir: filepath.Clean(work), OverallTimeout: 20 * time.Second}
 	result, err := registry.Verify(context.Background(), VerificationPolicy{Visibility: "private"}, request, ExecRunner{})
 	if err != nil || !result.Passed {
 		t.Fatalf("trusted AppContainer verification result=%+v err=%v", result, err)

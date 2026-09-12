@@ -410,12 +410,21 @@ func collectAppContainerPaths(command *exec.Cmd, options Options) ([]appContaine
 	if err := add(command.Path, true); err != nil {
 		return nil, err
 	}
+	// Keep the original set separate: add mutates paths, and traversing the
+	// complete ancestor chain is intentional for executables and working
+	// directories below user-controlled temporary roots. These ACEs are
+	// non-inheritable, so granting traversal here cannot recursively change
+	// descendants; the explicit allowlist entries are the only full-access
+	// grants.
+	originalPaths := make([]string, 0, len(paths))
 	for path := range paths {
-		// Windows normally grants AppContainers traversal through the system and
-		// user-profile roots. Only the immediate parent is changed here, which
-		// avoids recursive ACL propagation on broad profile directories.
-		if err := add(filepath.Dir(path), false); err != nil {
-			return nil, err
+		originalPaths = append(originalPaths, path)
+	}
+	for _, path := range originalPaths {
+		for parent := filepath.Dir(path); parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
+			if err := add(parent, false); err != nil {
+				return nil, err
+			}
 		}
 	}
 	result := make([]appContainerPath, 0, len(paths))

@@ -54,7 +54,9 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 		"AUTOGIT_APPCONTAINER_NETWORK=" + listener.Addr().String(),
 		"PATH=" + filepath.Dir(executable),
 	}
-	result, err := Run(context.Background(), Options{
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := Run(ctx, Options{
 		Executable:          executable,
 		Dir:                 filepath.Clean(work),
 		Env:                 env,
