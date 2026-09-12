@@ -478,16 +478,11 @@ func applyAppContainerGrant(path string, full bool, sid *windows.SID) (appContai
 			TrusteeValue: windows.TrusteeValueFromSID(sid),
 		},
 	}
-	oldAbsolute, err := old.ToAbsolute()
-	if err != nil {
-		return appContainerGrant{}, fmt.Errorf("convert DACL for AppContainer path %q to absolute form: %w", path, err)
-	}
-	newDescriptor, err := windows.BuildSecurityDescriptor(nil, nil, []windows.EXPLICIT_ACCESS{entry}, nil, oldAbsolute)
+	newDACL, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{entry}, oldDACL)
 	if err != nil {
 		return appContainerGrant{}, fmt.Errorf("build AppContainer DACL for %q: %w", path, err)
 	}
-	newDACL, _, err := newDescriptor.DACL()
-	if err != nil || newDACL == nil {
+	if newDACL == nil {
 		return appContainerGrant{}, fmt.Errorf("build AppContainer DACL for %q returned no DACL", path)
 	}
 	securityInformation := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION)
