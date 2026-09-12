@@ -43,6 +43,10 @@ func TestIsolationCapabilitiesAreExplicitAndFailClosed(t *testing.T) {
 		if capability.Observations["nested_user_namespaces"] != "disabled-and-asserted" {
 			t.Fatalf("nested user-namespace lockout was not recorded: %+v", capability.Observations)
 		}
+	} else if runtime.GOOS == "windows" && process.AppContainerAvailable() {
+		if !capability.Available || !capability.Enforced || capability.Primitive != "appcontainer+job-object" || capability.Observations["parent_token_attestation"] != "required" {
+			t.Fatalf("Windows AppContainer tier was not advertised with independent attestation: %+v", capability)
+		}
 	} else if _, err := RequireCapability(TierFilesystemNetworkIsolated); err == nil {
 		t.Fatal("unavailable filesystem/network tier accepted")
 	}

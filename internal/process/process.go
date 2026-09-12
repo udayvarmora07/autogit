@@ -36,6 +36,10 @@ type Options struct {
 	// the executable. Paths are canonicalized and must already exist.
 	FilesystemAllowlist []string
 	NetworkDisabled     bool
+	// AppContainer requests the Windows AppContainer launch path. It is only
+	// valid together with an explicit filesystem allowlist and an explicit
+	// environment; Windows AppContainers are network-denied by default.
+	AppContainer bool
 }
 
 // IsolationOptions describes optional OS-level namespace restrictions. An
@@ -43,6 +47,7 @@ type Options struct {
 type IsolationOptions struct {
 	FilesystemAllowlist []string
 	NetworkDisabled     bool
+	AppContainer        bool
 }
 
 // ResourceLimits are best-effort OS-enforced ceilings for a process-bounded
@@ -60,6 +65,9 @@ type Result struct {
 	Stderr    string
 	ExitCode  int
 	Truncated bool
+	// IsolationAttestation is observed by the parent from the child token. It
+	// is populated for AppContainer runs only and is not child-reported data.
+	IsolationAttestation *IsolationAttestation
 }
 
 // ValidateResourceLimits rejects malformed or unrepresentable limits before
@@ -84,7 +92,7 @@ func ValidateResourceLimits(limits ResourceLimits) error {
 	return nil
 }
 
-func Run(ctx context.Context, options Options) (Result, error) {
+func Run(ctx context.Context, options Options) (finalResult Result, finalErr error) {
 	if ctx == nil {
 		return Result{}, errors.New("process context is required")
 	}
@@ -120,7 +128,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if err := prepareSandbox(command, options); err != nil {
 		return Result{}, err
 	}
-	sandboxed := len(options.FilesystemAllowlist) != 0 || options.NetworkDisabled
+	sandboxed := len(options.FilesystemAllowlist) != 0 || options.NetworkDisabled || options.AppContainer
 	stdout := &boundedOutput{max: max}
 	overflow := &outputLimitSignal{ch: make(chan struct{})}
 	stdout.overflow = overflow
@@ -135,18 +143,63 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		return Result{}, err
 	}
 	defer supervisor.Close()
-	if err := command.Start(); err != nil {
-		return Result{}, err
+	var wait func() (*os.ProcessState, error)
+	var appContainer appContainerProcess
+	var attestation *IsolationAttestation
+	if options.AppContainer {
+		appContainer, err = startAppContainer(command, stdout, stderr, options)
+		if err != nil {
+			return Result{}, err
+		}
+		command.Process = appContainer.osProcess()
+		wait = appContainer.wait
+		defer func() {
+			if cleanupErr := appContainer.cleanup(); cleanupErr != nil {
+				finalErr = errors.Join(finalErr, cleanupErr)
+			}
+		}()
+	} else {
+		if err := command.Start(); err != nil {
+			return Result{}, err
+		}
+		wait = func() (*os.ProcessState, error) {
+			err := command.Wait()
+			return command.ProcessState, err
+		}
 	}
 	if err := supervisor.Attach(command); err != nil {
 		_ = supervisor.Terminate(command)
-		_ = command.Wait()
+		if appContainer != nil {
+			_ = appContainer.terminate()
+		}
+		_, _ = wait()
 		return Result{}, err
 	}
 	if !sandboxed {
 		if err := applyResourceLimits(command.Process.Pid, options.Limits); err != nil {
 			_ = supervisor.Terminate(command)
-			_ = command.Wait()
+			if appContainer != nil {
+				_ = appContainer.terminate()
+			}
+			_, _ = wait()
+			return Result{}, err
+		}
+	}
+	if options.AppContainer {
+		observed, err := attestProcess(command.Process, appContainer.expectedPackageSID())
+		if err != nil {
+			_ = supervisor.Terminate(command)
+			if appContainer != nil {
+				_ = appContainer.terminate()
+			}
+			_, _ = wait()
+			return Result{}, err
+		}
+		attestation = &observed
+		if err := appContainer.resume(); err != nil {
+			_ = supervisor.Terminate(command)
+			_ = appContainer.terminate()
+			_, _ = wait()
 			return Result{}, err
 		}
 	}
@@ -163,14 +216,14 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		case <-done:
 		}
 	}()
-	waitErr := command.Wait()
+	processState, waitErr := wait()
 	close(done)
 	<-watcherDone
 	exitCode := 0
-	if command.ProcessState != nil {
-		exitCode = command.ProcessState.ExitCode()
+	if processState != nil {
+		exitCode = processState.ExitCode()
 	}
-	result := Result{Output: string(stdout.bytes), Stdout: string(stdout.bytes), Stderr: string(stderr.bytes), ExitCode: exitCode, Truncated: stdout.truncated || stderr.truncated}
+	result := Result{Output: string(stdout.bytes), Stdout: string(stdout.bytes), Stderr: string(stderr.bytes), ExitCode: exitCode, Truncated: stdout.truncated || stderr.truncated, IsolationAttestation: attestation}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
@@ -181,6 +234,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 }
 
 type boundedOutput struct {
+	mu        sync.Mutex
 	bytes     []byte
 	max       int
 	truncated bool
@@ -199,6 +253,8 @@ func (b *boundedOutput) signalOverflow() {
 }
 
 func (b *boundedOutput) Write(value []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	remaining := b.max - len(b.bytes)
 	if remaining <= 0 {
 		b.truncated = len(value) > 0

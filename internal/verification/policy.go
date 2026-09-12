@@ -238,7 +238,7 @@ type TrustedEvidence struct {
 }
 
 func (e TrustedEvidence) ValidForTrusted(candidate, base, policy, guard, verifierSet string) bool {
-	return e.Passed && e.IsolationTier != "" && e.IsolationPrimitive != "" && e.ExecutableBinding != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
+	return e.Passed && e.IsolationTier != "" && e.IsolationPrimitive != "" && trustedIsolationAttestationValid(e) && e.ExecutableBinding != "" && !e.TimedOut && !e.Cancelled && e.CandidateDigest == candidate && e.BaseDigest == base && e.PolicyDigest == policy && e.GuardDigest == guard && e.VerifierSetDigest == verifierSet
 }
 
 type VerificationResult struct {
@@ -393,6 +393,7 @@ func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedReq
 		var runErr error
 		isolation := process.IsolationOptions{FilesystemAllowlist: cloneStrings(spec.FilesystemAllowlist), NetworkDisabled: spec.NetworkDisabled}
 		if isolatedTier {
+			isolation.AppContainer = runtime.GOOS == "windows"
 			// The candidate working directory is always the minimum readable
 			// scope; extra trusted paths remain explicit configuration.
 			isolation.FilesystemAllowlist = append(isolation.FilesystemAllowlist, req.Dir)
@@ -426,6 +427,20 @@ func runTrustedOne(ctx context.Context, spec TrustedVerifierSpec, req TrustedReq
 		e.OutputTruncated = len(res.Stdout) > max || len(res.Stderr) > max || outputLimitError(runErr)
 		e.StdoutBytes, e.StderrBytes = minInt(len(res.Stdout), max), minInt(len(res.Stderr), max)
 		e.StdoutDigest, e.StderrDigest = outputDigest(res.Stdout), outputDigest(res.Stderr)
+		if res.IsolationAttestation != nil {
+			if e.IsolationObservations == nil {
+				e.IsolationObservations = map[string]interface{}{}
+			}
+			for key, value := range res.IsolationAttestation.Observations() {
+				e.IsolationObservations[key] = value
+			}
+		}
+		if strings.Contains(e.IsolationPrimitive, "appcontainer") && (res.IsolationAttestation == nil || !res.IsolationAttestation.IndependentlyObserved()) {
+			e.Passed = false
+			if runErr == nil {
+				runErr = errors.New("windows AppContainer execution lacked independent parent attestation")
+			}
+		}
 		if e.OutputTruncated {
 			e.Passed = false
 			runErr = errors.New("verification output exceeded limit")
@@ -653,6 +668,17 @@ func outputLimitError(err error) bool {
 	}
 	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "output") && strings.Contains(s, "limit")
+}
+
+func trustedIsolationAttestationValid(e TrustedEvidence) bool {
+	if !strings.Contains(e.IsolationPrimitive, "appcontainer") {
+		return true
+	}
+	return e.IsolationObservations["appcontainer_observed"] == true &&
+		e.IsolationObservations["package_sid_match"] == true &&
+		e.IsolationObservations["low_integrity_observed"] == true &&
+		e.IsolationObservations["network_denied_observed"] == true &&
+		e.IsolationObservations["capability_count"] == 0
 }
 
 type canonicalSpec struct {

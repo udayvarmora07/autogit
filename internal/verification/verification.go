@@ -17,8 +17,9 @@ import (
 )
 
 type Result struct {
-	Stdout, Stderr string
-	ExitCode       int
+	Stdout, Stderr       string
+	ExitCode             int
+	IsolationAttestation *process.IsolationAttestation
 }
 type Runner interface {
 	Run(context.Context, string, map[string]string, ...string) (Result, error)
@@ -217,9 +218,9 @@ func (ExecRunner) runWithLimitsAndIsolationFile(ctx context.Context, dir string,
 	for _, k := range keys {
 		commandEnv = append(commandEnv, k+"="+env[k])
 	}
-	processResult, err := process.Run(ctx, process.Options{Executable: args[0], ExecutableFile: executableFile, Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true, Limits: limits, FilesystemAllowlist: isolation.FilesystemAllowlist, NetworkDisabled: isolation.NetworkDisabled})
+	processResult, err := process.Run(ctx, process.Options{Executable: args[0], ExecutableFile: executableFile, Dir: dir, Env: commandEnv, Args: args[1:], MaxOutput: max, SeparateOutput: true, Limits: limits, FilesystemAllowlist: isolation.FilesystemAllowlist, NetworkDisabled: isolation.NetworkDisabled, AppContainer: isolation.AppContainer})
 	if processResult.Truncated || errors.Is(err, process.ErrOutputLimit) {
-		return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode}, fmt.Errorf("verification output exceeded limit")
+		return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode, IsolationAttestation: processResult.IsolationAttestation}, fmt.Errorf("verification output exceeded limit")
 	}
-	return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode}, err
+	return Result{Stdout: processResult.Stdout, Stderr: processResult.Stderr, ExitCode: processResult.ExitCode, IsolationAttestation: processResult.IsolationAttestation}, err
 }

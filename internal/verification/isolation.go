@@ -60,16 +60,40 @@ func CapabilityFor(tier IsolationTier) IsolationCapability {
 		if runtime.GOOS == "linux" && process.NamespaceSandboxAvailable() {
 			return linuxFilesystemCapability(tier, false)
 		}
+		if runtime.GOOS == "windows" && process.AppContainerAvailable() {
+			return windowsAppContainerCapability(tier)
+		}
 		return unavailableFilesystemCapability(tier, "filesystem isolation is unavailable on this platform or bubblewrap is not installed")
 	case TierFilesystemNetworkIsolated:
 		if runtime.GOOS == "linux" && process.NamespaceSandboxAvailable() {
 			return linuxFilesystemCapability(tier, true)
+		}
+		if runtime.GOOS == "windows" && process.AppContainerAvailable() {
+			return windowsAppContainerCapability(tier)
 		}
 		return unavailableFilesystemCapability(tier, "filesystem and network isolation is unavailable on this platform or bubblewrap is not installed")
 	case TierRemoteHermetic:
 		return IsolationCapability{Tier: tier, Reason: "remote hermetic execution is outside this local binary"}
 	default:
 		return IsolationCapability{Tier: tier, Reason: "unknown isolation tier"}
+	}
+}
+
+func windowsAppContainerCapability(tier IsolationTier) IsolationCapability {
+	return IsolationCapability{
+		Tier:      tier,
+		Available: true,
+		Enforced:  true,
+		Reason:    "Windows AppContainer explicit filesystem ACLs, low-integrity token, deny-by-default network boundary, parent token attestation, and Job Object cleanup",
+		Primitive: "appcontainer+job-object",
+		Limitations: []string{
+			"the AppContainer launch path grants temporary access only to the explicit allowlist and restores every modified DACL after exit",
+		},
+		Observations: map[string]interface{}{
+			"appcontainer_api":          "available",
+			"parent_token_attestation":  "required",
+			"network_denied_by_default": true,
+		},
 	}
 }
 
