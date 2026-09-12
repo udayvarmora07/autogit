@@ -25,9 +25,11 @@ const procThreadAttributeSecurityCapabilities = 0x00020009
 
 var (
 	userenvDLL                    = windows.NewLazySystemDLL("userenv.dll")
+	advapi32DLL                   = windows.NewLazySystemDLL("advapi32.dll")
 	createAppContainerProfileProc = userenvDLL.NewProc("CreateAppContainerProfile")
 	deleteAppContainerProfileProc = userenvDLL.NewProc("DeleteAppContainerProfile")
 	deriveAppContainerSIDProc     = userenvDLL.NewProc("DeriveAppContainerSidFromAppContainerName")
+	setFileSecurityProc           = advapi32DLL.NewProc("SetFileSecurityW")
 )
 
 type securityCapabilities struct {
@@ -57,7 +59,8 @@ type windowsAppContainerProcess struct {
 func AppContainerAvailable() bool {
 	return createAppContainerProfileProc.Find() == nil &&
 		deleteAppContainerProfileProc.Find() == nil &&
-		deriveAppContainerSIDProc.Find() == nil
+		deriveAppContainerSIDProc.Find() == nil &&
+		setFileSecurityProc.Find() == nil
 }
 
 func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Options) (appContainerProcess, error) {
@@ -371,8 +374,6 @@ func appContainerEnvironment(environment []string) ([]uint16, error) {
 type appContainerGrant struct {
 	path              string
 	original          *windows.SECURITY_DESCRIPTOR
-	originalOwner     *windows.SID
-	originalGroup     *windows.SID
 	originalDACL      *windows.ACL
 	originalProtected bool
 }
@@ -492,14 +493,6 @@ func applyAppContainerGrant(path string, full bool, sid *windows.SID) (appContai
 	if daclErr != nil || oldDACL == nil {
 		return appContainerGrant{}, fmt.Errorf("AppContainer path %q has no explicit DACL", path)
 	}
-	oldOwner, _, ownerErr := old.Owner()
-	if ownerErr != nil {
-		return appContainerGrant{}, fmt.Errorf("read owner for AppContainer path %q: %w", path, ownerErr)
-	}
-	oldGroup, _, groupErr := old.Group()
-	if groupErr != nil {
-		return appContainerGrant{}, fmt.Errorf("read group for AppContainer path %q: %w", path, groupErr)
-	}
 	control, _, err := old.Control()
 	if err != nil {
 		return appContainerGrant{}, fmt.Errorf("read DACL control for AppContainer path %q: %w", path, err)
@@ -540,8 +533,6 @@ func applyAppContainerGrant(path string, full bool, sid *windows.SID) (appContai
 	return appContainerGrant{
 		path:              path,
 		original:          old,
-		originalOwner:     oldOwner,
-		originalGroup:     oldGroup,
 		originalDACL:      oldDACL,
 		originalProtected: protected,
 	}, nil
@@ -551,15 +542,40 @@ func restoreAppContainerGrants(grants []appContainerGrant) error {
 	var cleanupErr error
 	for index := len(grants) - 1; index >= 0; index-- {
 		grant := grants[index]
-		securityInformation := windows.SECURITY_INFORMATION(windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION)
-		if grant.originalProtected {
-			securityInformation |= windows.PROTECTED_DACL_SECURITY_INFORMATION
-		} else {
-			securityInformation |= windows.UNPROTECTED_DACL_SECURITY_INFORMATION
-		}
-		if err := windows.SetNamedSecurityInfo(grant.path, windows.SE_FILE_OBJECT, securityInformation, grant.originalOwner, grant.originalGroup, grant.originalDACL, nil); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("restore security descriptor for %q: %w", grant.path, err))
+		if err := restoreAppContainerSecurityDescriptor(grant); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
 	return cleanupErr
+}
+
+func restoreAppContainerSecurityDescriptor(grant appContainerGrant) error {
+	if grant.original == nil {
+		return fmt.Errorf("restore security descriptor for %q: snapshot is unavailable", grant.path)
+	}
+	name, err := windows.UTF16PtrFromString(grant.path)
+	if err != nil {
+		return fmt.Errorf("encode security descriptor restore path %q: %w", grant.path, err)
+	}
+	securityInformation := windows.SECURITY_INFORMATION(windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION)
+	if grant.originalProtected {
+		securityInformation |= windows.PROTECTED_DACL_SECURITY_INFORMATION
+	} else {
+		securityInformation |= windows.UNPROTECTED_DACL_SECURITY_INFORMATION
+	}
+	result, _, callErr := setFileSecurityProc.Call(
+		uintptr(unsafe.Pointer(name)),
+		uintptr(securityInformation),
+		uintptr(unsafe.Pointer(grant.original)),
+	)
+	if result == 0 {
+		if callErr == nil {
+			callErr = windows.GetLastError()
+		}
+		if callErr == nil {
+			callErr = errors.New("SetFileSecurityW returned failure")
+		}
+		return fmt.Errorf("restore security descriptor for %q: %w", grant.path, callErr)
+	}
+	return nil
 }
