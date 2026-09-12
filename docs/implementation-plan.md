@@ -112,14 +112,15 @@ current release-blocking gaps are:
    controls without AppContainer, and the macOS
    process-group fallback; trusted verifier evidence binds those observations
    into its digest. The local Linux direct-enforcement and namespace tests pass;
-   the current-tree full matrix `34627202246` validates the Linux namespace and
+   the current exact-SHA full matrix `34682716776` validates the Linux namespace and
    Landlock, Windows job-object, and macOS process-group primitives.
    AppContainer-specific enforcement, independent attestation, and named
    platform-owner acceptance remain incomplete.
 3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
    named review for the exact alpha-supported client/provider subset. The
-   historical provider canary is retained, but the current dedicated-token
-   canary path has not completed for the evidence snapshot.
+   current dedicated-token private canary `34682636514` passed against exact
+   source SHA `1406352345886c116ba7750369fc3a14df960b63` and cleanup was
+   verified; adapter-native evidence and review remain open.
 4. P4-08 has implementation evidence but no exact release tag: the checked-in
    manifest deliberately has `tag_verified: false` and is snapshot-bound. The
    tag-gated workflow now generates a separate exact-tag manifest and carries
@@ -235,9 +236,9 @@ Git/provider side effects:
 | Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings, bubblewrap namespaces, and Landlock filesystem rules | Windows AppContainer, macOS filesystem/network isolation, and native platform acceptance remain unavailable | Block public use |
 | Security scanning | Candidate and bounded history checks; pinned offline interface, exact-blob scope, coverage/limit evidence, redacted fingerprints | Detection engine breadth and provider-side push protection remain separately scoped; native security-tool matrix remains | Block public use |
 | Adapters | Versioned six-entry registry, sanitized versioned fixtures, canonical translation, bounded probes, and four schema-specific installers | Native all-OS/client-version installation matrix and upstream drift automation remain; OpenCode/CommandCode are intentionally observation-only | Block compatibility claim |
-| GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and retained historical private canary | Current dedicated-token canary, App permission review, native artifact execution for the exact release snapshot, and named provider review remain | Block alpha |
+| GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and current exact-SHA private canary | App permission review, native artifact execution for the exact release snapshot, and named provider review remain | Block alpha |
 | CLI and operations | Read-only status/plan/doctor/log commands, structured output, version/help contracts, operation recovery UX, and bounded local telemetry | Support-owner acceptance and native install/upgrade/rollback evidence remain | Block supportability |
-| Tests and CI | Layered presubmit/core/race/integration/soak/fuzz/release suites, shell checks, scenario evaluation, native artifact smoke, and hosted performance/security evidence | Exact release-tag binding and release-owner acceptance remain; current provider canary is not green | Needs release evidence |
+| Tests and CI | Layered presubmit/core/race/integration/soak/fuzz/release suites, shell checks, scenario evaluation, native artifact smoke, and hosted performance/security evidence | Exact release-tag binding and release-owner acceptance remain | Needs release evidence |
 | Release and governance | Deterministic cross-build script, snapshot-bound evidence manifest, license/support files, dependency policy, Dependabot, CodeQL, and Scorecard | Tag-gated signed release, SBOM/provenance, independent reproducibility, package channels, and native install/rollback drills remain | Block any release |
 
 ## 5. Non-negotiable invariants

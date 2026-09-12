@@ -2,7 +2,7 @@
 
 Source of truth: [world-class implementation plan](docs/implementation-plan.md)
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
-Last updated: 2026-09-11
+Last updated: 2026-09-12
 Release posture: NO-GO for private alpha
 Private-alpha review policy: the documented single-maintainer exception allows
 named release-owner approval; it does not waive exact-tag, canary, provenance,
@@ -99,9 +99,10 @@ All items are release blockers.
   Evidence: [Phase 0 P0-06–P0-10 bundle](docs/release-evidence/phase-0-p0-06-p0-10.md).
 - [ ] Phase 0 gate: all analysis/build/test/performance checks pass on native
   Linux, macOS, and Windows with zero unresolved critical/high findings.
-  Evidence: manual full matrix `34627202246` passed all 20 jobs on current
-  HEAD, including native platform, security, and performance checks; named
-  Phase 0 exit acceptance remains outstanding.
+  Evidence: exact-SHA manual full matrix `34682716776` passed all 20 jobs on
+  `1406352345886c116ba7750369fc3a14df960b63`, including native platform,
+  security, and performance checks; named Phase 0 exit acceptance remains
+  outstanding.
 
 ## Phase 1 — trusted local core
 
@@ -126,7 +127,7 @@ All items are release blockers.
   evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md);
   local Linux direct-enforcement and namespace tests now cover the implemented
   Landlock/bubblewrap paths, while exact-source hosted run `34604368677`
-  and current-tree full matrix `34627202246` validate the namespace,
+  and current exact-SHA full matrix `34682716776` validate the namespace,
   Windows job-object, and macOS process-group paths; current-tree hosted
   Landlock evidence is now retained. AppContainer, independent attestation,
   and named review remain open.
@@ -149,9 +150,9 @@ All items are release blockers.
   filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
-  native platforms. Current full matrix `34627202246` passed its native
-  platform checks; the complete Phase 1 exit record and named acceptance remain
-  outstanding.
+  native platforms. Exact-SHA full matrix `34682716776` passed its native
+  platform checks against `1406352345886c116ba7750369fc3a14df960b63`; the
+  complete Phase 1 exit record and named acceptance remain outstanding.
 
 ## Phase 2 — integrations and provider productization
 
@@ -216,8 +217,8 @@ named-review requirements are executed and reviewed.
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.
-  The canary subcondition is satisfied by the linked P2-06–P2-10 evidence;
-  adapter-native evidence and review remain outstanding.
+  The current exact-SHA canary subcondition is satisfied by the linked
+  P2-06–P2-10 evidence; adapter-native evidence and review remain outstanding.
 
 ## Phase 3 — product UX and operations
 
@@ -259,7 +260,7 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
-  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677` and current-tree full matrix `34627202246` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677` and current exact-SHA full matrix `34682716776` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
 - [x] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
   Evidence: [P4-04 fuzz-floor review](docs/acceptance-record.md#p4-04-fuzz-floor-review).

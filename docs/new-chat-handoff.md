@@ -6,7 +6,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 ## Current snapshot
 
-- Snapshot date: 2026-09-11.
+- Snapshot date: 2026-09-12.
 - Repository: `/home/uday-varmora/autogit`.
 - Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`.
 - The manifest collection ran against a clean tree at that snapshot. This
@@ -82,10 +82,16 @@ remaining P4 rows.
   six native artifact jobs also retained the raw-binary lifecycle evidence.
   The source push run `34604333600` passed its native Linux/macOS/Windows
   checks against the same SHA.
-- The current dedicated-token private canary dispatch, `34489797141`, passed
-  against `36c045f` for owner `udayvarmora07`; the allowlisted canary
-  repository was confirmed absent after cleanup. The earlier failed dispatch
-  `34324968472` remains historical only.
+- The current dedicated-token private canary dispatch, `34682636514`, passed
+  against exact SHA `1406352345886c116ba7750369fc3a14df960b63` for owner
+  `udayvarmora07`; the allowlisted canary repository was confirmed absent after
+  cleanup. The preceding failed dispatch `34678552733` exposed and led to the
+  bounded REST confirmation retry now in `1406352`.
+- The current exact-SHA full matrix `34682716776` passed all 20 jobs against
+  `1406352345886c116ba7750369fc3a14df960b63`, including native artifact,
+  soak, fuzz, reproducibility, security, dependency-policy, scenario, and
+  performance checks. AppContainer, named acceptance, and exact-tag release
+  gates remain open.
 - Hosted compatibility-window review `34590952233` is historical evidence for
   the preceding `97ea27f` snapshot; the current local compatibility suite
   passed in the regenerated manifest and no expiry issue was generated.
@@ -118,6 +124,8 @@ remaining P4 rows.
 
 - `97ea27f`: retries transient provider read-after-write missing-ref
   postconditions after an exact push, eliminating the hosted publish race.
+- `1406352`: retries transient GitHub REST empty-repository ref responses
+  during non-mutating post-push confirmation and records a regression test.
 - `60abf2d`: uses native Windows file replacement semantics for upgrade and
   rollback verification.
 - `c09c059`: kept the release verifier compatible with stock macOS Bash 3.2.

@@ -1,6 +1,6 @@
 # Phase 4 and Phase 5 local implementation evidence
 
-Date: 2026-09-11
+Date: 2026-09-12
 Scope: P4-01 through P4-08 and P5-01 through P5-02
 Status: implementation complete; exact-snapshot local and hosted quality
 evidence is current; tagged-artifact, provider, signing, and named-reviewer
@@ -110,6 +110,14 @@ not current-HEAD canary evidence. The former `ded26c3` manifest and hosted
 run `34327518122` remain historical records. These records do not claim a live
 provider canary, signing, published provenance, or named release review.
 
+The current exact-SHA manual full matrix `34682716776` passed all 20/20 jobs
+against `1406352345886c116ba7750369fc3a14df960b63`, including native
+Linux/macOS/Windows tests, all six native artifact lifecycle drills, three
+soak targets, fuzz, reproducible release binaries, security analysis,
+dependency policy, and the scenario/performance checks. These fresh records
+strengthen implementation evidence but do not satisfy the exact-tag,
+signing/provenance, AppContainer, adapter-native, or named acceptance gates.
+
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:
 
@@ -123,6 +131,7 @@ AUTOGIT_FUZZ_TIME=40s bash scripts/generate-evidence.sh \
   --output docs/release-evidence/phase-4-quality.json
 ```
 
-This bundle does not claim that native artifact execution, a live provider
-canary, signed provenance, or named review has already occurred. The phase and
-alpha gates in `todo.md` remain authoritative.
+This bundle records native artifact execution and a live private provider
+canary for the exact source SHA. It does not claim tag-bound signed
+provenance or named review; the phase and alpha gates in `todo.md` remain
+authoritative.
