@@ -85,15 +85,22 @@ func attestProcess(child *os.Process, expectedPackageSID string) (IsolationAttes
 			attestationErr = fmt.Errorf("query TokenCapabilities: %w", queryErr)
 			return
 		}
-		if len(capabilities) < int(unsafe.Sizeof(windows.Tokengroups{})) {
+		// TOKEN_GROUPS is a variable-length record. Windows returns only the
+		// fixed GroupCount field (four bytes) when the capability list is empty,
+		// even though the Go representation includes one placeholder element.
+		if len(capabilities) < 4 {
 			attestationErr = errors.New("TokenCapabilities returned a short record")
 			return
 		}
-		groups := (*windows.Tokengroups)(unsafe.Pointer(&capabilities[0]))
-		attestation.CapabilityCount = int(groups.GroupCount)
-		attestation.NetworkDeniedObserved = groups.GroupCount == 0
+		capabilityCount := binary.LittleEndian.Uint32(capabilities[:4])
+		if capabilityCount > uint32((len(capabilities)-4)/int(unsafe.Sizeof(windows.SIDAndAttributes{}))) && capabilityCount != 0 {
+			attestationErr = errors.New("TokenCapabilities returned a truncated group list")
+			return
+		}
+		attestation.CapabilityCount = int(capabilityCount)
+		attestation.NetworkDeniedObserved = capabilityCount == 0
 		if !attestation.NetworkDeniedObserved {
-			attestationErr = fmt.Errorf("AppContainer token has %d unexpected capabilities", groups.GroupCount)
+			attestationErr = fmt.Errorf("AppContainer token has %d unexpected capabilities", capabilityCount)
 			return
 		}
 		attestation.independentlyObserved = true
