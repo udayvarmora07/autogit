@@ -91,14 +91,21 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	if err != nil {
 		return nil, fmt.Errorf("create AppContainer stdout pipe: %w", err)
 	}
-	defer stdoutR.Close()
-	defer stdoutW.Close()
 	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, fmt.Errorf("create AppContainer stderr pipe: %w", err)
 	}
-	defer stderrR.Close()
-	defer stderrW.Close()
+	closePipes := true
+	defer func() {
+		if closePipes {
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
+			_ = stderrR.Close()
+			_ = stderrW.Close()
+		}
+	}()
 
 	childHandles := []windows.Handle{
 		windows.Handle(stdin.Fd()),
@@ -182,6 +189,12 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 		_ = stderrR.Close()
 		close(stderrDone)
 	}()
+	// The child owns inherited copies of the writer handles. Close the
+	// parent's copies now so the reader goroutines observe EOF when the child
+	// exits; the readers themselves are owned by those goroutines until then.
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
+	closePipes = false
 
 	setupCleanup = false
 	return &windowsAppContainerProcess{
