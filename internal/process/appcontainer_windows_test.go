@@ -132,10 +132,24 @@ func TestWindowsAppContainerProbe(t *testing.T) {
 		t.Fatal("write in the read-only AppContainer directory succeeded")
 	}
 	probeMarker("write-denied")
-	connection, err := net.DialTimeout("tcp", network, time.Second)
-	if err == nil {
-		_ = connection.Close()
-		t.Fatal("network access escaped the AppContainer denial")
+	networkResult := make(chan error, 1)
+	go func() {
+		connection, err := net.DialTimeout("tcp", network, time.Second)
+		if err == nil {
+			_ = connection.Close()
+		}
+		networkResult <- err
+	}()
+	select {
+	case err := <-networkResult:
+		if err == nil {
+			t.Fatal("network access escaped the AppContainer denial")
+		}
+	case <-time.After(2 * time.Second):
+		// Windows may leave a denied AppContainer connect pending instead of
+		// returning an error promptly. The bounded absence of a connection is
+		// the denial signal; the parent token attestation independently checks
+		// that the child has no network capabilities.
 	}
 	probeMarker("network-denied")
 	fmt.Println("APPCONTAINER_PROBE_OK")
