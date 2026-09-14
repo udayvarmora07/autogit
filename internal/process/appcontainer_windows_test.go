@@ -4,10 +4,11 @@ package process
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,17 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if err := os.WriteFile(deniedPath, []byte("denied"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate the AppContainer test source")
+	}
+	probeSource := filepath.Join(filepath.Dir(testFile), "testdata", "appcontainerprobe", "main.go")
+	probeExecutable := filepath.Join(work, "autogit-appcontainer-probe.exe")
+	build := exec.Command("go", "build", "-o", probeExecutable, probeSource)
+	build.Dir = filepath.Dir(testFile)
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build AppContainer probe: %v; output=%q", err, output)
+	}
 	beforeDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		t.Fatal(err)
@@ -44,12 +56,8 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	}
 	_ = preflight.Close()
 
-	executable, err := filepath.Abs(os.Args[0])
-	if err != nil {
-		t.Fatal(err)
-	}
+	executable := probeExecutable
 	env := []string{
-		"AUTOGIT_APPCONTAINER_PROBE=1",
 		"AUTOGIT_APPCONTAINER_ALLOWED=" + allowedPath,
 		"AUTOGIT_APPCONTAINER_DENIED=" + deniedPath,
 		"AUTOGIT_APPCONTAINER_NETWORK=" + listener.Addr().String(),
@@ -61,7 +69,7 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 		Executable:          executable,
 		Dir:                 filepath.Clean(work),
 		Env:                 env,
-		Args:                []string{"-test.run=^TestWindowsAppContainerProbe$"},
+		Args:                nil,
 		MaxOutput:           1 << 20,
 		SeparateOutput:      true,
 		FilesystemAllowlist: []string{filepath.Clean(work)},
@@ -88,43 +96,4 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if beforeDACL.String() != afterDACL.String() {
 		t.Fatalf("working-directory DACL was not restored exactly: before=%q after=%q", beforeDACL.String(), afterDACL.String())
 	}
-}
-
-func TestWindowsAppContainerProbe(t *testing.T) {
-	if os.Getenv("AUTOGIT_APPCONTAINER_PROBE") != "1" {
-		return
-	}
-	allowed := os.Getenv("AUTOGIT_APPCONTAINER_ALLOWED")
-	denied := os.Getenv("AUTOGIT_APPCONTAINER_DENIED")
-	network := os.Getenv("AUTOGIT_APPCONTAINER_NETWORK")
-	if value, err := os.ReadFile(allowed); err != nil || string(value) != "allowed" {
-		t.Fatalf("allowlisted read failed: %v", err)
-	}
-	if _, err := os.ReadFile(denied); err == nil {
-		t.Fatal("read outside the AppContainer allowlist succeeded")
-	}
-	writePath := filepath.Join(filepath.Dir(allowed), "write-attempt.txt")
-	if err := os.WriteFile(writePath, []byte("must fail"), 0600); err == nil {
-		t.Fatal("write in the read-only AppContainer directory succeeded")
-	}
-	networkResult := make(chan error, 1)
-	go func() {
-		connection, err := net.DialTimeout("tcp", network, time.Second)
-		if err == nil {
-			_ = connection.Close()
-		}
-		networkResult <- err
-	}()
-	select {
-	case err := <-networkResult:
-		if err == nil {
-			t.Fatal("network access escaped the AppContainer denial")
-		}
-	case <-time.After(2 * time.Second):
-		// Windows may leave a denied AppContainer connect pending instead of
-		// returning an error promptly. The bounded absence of a connection is
-		// the denial signal; the parent token attestation independently checks
-		// that the child has no network capabilities.
-	}
-	fmt.Println("APPCONTAINER_PROBE_OK")
 }
