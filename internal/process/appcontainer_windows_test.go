@@ -94,23 +94,31 @@ func TestWindowsAppContainerProbe(t *testing.T) {
 	if os.Getenv("AUTOGIT_APPCONTAINER_PROBE") != "1" {
 		return
 	}
+	probeMarker := func(message string) {
+		_, _ = os.Stderr.WriteString("APPCONTAINER_STAGE=" + message + "\n")
+	}
+	probeMarker("started")
 	allowed := os.Getenv("AUTOGIT_APPCONTAINER_ALLOWED")
 	denied := os.Getenv("AUTOGIT_APPCONTAINER_DENIED")
 	network := os.Getenv("AUTOGIT_APPCONTAINER_NETWORK")
 	if value, err := os.ReadFile(allowed); err != nil || string(value) != "allowed" {
 		t.Fatalf("allowlisted read failed: %v", err)
 	}
+	probeMarker("allowed-read")
 	if _, err := os.ReadFile(denied); err == nil {
 		t.Fatal("read outside the AppContainer allowlist succeeded")
 	}
+	probeMarker("denied-read")
 	writePath := filepath.Join(filepath.Dir(allowed), "write-attempt.txt")
 	if err := os.WriteFile(writePath, []byte("must fail"), 0600); err == nil {
 		t.Fatal("write in the read-only AppContainer directory succeeded")
 	}
+	probeMarker("write-denied")
 	connection, err := net.DialTimeout("tcp", network, time.Second)
 	if err == nil {
 		_ = connection.Close()
 		t.Fatal("network access escaped the AppContainer denial")
 	}
+	probeMarker("network-denied")
 	fmt.Println("APPCONTAINER_PROBE_OK")
 }
