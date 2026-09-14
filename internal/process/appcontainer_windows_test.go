@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +36,30 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	}
 	if err := os.WriteFile(deniedPath, []byte("denied"), 0600); err != nil {
 		t.Fatal(err)
+	}
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate the AppContainer test source")
+	}
+	helperSource := filepath.Join(filepath.Dir(testFile), "testdata", "appcontainerhelper", "main.go")
+	helperExecutable := filepath.Join(work, "autogit-appcontainer-helper.exe")
+	build := exec.Command("go", "build", "-o", helperExecutable, helperSource)
+	build.Dir = filepath.Dir(testFile)
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build minimal AppContainer helper: %v; output=%q", err, output)
+	}
+	helperResult, err := Run(context.Background(), Options{
+		Executable:          helperExecutable,
+		Dir:                 filepath.Clean(work),
+		Env:                 []string{"PATH=" + filepath.Dir(helperExecutable)},
+		MaxOutput:           1 << 20,
+		SeparateOutput:      true,
+		FilesystemAllowlist: []string{filepath.Clean(work)},
+		NetworkDisabled:     true,
+		AppContainer:        true,
+	})
+	if err != nil || helperResult.ExitCode != 0 || strings.TrimSpace(helperResult.Stderr) != "APPCONTAINER_HELPER_OK" {
+		t.Fatalf("minimal Go AppContainer helper failed: %v; result=%+v", err, helperResult)
 	}
 	beforeDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
