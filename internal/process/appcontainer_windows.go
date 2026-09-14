@@ -25,11 +25,9 @@ const procThreadAttributeSecurityCapabilities = 0x00020009
 
 var (
 	userenvDLL                    = windows.NewLazySystemDLL("userenv.dll")
-	advapi32DLL                   = windows.NewLazySystemDLL("advapi32.dll")
 	createAppContainerProfileProc = userenvDLL.NewProc("CreateAppContainerProfile")
 	deleteAppContainerProfileProc = userenvDLL.NewProc("DeleteAppContainerProfile")
 	deriveAppContainerSIDProc     = userenvDLL.NewProc("DeriveAppContainerSidFromAppContainerName")
-	setFileSecurityProc           = advapi32DLL.NewProc("SetFileSecurityW")
 )
 
 type securityCapabilities struct {
@@ -65,8 +63,7 @@ func appContainerDiagnostic(stage string) {
 func AppContainerAvailable() bool {
 	return createAppContainerProfileProc.Find() == nil &&
 		deleteAppContainerProfileProc.Find() == nil &&
-		deriveAppContainerSIDProc.Find() == nil &&
-		setFileSecurityProc.Find() == nil
+		deriveAppContainerSIDProc.Find() == nil
 }
 
 func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Options) (appContainerProcess, error) {
@@ -441,16 +438,35 @@ func collectAppContainerPaths(command *exec.Cmd, options Options) ([]appContaine
 		}
 		return nil
 	}
+	systemRoot := filepath.Clean(os.Getenv("SystemRoot"))
+	isSystemPath := func(path string) bool {
+		if systemRoot == "." || systemRoot == "" {
+			return false
+		}
+		relative, err := filepath.Rel(systemRoot, path)
+		if err != nil || filepath.IsAbs(relative) {
+			return false
+		}
+		return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
+	}
 	for _, path := range options.FilesystemAllowlist {
 		if err := collectAppContainerTree(path, add); err != nil {
 			return nil, err
 		}
 	}
-	if err := add(command.Dir, true); err != nil {
-		return nil, err
+	if !isSystemPath(command.Dir) {
+		if err := add(command.Dir, true); err != nil {
+			return nil, err
+		}
 	}
-	if err := add(command.Path, true); err != nil {
-		return nil, err
+	// Windows already grants AppContainer processes the read/execute access
+	// needed for the operating-system runtime tree. Never add temporary SIDs
+	// to protected system directories: those ACLs cannot be reliably restored
+	// by a normal user process.
+	if !isSystemPath(command.Path) {
+		if err := add(command.Path, true); err != nil {
+			return nil, err
+		}
 	}
 	originalPaths := make([]string, 0, len(paths))
 	for path := range paths {
@@ -458,6 +474,9 @@ func collectAppContainerPaths(command *exec.Cmd, options Options) ([]appContaine
 	}
 	for _, path := range originalPaths {
 		for parent := filepath.Dir(path); parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
+			if isSystemPath(parent) {
+				continue
+			}
 			if err := add(parent, false); err != nil {
 				return nil, err
 			}
@@ -568,32 +587,17 @@ func restoreAppContainerGrants(grants []appContainerGrant) error {
 }
 
 func restoreAppContainerSecurityDescriptor(grant appContainerGrant) error {
-	if grant.original == nil {
+	if grant.original == nil || grant.originalDACL == nil {
 		return fmt.Errorf("restore security descriptor for %q: snapshot is unavailable", grant.path)
 	}
-	name, err := windows.UTF16PtrFromString(grant.path)
-	if err != nil {
-		return fmt.Errorf("encode security descriptor restore path %q: %w", grant.path, err)
-	}
-	securityInformation := windows.SECURITY_INFORMATION(windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION)
+	securityInformation := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION)
 	if grant.originalProtected {
 		securityInformation |= windows.PROTECTED_DACL_SECURITY_INFORMATION
 	} else {
 		securityInformation |= windows.UNPROTECTED_DACL_SECURITY_INFORMATION
 	}
-	result, _, callErr := setFileSecurityProc.Call(
-		uintptr(unsafe.Pointer(name)),
-		uintptr(securityInformation),
-		uintptr(unsafe.Pointer(grant.original)),
-	)
-	if result == 0 {
-		if callErr == nil {
-			callErr = windows.GetLastError()
-		}
-		if callErr == nil {
-			callErr = errors.New("SetFileSecurityW returned failure")
-		}
-		return fmt.Errorf("restore security descriptor for %q: %w", grant.path, callErr)
+	if err := windows.SetNamedSecurityInfo(grant.path, windows.SE_FILE_OBJECT, securityInformation, nil, nil, grant.originalDACL, nil); err != nil {
+		return fmt.Errorf("restore security descriptor for %q: %w", grant.path, err)
 	}
 	return nil
 }

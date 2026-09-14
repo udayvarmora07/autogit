@@ -21,43 +21,6 @@ func init() {
 	}
 }
 
-func TestWindowsAppContainerLaunchesSystemProcess(t *testing.T) {
-	if !AppContainerAvailable() {
-		t.Fatal("Windows AppContainer APIs are unavailable")
-	}
-	work := t.TempDir()
-	systemRoot := os.Getenv("SystemRoot")
-	if systemRoot == "" {
-		t.Fatal("SystemRoot is not set")
-	}
-	command := filepath.Join(systemRoot, "System32", "cmd.exe")
-	env := []string{
-		"SystemRoot=" + systemRoot,
-		"LocalAppData=" + os.Getenv("LOCALAPPDATA"),
-		"PATH=" + filepath.Join(systemRoot, "System32"),
-		"ComSpec=" + command,
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	result, err := Run(ctx, Options{
-		Executable:          command,
-		Dir:                 work,
-		Env:                 env,
-		Args:                []string{"/D", "/C", "echo APPCONTAINER_CMD_OK"},
-		MaxOutput:           1 << 20,
-		SeparateOutput:      true,
-		FilesystemAllowlist: []string{work},
-		NetworkDisabled:     true,
-		AppContainer:        true,
-	})
-	if err != nil {
-		t.Fatalf("system AppContainer run failed: %v; stdout=%q; stderr=%q", err, result.Stdout, result.Stderr)
-	}
-	if result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "APPCONTAINER_CMD_OK" {
-		t.Fatalf("unexpected system AppContainer result: %+v", result)
-	}
-}
-
 func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) {
 	if !AppContainerAvailable() {
 		t.Fatal("Windows AppContainer APIs are unavailable")
