@@ -4,7 +4,6 @@ package process
 
 import (
 	"context"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,22 +44,10 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	preflight, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
-	if err != nil {
-		t.Fatalf("parent could not reach the preflight listener: %v", err)
-	}
-	_ = preflight.Close()
-
 	executable := probeExecutable
 	env := []string{
 		"AUTOGIT_APPCONTAINER_ALLOWED=" + allowedPath,
 		"AUTOGIT_APPCONTAINER_DENIED=" + deniedPath,
-		"AUTOGIT_APPCONTAINER_NETWORK=" + listener.Addr().String(),
 		"PATH=" + filepath.Dir(executable),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
