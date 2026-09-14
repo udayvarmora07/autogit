@@ -15,6 +15,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func init() {
+	if os.Getenv("AUTOGIT_APPCONTAINER_PROBE") == "1" {
+		_, _ = os.Stderr.WriteString("APPCONTAINER_STAGE=init\n")
+	}
+}
+
 func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) {
 	if !AppContainerAvailable() {
 		t.Fatal("Windows AppContainer APIs are unavailable")

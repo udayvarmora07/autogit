@@ -224,9 +224,10 @@ func (p *windowsAppContainerProcess) resume() error {
 		return errors.New("AppContainer process thread is unavailable")
 	}
 	appContainerDiagnostic("resume-before")
-	_, err := windows.ResumeThread(p.thread)
+	previousSuspendCount, err := windows.ResumeThread(p.thread)
 	closeErr := windows.CloseHandle(p.thread)
 	p.thread = 0
+	appContainerDiagnostic(fmt.Sprintf("resume-return-%d", previousSuspendCount))
 	appContainerDiagnostic("resume-after")
 	if err != nil {
 		return fmt.Errorf("resume AppContainer process: %w", err)
