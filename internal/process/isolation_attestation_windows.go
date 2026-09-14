@@ -29,6 +29,7 @@ func attestProcess(child *os.Process, expectedPackageSID string) (IsolationAttes
 	}
 	var attestation IsolationAttestation
 	var attestationErr error
+	appContainerDiagnostic("attest-before")
 	err := child.WithHandle(func(handle uintptr) {
 		var token windows.Token
 		if err := windows.OpenProcessToken(windows.Handle(handle), windows.TOKEN_QUERY, &token); err != nil {
@@ -105,6 +106,7 @@ func attestProcess(child *os.Process, expectedPackageSID string) (IsolationAttes
 		}
 		attestation.independentlyObserved = true
 	})
+	appContainerDiagnostic("attest-after")
 	if err != nil {
 		return attestation, err
 	}

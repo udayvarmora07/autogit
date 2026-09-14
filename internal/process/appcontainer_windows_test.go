@@ -57,6 +57,18 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	previousDiagnostic, hadDiagnostic := os.LookupEnv("AUTOGIT_APPCONTAINER_DIAGNOSTIC")
+	if err := os.Setenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC", "1"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if hadDiagnostic {
+			_ = os.Setenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC", previousDiagnostic)
+		} else {
+			_ = os.Unsetenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC")
+		}
+	}()
+	_, _ = os.Stderr.WriteString("APPCONTAINER_PARENT_STAGE=run-before\n")
 	result, err := Run(ctx, Options{
 		Executable:          executable,
 		Dir:                 filepath.Clean(work),
