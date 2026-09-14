@@ -7,21 +7,13 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/windows"
 )
-
-func init() {
-	if os.Getenv("AUTOGIT_APPCONTAINER_PROBE") == "1" {
-		_, _ = os.Stderr.WriteString("APPCONTAINER_STAGE=init\n")
-	}
-}
 
 func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) {
 	if !AppContainerAvailable() {
@@ -36,30 +28,6 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	}
 	if err := os.WriteFile(deniedPath, []byte("denied"), 0600); err != nil {
 		t.Fatal(err)
-	}
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not locate the AppContainer test source")
-	}
-	helperSource := filepath.Join(filepath.Dir(testFile), "testdata", "appcontainerhelper", "main.go")
-	helperExecutable := filepath.Join(work, "autogit-appcontainer-helper.exe")
-	build := exec.Command("go", "build", "-o", helperExecutable, helperSource)
-	build.Dir = filepath.Dir(testFile)
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build minimal AppContainer helper: %v; output=%q", err, output)
-	}
-	helperResult, err := Run(context.Background(), Options{
-		Executable:          helperExecutable,
-		Dir:                 filepath.Clean(work),
-		Env:                 []string{"PATH=" + filepath.Dir(helperExecutable)},
-		MaxOutput:           1 << 20,
-		SeparateOutput:      true,
-		FilesystemAllowlist: []string{filepath.Clean(work)},
-		NetworkDisabled:     true,
-		AppContainer:        true,
-	})
-	if err != nil || helperResult.ExitCode != 0 || strings.TrimSpace(helperResult.Stderr) != "APPCONTAINER_HELPER_OK" {
-		t.Fatalf("minimal Go AppContainer helper failed: %v; result=%+v", err, helperResult)
 	}
 	beforeDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
@@ -80,15 +48,6 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	probeExecutable := filepath.Join(work, "autogit-process-probe.exe")
-	probeBinary, err := os.ReadFile(executable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(probeExecutable, probeBinary, 0700); err != nil {
-		t.Fatal(err)
-	}
-	executable = probeExecutable
 	env := []string{
 		"AUTOGIT_APPCONTAINER_PROBE=1",
 		"AUTOGIT_APPCONTAINER_ALLOWED=" + allowedPath,
@@ -98,18 +57,6 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	previousDiagnostic, hadDiagnostic := os.LookupEnv("AUTOGIT_APPCONTAINER_DIAGNOSTIC")
-	if err := os.Setenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC", "1"); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if hadDiagnostic {
-			_ = os.Setenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC", previousDiagnostic)
-		} else {
-			_ = os.Unsetenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC")
-		}
-	}()
-	_, _ = os.Stderr.WriteString("APPCONTAINER_PARENT_STAGE=run-before\n")
 	result, err := Run(ctx, Options{
 		Executable:          executable,
 		Dir:                 filepath.Clean(work),
@@ -147,26 +94,19 @@ func TestWindowsAppContainerProbe(t *testing.T) {
 	if os.Getenv("AUTOGIT_APPCONTAINER_PROBE") != "1" {
 		return
 	}
-	probeMarker := func(message string) {
-		_, _ = os.Stderr.WriteString("APPCONTAINER_STAGE=" + message + "\n")
-	}
-	probeMarker("started")
 	allowed := os.Getenv("AUTOGIT_APPCONTAINER_ALLOWED")
 	denied := os.Getenv("AUTOGIT_APPCONTAINER_DENIED")
 	network := os.Getenv("AUTOGIT_APPCONTAINER_NETWORK")
 	if value, err := os.ReadFile(allowed); err != nil || string(value) != "allowed" {
 		t.Fatalf("allowlisted read failed: %v", err)
 	}
-	probeMarker("allowed-read")
 	if _, err := os.ReadFile(denied); err == nil {
 		t.Fatal("read outside the AppContainer allowlist succeeded")
 	}
-	probeMarker("denied-read")
 	writePath := filepath.Join(filepath.Dir(allowed), "write-attempt.txt")
 	if err := os.WriteFile(writePath, []byte("must fail"), 0600); err == nil {
 		t.Fatal("write in the read-only AppContainer directory succeeded")
 	}
-	probeMarker("write-denied")
 	networkResult := make(chan error, 1)
 	go func() {
 		connection, err := net.DialTimeout("tcp", network, time.Second)
@@ -186,6 +126,5 @@ func TestWindowsAppContainerProbe(t *testing.T) {
 		// the denial signal; the parent token attestation independently checks
 		// that the child has no network capabilities.
 	}
-	probeMarker("network-denied")
 	fmt.Println("APPCONTAINER_PROBE_OK")
 }

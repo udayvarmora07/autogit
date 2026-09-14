@@ -45,15 +45,12 @@ func (s *supervisor) Attach(command *exec.Cmd) error {
 	if command == nil || command.Process == nil {
 		return errors.New("process did not start")
 	}
-	appContainerDiagnostic("attach-before")
 	handle, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(command.Process.Pid))
 	if err != nil {
 		return err
 	}
 	defer windows.CloseHandle(handle)
-	err = windows.AssignProcessToJobObject(s.job, handle)
-	appContainerDiagnostic("attach-after")
-	return err
+	return windows.AssignProcessToJobObject(s.job, handle)
 }
 
 func (s *supervisor) Terminate(command *exec.Cmd) error {

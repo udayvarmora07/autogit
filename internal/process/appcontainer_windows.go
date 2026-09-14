@@ -54,12 +54,6 @@ type windowsAppContainerProcess struct {
 	cleanupErr  error
 }
 
-func appContainerDiagnostic(stage string) {
-	if os.Getenv("AUTOGIT_APPCONTAINER_DIAGNOSTIC") == "1" {
-		_, _ = fmt.Fprintf(os.Stderr, "APPCONTAINER_PARENT_STAGE=%s\n", stage)
-	}
-}
-
 func AppContainerAvailable() bool {
 	return createAppContainerProfileProc.Find() == nil &&
 		deleteAppContainerProfileProc.Find() == nil &&
@@ -67,7 +61,6 @@ func AppContainerAvailable() bool {
 }
 
 func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Options) (appContainerProcess, error) {
-	appContainerDiagnostic("start")
 	if command == nil || command.Path == "" {
 		return nil, errors.New("AppContainer command is required")
 	}
@@ -175,7 +168,6 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	if err := windows.CreateProcess(applicationName, commandLine, nil, nil, true, flags, &environment[0], currentDir, &startup.StartupInfo, info); err != nil {
 		return nil, fmt.Errorf("create suspended AppContainer process: %w", err)
 	}
-	appContainerDiagnostic("created")
 	process, err := os.FindProcess(int(info.ProcessId))
 	if err != nil {
 		_ = windows.TerminateProcess(info.Process, 1)
@@ -203,8 +195,6 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	_ = stdoutW.Close()
 	_ = stderrW.Close()
 	closePipes = false
-	appContainerDiagnostic("ready")
-
 	setupCleanup = false
 	return &windowsAppContainerProcess{
 		process:     process,
@@ -220,12 +210,9 @@ func (p *windowsAppContainerProcess) resume() error {
 	if p == nil || p.thread == 0 {
 		return errors.New("AppContainer process thread is unavailable")
 	}
-	appContainerDiagnostic("resume-before")
-	previousSuspendCount, err := windows.ResumeThread(p.thread)
+	_, err := windows.ResumeThread(p.thread)
 	closeErr := windows.CloseHandle(p.thread)
 	p.thread = 0
-	appContainerDiagnostic(fmt.Sprintf("resume-return-%d", previousSuspendCount))
-	appContainerDiagnostic("resume-after")
 	if err != nil {
 		return fmt.Errorf("resume AppContainer process: %w", err)
 	}
@@ -250,12 +237,9 @@ func (p *windowsAppContainerProcess) wait() (*os.ProcessState, error) {
 	if p == nil || p.process == nil {
 		return nil, errors.New("AppContainer process is unavailable")
 	}
-	appContainerDiagnostic("wait-before")
 	state, err := p.process.Wait()
-	appContainerDiagnostic("wait-after-process")
 	<-p.stdoutDone
 	<-p.stderrDone
-	appContainerDiagnostic("wait-after-pipes")
 	return state, err
 }
 
