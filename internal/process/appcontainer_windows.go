@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -25,9 +26,11 @@ const procThreadAttributeSecurityCapabilities = 0x00020009
 
 var (
 	userenvDLL                    = windows.NewLazySystemDLL("userenv.dll")
+	kernel32DLL                   = windows.NewLazySystemDLL("kernel32.dll")
 	createAppContainerProfileProc = userenvDLL.NewProc("CreateAppContainerProfile")
 	deleteAppContainerProfileProc = userenvDLL.NewProc("DeleteAppContainerProfile")
 	deriveAppContainerSIDProc     = userenvDLL.NewProc("DeriveAppContainerSidFromAppContainerName")
+	peekNamedPipeProc             = kernel32DLL.NewProc("PeekNamedPipe")
 )
 
 type securityCapabilities struct {
@@ -183,10 +186,11 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	_ = windows.CloseHandle(info.Process)
 
 	// The child owns inherited copies of the writer handles. Close the
-	// parent's copies now. Do not start a read on either named pipe until after
+	// parent's copies now. Do not start a read on either pipe until after
 	// the suspended child has resumed: Go 1.26 probes inherited pipe handles
 	// during os package initialization, and a pending peer read can make that
-	// probe block.
+	// probe block. The reader uses PeekNamedPipe first so it does not create a
+	// pending read until the child has emitted output or closed the handle.
 	_ = stdoutW.Close()
 	_ = stderrW.Close()
 	closePipes = false
@@ -203,73 +207,6 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 		stderrDone:   make(chan struct{}),
 		cleanupFunc:  func() error { return errors.Join(aclCleanup(), profileCleanup()) },
 	}, nil
-}
-
-func newAppContainerPipe(label string) (reader, writer *os.File, err error) {
-	var random [12]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return nil, nil, fmt.Errorf("generate AppContainer %s pipe name: %w", label, err)
-	}
-	name := `\\.\pipe\autogit-` + label + `-` + hex.EncodeToString(random[:])
-	name16, err := windows.UTF16PtrFromString(name)
-	if err != nil {
-		return nil, nil, fmt.Errorf("encode AppContainer %s pipe name: %w", label, err)
-	}
-	attributes := &windows.SecurityAttributes{
-		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		InheritHandle: 1,
-	}
-	readHandle, err := windows.CreateNamedPipe(
-		name16,
-		windows.PIPE_ACCESS_INBOUND|windows.FILE_FLAG_OVERLAPPED,
-		windows.PIPE_TYPE_BYTE|windows.PIPE_READMODE_BYTE|windows.PIPE_WAIT|windows.PIPE_REJECT_REMOTE_CLIENTS,
-		1,
-		1<<20,
-		1<<20,
-		0,
-		attributes,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("create AppContainer %s pipe reader: %w", label, err)
-	}
-	if err := windows.SetHandleInformation(readHandle, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-		_ = windows.CloseHandle(readHandle)
-		return nil, nil, fmt.Errorf("clear AppContainer %s pipe reader inheritance: %w", label, err)
-	}
-	writeHandle, err := windows.CreateFile(
-		name16,
-		windows.GENERIC_WRITE,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
-		attributes,
-		windows.OPEN_EXISTING,
-		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OVERLAPPED,
-		0,
-	)
-	if err != nil {
-		_ = windows.CloseHandle(readHandle)
-		return nil, nil, fmt.Errorf("create AppContainer %s pipe writer: %w", label, err)
-	}
-	if err := windows.SetHandleInformation(writeHandle, windows.HANDLE_FLAG_INHERIT, windows.HANDLE_FLAG_INHERIT); err != nil {
-		_ = windows.CloseHandle(readHandle)
-		_ = windows.CloseHandle(writeHandle)
-		return nil, nil, fmt.Errorf("mark AppContainer %s pipe writer inheritable: %w", label, err)
-	}
-	reader = os.NewFile(uintptr(readHandle), name+" reader")
-	writer = os.NewFile(uintptr(writeHandle), name+" writer")
-	if reader == nil || writer == nil {
-		if reader != nil {
-			_ = reader.Close()
-		} else {
-			_ = windows.CloseHandle(readHandle)
-		}
-		if writer != nil {
-			_ = writer.Close()
-		} else {
-			_ = windows.CloseHandle(writeHandle)
-		}
-		return nil, nil, fmt.Errorf("wrap AppContainer %s pipe handles", label)
-	}
-	return reader, writer, nil
 }
 
 func (p *windowsAppContainerProcess) resume() error {
@@ -291,16 +228,47 @@ func (p *windowsAppContainerProcess) startOutputReaders() {
 	}
 	p.startReadersOnce.Do(func() {
 		go func() {
-			_, _ = io.Copy(p.stdout, p.stdoutReader)
+			copyAppContainerOutput(p.stdout, p.stdoutReader)
 			_ = p.stdoutReader.Close()
 			close(p.stdoutDone)
 		}()
 		go func() {
-			_, _ = io.Copy(p.stderr, p.stderrReader)
+			copyAppContainerOutput(p.stderr, p.stderrReader)
 			_ = p.stderrReader.Close()
 			close(p.stderrDone)
 		}()
 	})
+}
+
+func copyAppContainerOutput(dst io.Writer, reader *os.File) {
+	if err := waitForAppContainerPipeData(reader); err != nil {
+		return
+	}
+	_, _ = io.Copy(dst, reader)
+}
+
+func waitForAppContainerPipeData(reader *os.File) error {
+	for {
+		var available uint32
+		result, _, callErr := peekNamedPipeProc.Call(
+			reader.Fd(),
+			0,
+			0,
+			0,
+			uintptr(unsafe.Pointer(&available)),
+			0,
+		)
+		if result != 0 {
+			if available > 0 {
+				return nil
+			}
+		} else if callErr == windows.ERROR_BROKEN_PIPE || callErr == windows.ERROR_HANDLE_EOF {
+			return io.EOF
+		} else if callErr != nil {
+			return callErr
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (p *windowsAppContainerProcess) osProcess() *os.Process {
