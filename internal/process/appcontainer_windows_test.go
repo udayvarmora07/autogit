@@ -41,7 +41,8 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build AppContainer probe: %v; output=%q", err, output)
 	}
-	beforeDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	securityInformation := windows.SECURITY_INFORMATION(windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION)
+	beforeDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, securityInformation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if !attestation.AppContainerObserved || !attestation.PackageSIDMatch || !attestation.LowIntegrityObserved || !attestation.NetworkDeniedObserved || attestation.CapabilityCount != 0 {
 		t.Fatalf("incomplete AppContainer attestation: %+v", *attestation)
 	}
-	afterDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	afterDACL, err := windows.GetNamedSecurityInfo(work, windows.SE_FILE_OBJECT, securityInformation)
 	if err != nil {
 		t.Fatal(err)
 	}
