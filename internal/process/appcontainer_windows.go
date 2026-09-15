@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -44,16 +45,18 @@ type appContainerProfile struct {
 }
 
 type windowsAppContainerProcess struct {
-	process     *os.Process
-	thread      windows.Handle
-	packageSID  string
-	stdout      io.Writer
-	stderr      io.Writer
-	stdoutFile  *os.File
-	stderrFile  *os.File
-	cleanupFunc func() error
-	cleanupOnce sync.Once
-	cleanupErr  error
+	process        *os.Process
+	thread         windows.Handle
+	packageSID     string
+	stdout         io.Writer
+	stderr         io.Writer
+	stdoutFile     *os.File
+	stderrFile     *os.File
+	outputMax      int
+	outputOverflow *outputLimitSignal
+	cleanupFunc    func() error
+	cleanupOnce    sync.Once
+	cleanupErr     error
 }
 
 func AppContainerAvailable() bool {
@@ -187,13 +190,15 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	closeOutputFiles = false
 	setupCleanup = false
 	return &windowsAppContainerProcess{
-		process:    process,
-		thread:     info.Thread,
-		packageSID: profile.sid.String(),
-		stdout:     stdout,
-		stderr:     stderr,
-		stdoutFile: stdoutFile,
-		stderrFile: stderrFile,
+		process:        process,
+		thread:         info.Thread,
+		packageSID:     profile.sid.String(),
+		stdout:         stdout,
+		stderr:         stderr,
+		stdoutFile:     stdoutFile,
+		stderrFile:     stderrFile,
+		outputMax:      outputMax(stdout),
+		outputOverflow: outputOverflow(stdout),
 		cleanupFunc: func() error {
 			return errors.Join(cleanupAppContainerOutputFile(stdoutFile), cleanupAppContainerOutputFileIfDistinct(stderrFile, stdoutFile), aclCleanup(), profileCleanup())
 		},
@@ -217,7 +222,9 @@ func cleanupAppContainerOutputFile(file *os.File) error {
 		return nil
 	}
 	name := file.Name()
-	return errors.Join(file.Close(), os.Remove(name))
+	closeErr := file.Close()
+	removeErr := os.Remove(name)
+	return errors.Join(closeErr, removeErr)
 }
 
 func cleanupAppContainerOutputFileIfDistinct(file, other *os.File) error {
@@ -231,6 +238,20 @@ func sameOutputWriter(left, right io.Writer) bool {
 	leftOutput, leftOK := left.(*boundedOutput)
 	rightOutput, rightOK := right.(*boundedOutput)
 	return leftOK && rightOK && leftOutput == rightOutput
+}
+
+func outputMax(writer io.Writer) int {
+	if output, ok := writer.(*boundedOutput); ok {
+		return output.max
+	}
+	return 0
+}
+
+func outputOverflow(writer io.Writer) *outputLimitSignal {
+	if output, ok := writer.(*boundedOutput); ok {
+		return output.overflow
+	}
+	return nil
 }
 
 func (p *windowsAppContainerProcess) resume() error {
@@ -264,11 +285,48 @@ func (p *windowsAppContainerProcess) wait() (*os.ProcessState, error) {
 	if p == nil || p.process == nil {
 		return nil, errors.New("AppContainer process is unavailable")
 	}
+	monitorStop := make(chan struct{})
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		p.monitorOutput(monitorStop)
+	}()
 	state, err := p.process.Wait()
+	close(monitorStop)
+	<-monitorDone
 	if collectErr := p.collectOutput(); collectErr != nil {
 		err = errors.Join(err, collectErr)
 	}
 	return state, err
+}
+
+func (p *windowsAppContainerProcess) monitorOutput(stop <-chan struct{}) {
+	if p == nil || p.outputMax <= 0 || p.outputOverflow == nil {
+		return
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	files := []*os.File{p.stdoutFile}
+	if p.stderrFile != p.stdoutFile {
+		files = append(files, p.stderrFile)
+	}
+	for {
+		for _, file := range files {
+			if file == nil {
+				continue
+			}
+			info, err := os.Stat(file.Name())
+			if err == nil && info.Size() > int64(p.outputMax) {
+				p.outputOverflow.once.Do(func() { close(p.outputOverflow.ch) })
+				return
+			}
+		}
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (p *windowsAppContainerProcess) collectOutput() error {
