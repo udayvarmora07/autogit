@@ -92,11 +92,11 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 		return nil, fmt.Errorf("open AppContainer stdin: %w", err)
 	}
 	defer stdin.Close()
-	stdoutR, stdoutW, err := newAppContainerPipe("stdout")
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("create AppContainer stdout pipe: %w", err)
 	}
-	stderrR, stderrW, err := newAppContainerPipe("stderr")
+	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
 		_ = stdoutR.Close()
 		_ = stdoutW.Close()
