@@ -87,11 +87,11 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 		return nil, fmt.Errorf("open AppContainer stdin: %w", err)
 	}
 	defer stdin.Close()
-	stdoutR, stdoutW, err := os.Pipe()
+	stdoutR, stdoutW, err := newAppContainerPipe("stdout")
 	if err != nil {
 		return nil, fmt.Errorf("create AppContainer stdout pipe: %w", err)
 	}
-	stderrR, stderrW, err := os.Pipe()
+	stderrR, stderrW, err := newAppContainerPipe("stderr")
 	if err != nil {
 		_ = stdoutR.Close()
 		_ = stdoutW.Close()
@@ -204,6 +204,73 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 		stderrDone:  stderrDone,
 		cleanupFunc: func() error { return errors.Join(aclCleanup(), profileCleanup()) },
 	}, nil
+}
+
+func newAppContainerPipe(label string) (reader, writer *os.File, err error) {
+	var random [12]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return nil, nil, fmt.Errorf("generate AppContainer %s pipe name: %w", label, err)
+	}
+	name := `\\.\pipe\autogit-` + label + `-` + hex.EncodeToString(random[:])
+	name16, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode AppContainer %s pipe name: %w", label, err)
+	}
+	attributes := &windows.SecurityAttributes{
+		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		InheritHandle: 1,
+	}
+	readHandle, err := windows.CreateNamedPipe(
+		name16,
+		windows.PIPE_ACCESS_INBOUND|windows.FILE_FLAG_OVERLAPPED,
+		windows.PIPE_TYPE_BYTE|windows.PIPE_READMODE_BYTE|windows.PIPE_WAIT|windows.PIPE_REJECT_REMOTE_CLIENTS,
+		1,
+		1<<20,
+		1<<20,
+		0,
+		attributes,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create AppContainer %s pipe reader: %w", label, err)
+	}
+	if err := windows.SetHandleInformation(readHandle, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
+		_ = windows.CloseHandle(readHandle)
+		return nil, nil, fmt.Errorf("clear AppContainer %s pipe reader inheritance: %w", label, err)
+	}
+	writeHandle, err := windows.CreateFile(
+		name16,
+		windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		attributes,
+		windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OVERLAPPED,
+		0,
+	)
+	if err != nil {
+		_ = windows.CloseHandle(readHandle)
+		return nil, nil, fmt.Errorf("create AppContainer %s pipe writer: %w", label, err)
+	}
+	if err := windows.SetHandleInformation(writeHandle, windows.HANDLE_FLAG_INHERIT, windows.HANDLE_FLAG_INHERIT); err != nil {
+		_ = windows.CloseHandle(readHandle)
+		_ = windows.CloseHandle(writeHandle)
+		return nil, nil, fmt.Errorf("mark AppContainer %s pipe writer inheritable: %w", label, err)
+	}
+	reader = os.NewFile(uintptr(readHandle), name+" reader")
+	writer = os.NewFile(uintptr(writeHandle), name+" writer")
+	if reader == nil || writer == nil {
+		if reader != nil {
+			_ = reader.Close()
+		} else {
+			_ = windows.CloseHandle(readHandle)
+		}
+		if writer != nil {
+			_ = writer.Close()
+		} else {
+			_ = windows.CloseHandle(writeHandle)
+		}
+		return nil, nil, fmt.Errorf("wrap AppContainer %s pipe handles", label)
+	}
+	return reader, writer, nil
 }
 
 func (p *windowsAppContainerProcess) resume() error {
