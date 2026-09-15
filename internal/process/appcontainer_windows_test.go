@@ -4,7 +4,6 @@ package process
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,11 +64,9 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 		AppContainer:        true,
 	})
 	if err != nil {
-		annotateAppContainerFailure(err, result)
 		t.Fatalf("AppContainer run failed: %v; stdout=%q; stderr=%q", err, result.Stdout, result.Stderr)
 	}
 	if result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "APPCONTAINER_PROBE_OK\nPASS" {
-		annotateAppContainerFailure(nil, result)
 		t.Fatalf("unexpected AppContainer probe result: %+v", result)
 	}
 	if result.IsolationAttestation == nil || !result.IsolationAttestation.IndependentlyObserved() {
@@ -86,10 +83,4 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 	if beforeDACL.String() != afterDACL.String() {
 		t.Fatalf("working-directory DACL was not restored exactly: before=%q after=%q", beforeDACL.String(), afterDACL.String())
 	}
-}
-
-func annotateAppContainerFailure(err error, result Result) {
-	detail := fmt.Sprintf("error=%v exit=%d stdout=%q stderr=%q", err, result.ExitCode, result.Stdout, result.Stderr)
-	detail = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", ":", "%3A", ",", "%2C").Replace(detail)
-	_, _ = fmt.Fprintf(os.Stderr, "::error title=AppContainer probe::%s\n", detail)
 }
