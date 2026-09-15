@@ -116,7 +116,9 @@ Linux/macOS/Windows tests, all six native artifact lifecycle drills, three
 soak targets, fuzz, reproducible release binaries, security analysis,
 dependency policy, and the scenario/performance checks. These fresh records
 strengthen implementation evidence but do not satisfy the exact-tag,
-signing/provenance, AppContainer, adapter-native, or named acceptance gates.
+signing/provenance, adapter-native, or named acceptance gates. The later
+Windows AppContainer implementation and native follow-up are recorded in the
+[Phase 1 evidence bundle](phase-1-p1-06-p1-10.md).
 
 Use the exact commands below to create a release-bound record after the
 working tree is clean and tagged:

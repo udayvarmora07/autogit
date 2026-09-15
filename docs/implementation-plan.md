@@ -5,7 +5,7 @@ current exact-commit, evidence, count, and next-action snapshot. Do not use an
 older evidence commit in this document as proof of current HEAD status.
 
 Status: Active; release posture is NO-GO for private alpha
-Last updated: 2026-09-11
+Last updated: 2026-09-15
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
 Execution tracker: [todo.md](../todo.md)
 
@@ -52,9 +52,10 @@ and restore renames, stale private maintenance artifacts are recovered only
 after a conservative age check, and subprocess crash tests cover backup and
 migration boundaries. Restore tests include durable jobs, receipts, pending
 events, and outbox rows. The verifier process-bounded capability now probes
-the native supervisor before advertising it; Windows Job Objects remain
-explicitly distinct from the still-unimplemented AppContainer boundary, and
-stronger Windows/macOS tiers remain fail-closed.
+the native supervisor before advertising it. Windows now has an AppContainer
+launch path for the filesystem-isolated tiers, with Job Object cleanup and
+parent-side token attestation; native macOS filesystem/network tiers remain
+fail-closed.
 
 The follow-up 2026-09-11 isolation/release slice adds a trusted Linux
 bubblewrap launcher contract: only fixed root-owned, non-writable system
@@ -76,9 +77,10 @@ manifest was regenerated against `06ba87508ff53abc8b0001885e8341b6c07ad27a`
 at `2026-09-11T14:38:39Z`; all 10 local suites passed, with six artifact
 hashes and `tag_verified: false`. Core run `34610742466` and security run
 `34610742472` passed against that exact SHA, including the native Windows
-package-metadata test. This closes the implementation defect only; P4-03,
-P4-08, P1-04, and the P5 exact-tag, attestation, independent-reproducibility,
-package-channel, native-install, and named-review gates remain open.
+package-metadata test. At that historical snapshot, P4-03, P4-08, P1-04,
+and the P5 exact-tag, attestation, independent-reproducibility,
+package-channel, native-install, and named-review gates remained open; the
+later Windows P1-04 follow-up is recorded below.
 
 The subsequent manual full matrix `34627202246` passed all 20/20 jobs against
 then-current HEAD `a07fd84cb4b345e4dccdd3f950bd82dd662f5d87`, a
@@ -86,8 +88,26 @@ documentation-only descendant of the implementation snapshot. It retained native
 Windows checks, all six native artifact lifecycle drills, fuzz, soak,
 reproducibility, security, and dependency-policy results. This is stronger
 current-tree validation for the Phase 0, Phase 1, and P4-03 reviews; it does
-not satisfy exact-tag binding, AppContainer enforcement, provider/native
-adapter acceptance, or named review.
+not satisfy exact-tag binding, provider/native adapter acceptance, or named
+review. Windows AppContainer enforcement is recorded by the separate native
+follow-up below.
+
+The 2026-09-15 Windows AppContainer follow-up passed the clean source
+`c1a94d4902e13d454ef87eb9c5d394c604bea608` in core workflow run
+`34935126986`, native Windows job `104271291760`. The implementation creates
+an ephemeral zero-capability profile, grants only explicit read/execute ACLs,
+launches suspended with `STARTUPINFOEX` security capabilities, attaches the
+Job Object before resume, and independently attests the package SID, low
+integrity, and zero token capabilities from the parent. Its filesystem probe
+proves an allowlisted read and denied unlisted read/write; cleanup restores
+the original owner/group and DACL ACE/protection semantics while allowing only
+Windows' documented `SE_DACL_AUTO_INHERITED` (`AI`) control-bit normalization.
+The AppContainer stdio transport uses inherited regular temporary files to
+avoid the Go Windows synchronous-pipe startup hang found during hosted
+diagnosis; a path-based output monitor preserves the configured bound before
+post-exit collection. This closes the Windows implementation gap under P1-04,
+while native macOS isolation, named platform-owner acceptance, and exact-tag
+release gates remain open.
 
 ## 1. Executive decision
 
@@ -108,16 +128,15 @@ current release-blocking gaps are:
    required native hostile, crash, cancellation, privacy, ownership, and
    backup/restore matrices are not yet a release-approved record across every
    claimed platform.
-2. The advertised verifier baseline remains process-bounded. The local P1-04
-   capability report now distinguishes the achieved Linux
-   bubblewrap namespace plus in-process Landlock ruleset, Windows job-object
-   controls without AppContainer, and the macOS
+2. The default verifier baseline remains process-bounded, while stronger tiers
+   are selected explicitly. The local P1-04 capability report distinguishes
+   the achieved Linux bubblewrap namespace plus in-process Landlock ruleset,
+   Windows AppContainer plus Job Object enforcement, and the macOS
    process-group fallback; trusted verifier evidence binds those observations
-   into its digest. The local Linux direct-enforcement and namespace tests pass;
-   the current exact-SHA full matrix `34682716776` validates the Linux namespace and
-   Landlock, Windows job-object, and macOS process-group primitives.
-   AppContainer-specific enforcement, independent attestation, and named
-   platform-owner acceptance remain incomplete.
+   into its digest. The local Linux direct-enforcement and namespace tests pass,
+   and the native Windows follow-up independently attests the AppContainer
+   child token from the parent before resume. Native macOS filesystem/network
+   isolation and named platform-owner acceptance remain incomplete.
 3. Phase 2 still needs adapter-native install/upgrade/uninstall evidence and
    named review for the exact alpha-supported client/provider subset. The
    current dedicated-token private canary `34682636514` passed against exact
@@ -235,7 +254,7 @@ Git/provider side effects:
 | Git safety | Isolated index/tree, exact SHA/ref, controlled Git environment, hardened init/worktree discovery, and HEAD/index rechecks | Native hostile-repository and differential matrices still need Phase 1 exit evidence and named acceptance | Block alpha |
 | Ownership | Source-free baseline evidence, replay deduplication, race checks, rename/delete handling, and fail-closed ambiguity | Native recovery/ownership matrix and release-owner acceptance remain open | Block alpha |
 | Durability | Intent-before-effect, leases, restart reconciliation, randomized subprocess schedules, and supported backup/restore/integrity/retention APIs | Native backup/restore/retention runtime matrix and remaining Phase 1 recovery drills | Block alpha |
-| Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings, bubblewrap namespaces, and Landlock filesystem rules | Windows AppContainer, macOS filesystem/network isolation, and native platform acceptance remain unavailable | Block public use |
+| Verification | Frozen executable/config digests, timeout/output bounds, process-group/job cleanup, explicit tier evidence, Linux resource ceilings, bubblewrap namespaces, Landlock filesystem rules, and Windows AppContainer with parent-side token attestation | macOS filesystem/network isolation and native platform-owner acceptance remain unavailable | Block public use |
 | Security scanning | Candidate and bounded history checks; pinned offline interface, exact-blob scope, coverage/limit evidence, redacted fingerprints | Detection engine breadth and provider-side push protection remain separately scoped; native security-tool matrix remains | Block public use |
 | Adapters | Versioned six-entry registry, sanitized versioned fixtures, canonical translation, bounded probes, and four schema-specific installers | Native all-OS/client-version installation matrix and upstream drift automation remain; OpenCode/CommandCode are intentionally observation-only | Block compatibility claim |
 | GitHub provider | Exact destination/SHA/ref checks, typed versioned REST transport, durable reconciliation, and current exact-SHA private canary | App permission review, native artifact execution for the exact release snapshot, and named provider review remain | Block alpha |

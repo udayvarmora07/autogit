@@ -2,7 +2,7 @@
 
 Source of truth: [world-class implementation plan](docs/implementation-plan.md)
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
-Last updated: 2026-09-12
+Last updated: 2026-09-15
 Release posture: NO-GO for private alpha
 Private-alpha review policy: the documented single-maintainer exception allows
 named release-owner approval; it does not waive exact-tag, canary, provenance,
@@ -12,7 +12,7 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 76 checked, 20 open; the
+before starting work. Current audit: 96 total rows, 78 checked, 18 open; the
 user-assigned batch is 10 work packages occupying 2 open rows. The local
 implementation exists, and formal acceptance is 8/10 after P4-01 quality-tier,
 P4-02 shell-safety, P4-04 fuzz-floor, P4-05 chaos/recovery, P4-06 scenario,
@@ -122,15 +122,20 @@ All items are release blockers.
 - [x] P1-04 Enforce and test descendant cleanup, CPU/memory/file/process
   limits, filesystem allowlists, and network denial for advertised tiers.
   Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
-- [ ] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
+- [x] P1-04 Prototype and validate Linux Landlock/namespaces, Windows
   AppContainer/job controls, and an honest macOS fallback. Local capability
   evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md);
   local Linux direct-enforcement and namespace tests now cover the implemented
   Landlock/bubblewrap paths, while exact-source hosted run `34604368677`
   and current exact-SHA full matrix `34682716776` validate the namespace,
   Windows job-object, and macOS process-group paths; current-tree hosted
-  Landlock evidence is now retained. AppContainer, independent attestation,
-  and named review remain open.
+  Landlock evidence is now retained. The Windows follow-up creates an
+  ephemeral AppContainer with explicit read/execute ACLs, launches suspended
+  through `STARTUPINFOEX` security capabilities, attaches the Job Object before
+  resume, and independently attests the child token from the parent (including
+  the package SID, low-integrity token, and zero network capabilities). Native
+  Windows proof is recorded in the dated follow-up in the linked evidence
+  bundle. Named platform-owner review remains a separate release gate.
 - [x] P1-05 Introduce a pinned offline secret-scanner interface over exact
   candidate blobs and reachable history; keep online validation separately
   consented. Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
@@ -373,7 +378,7 @@ Windows checks, all six native artifact lifecycle drills, fuzz, soak,
 reproducibility, security, and dependency-policy jobs. The commit is a
 documentation-only descendant of the generated evidence snapshot
 `06ba87508ff53abc8b0001885e8341b6c07ad27a`; no acceptance checkbox changes
-follow from this run. Exact-tag binding, AppContainer/native macOS acceptance,
+follow from this run. Exact-tag binding, native macOS isolation/acceptance,
 provider/native adapter evidence, and named review remain external gates.
 
 The 2026-09-11 follow-up fixed the Windows Git Bash package-metadata hashing
@@ -385,6 +390,27 @@ manifest now binds to `06ba87508ff53abc8b0001885e8341b6c07ad27a` and records
 the earlier `e432bf5` core failure is retained as diagnostic history. This
 fixes the implementation-level CI defect without changing any acceptance
 checkbox or the NO-GO release posture.
+
+### 2026-09-15 Windows AppContainer follow-up
+
+The clean source commit
+`c1a94d4902e13d454ef87eb9c5d394c604bea608` passed the push-triggered core
+workflow's native Windows job in run `34935126986` (job
+`104271291760`). The follow-up exercises a unique ephemeral AppContainer with
+zero declared capabilities, parent-side package-SID/low-integrity/zero-
+capability attestation before resume, Job Object attachment before resume,
+explicit read/execute ACLs for the allowlist, denied unlisted reads and
+writes, and restoration of the original owner/group plus DACL ACE/protection
+semantics after cleanup. Windows may normalize the system-managed
+`SE_DACL_AUTO_INHERITED` (`AI`) control bit while applying a directory DACL;
+the test allows that documented normalization but remains strict about the
+owner, group, ACEs, and DACL protection state. AppContainer standard output
+and error use inherited regular temporary files, avoiding the Go Windows
+synchronous-pipe startup probe deadlock; a parent-side path monitor preserves
+the configured output limit and output is collected after process exit. This
+closes the Windows implementation gap under P1-04; native macOS isolation,
+named platform-owner review, and the remaining exact-tag/release gates stay
+open.
 
 ## Immediate PR queue
 
@@ -413,7 +439,9 @@ checkbox or the NO-GO release posture.
   P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
 - [x] PR-012 Verification isolation capability baseline, including a native
   process-supervisor capability probe and fail-closed stronger-tier behavior.
-  Windows AppContainer and native macOS acceptance remain open under P1-04.
+  The Windows AppContainer and parent-side token-attestation follow-up is
+  complete under P1-04; native macOS filesystem/network isolation and named
+  platform-owner acceptance remain separate gates.
   Evidence: [Phase 1 P1-01–P1-05 bundle](docs/release-evidence/phase-1-p1-01-p1-05.md).
 
 ## Promotion rule

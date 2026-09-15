@@ -40,9 +40,11 @@ source snapshot; fresh `go test ./...`, `go vet ./...`, and `git diff --check`
 also pass.
 
 Decision: Phase 0 exit accepted for the bounded private-alpha implementation
-scope. This approval does not accept the Phase 1 gate, AppContainer or other
-unimplemented isolation capabilities, native adapter evidence, exact-tag
-release evidence, signed provenance, public beta, or GA.
+scope. This approval does not accept the Phase 1 gate, the Windows AppContainer
+implementation's named platform-owner acceptance, native macOS isolation,
+native adapter evidence, exact-tag release evidence, signed provenance, public
+beta, or GA. The Windows implementation evidence is recorded separately in
+the Phase 1 P1-06–P1-10 bundle and is not a Phase 0 acceptance decision.
 
 Accepted by: Uday Varmora (`@udayvarmora07`)
 

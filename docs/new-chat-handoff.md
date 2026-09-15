@@ -6,7 +6,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 ## Current snapshot
 
-- Snapshot date: 2026-09-12.
+- Snapshot date: 2026-09-15.
 - Repository: `/home/uday-varmora/autogit`.
 - Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`.
 - The manifest collection ran against a clean tree at that snapshot. This
@@ -14,7 +14,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   commit, so the manifest's commit identity is intentionally the clean source
   snapshot rather than a manually edited current-HEAD value.
 - Overall release posture: **NO-GO for private alpha**.
-- Tracker: 96 total checklist rows, 76 checked, 20 open.
+- Tracker: 96 total checklist rows, 78 checked, 18 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
@@ -28,9 +28,10 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   review exception; P4-03 and P4-08 stay open pending their distinct release
   gates. PR-011 and the process-bounded PR-012 baseline are now checked;
   Linux now has an ABI-gated in-process Landlock ruleset behind the existing
-  bubblewrap namespace path, while Windows AppContainer and native macOS
-  acceptance remain separate open P1-04 work. The full project still has 20
-  open rows.
+  bubblewrap namespace path, and Windows now has native AppContainer
+  enforcement with parent-side token attestation. Native macOS acceptance
+  and named platform-owner review remain separate P1-04 gates. The full
+  project now has 18 open rows.
 
 ## Why the tracker is still open
 
@@ -90,8 +91,19 @@ remaining P4 rows.
 - The current exact-SHA full matrix `34682716776` passed all 20 jobs against
   `1406352345886c116ba7750369fc3a14df960b63`, including native artifact,
   soak, fuzz, reproducibility, security, dependency-policy, scenario, and
-  performance checks. AppContainer, named acceptance, and exact-tag release
-  gates remain open.
+  performance checks. The later Windows AppContainer follow-up is recorded
+  separately in the Phase 1 evidence bundle; named acceptance and exact-tag
+  release gates remain open.
+- The clean Windows AppContainer follow-up passed native job `104271291760` in
+  core run `34935126986` against exact source
+  `c1a94d4902e13d454ef87eb9c5d394c604bea608`. It independently attests the
+  child token from the parent and proves allowlisted filesystem access,
+  denied unlisted reads/writes, and owner/group plus DACL ACE/protection
+  restoration (allowing only Windows' documented `AI` auto-inheritance flag
+  normalization). AppContainer stdio uses inherited regular temporary files
+  with a path-based bounded-output monitor because Go Windows child startup
+  can block while probing synchronous pipe handles. Native macOS isolation,
+  named platform-owner acceptance, and exact-tag release gates remain open.
 - Hosted compatibility-window review `34590952233` is historical evidence for
   the preceding `97ea27f` snapshot; the current local compatibility suite
   passed in the regenerated manifest and no expiry issue was generated.
@@ -134,9 +146,10 @@ remaining P4 rows.
 - Current PR-011/PR-012 slice: directory-durable backup/restore publication,
   stale maintenance-artifact recovery, subprocess crash tests for backup and
   migration, durable restore assertions, and a native process-supervisor
-  capability probe. The latest local P1-04 slice adds direct Linux Landlock
-  enforcement and adversarial coverage; Windows AppContainer and native macOS
-  acceptance remain intentionally open.
+  capability probe. The latest P1-04 slice adds direct Linux Landlock
+  enforcement and adversarial coverage plus native Windows AppContainer
+  enforcement and parent-side token attestation; native macOS acceptance
+  remains intentionally open.
 
 ## Continuation rules
 
