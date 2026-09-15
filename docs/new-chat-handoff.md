@@ -104,6 +104,12 @@ remaining P4 rows.
   with a path-based bounded-output monitor because Go Windows child startup
   can block while probing synchronous pipe handles. Native macOS isolation,
   named platform-owner acceptance, and exact-tag release gates remain open.
+- The current-tree manual dispatch `34961479624` passed all 20 core jobs
+  against `a51eb9718bac0e3e514e196fa4e1156a47865ade`. Its six native artifact jobs all passed built-artifact
+  smoke and raw-binary lifecycle drills; the run also passed native platform,
+  fuzz, soak, reproducibility, security, cross-build, and dependency-policy
+  jobs. This is current implementation evidence, not exact stable-tag release
+  acceptance.
 - Hosted compatibility-window review `34590952233` is historical evidence for
   the preceding `97ea27f` snapshot; the current local compatibility suite
   passed in the regenerated manifest and no expiry issue was generated.

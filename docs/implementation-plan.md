@@ -109,6 +109,13 @@ post-exit collection. This closes the Windows implementation gap under P1-04,
 while native macOS isolation, named platform-owner acceptance, and exact-tag
 release gates remain open.
 
+The current-tree manual dispatch `34961479624` passed all 20 core jobs against
+`a51eb9718bac0e3e514e196fa4e1156a47865ade`, including all six native artifact
+lifecycle drills, native platform checks, fuzz, soak, reproducibility,
+security, cross-build, and dependency-policy checks. It adds current
+validation for P4-03 but leaves the exact-tag-bound P4-08/release evidence
+gate unchanged.
+
 ## 1. Executive decision
 
 AutoGit already has an unusually strong safety-oriented foundation: explicit

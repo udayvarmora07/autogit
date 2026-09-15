@@ -265,7 +265,7 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
-  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677` and current exact-SHA full matrix `34682716776` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677`, exact-SHA full matrix `34682716776`, and current-tree dispatch `34961479624` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
 - [x] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
   Evidence: [P4-04 fuzz-floor review](docs/acceptance-record.md#p4-04-fuzz-floor-review).
@@ -411,6 +411,12 @@ the configured output limit and output is collected after process exit. This
 closes the Windows implementation gap under P1-04; native macOS isolation,
 named platform-owner review, and the remaining exact-tag/release gates stay
 open.
+
+The current-tree manual dispatch `34961479624` passed all 20 core jobs against
+`a51eb9718bac0e3e514e196fa4e1156a47865ade`, including all six native artifact lifecycle drills, native
+platform checks, fuzz, soak, reproducibility, security, cross-build, and
+dependency-policy checks. It adds current validation for P4-03 but leaves the
+exact-tag-bound P4-08/release evidence gate unchanged.
 
 ## Immediate PR queue
 
