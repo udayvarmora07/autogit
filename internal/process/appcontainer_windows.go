@@ -26,11 +26,9 @@ const procThreadAttributeSecurityCapabilities = 0x00020009
 
 var (
 	userenvDLL                    = windows.NewLazySystemDLL("userenv.dll")
-	kernel32DLL                   = windows.NewLazySystemDLL("kernel32.dll")
 	createAppContainerProfileProc = userenvDLL.NewProc("CreateAppContainerProfile")
 	deleteAppContainerProfileProc = userenvDLL.NewProc("DeleteAppContainerProfile")
 	deriveAppContainerSIDProc     = userenvDLL.NewProc("DeriveAppContainerSidFromAppContainerName")
-	peekNamedPipeProc             = kernel32DLL.NewProc("PeekNamedPipe")
 )
 
 type securityCapabilities struct {
@@ -47,19 +45,18 @@ type appContainerProfile struct {
 }
 
 type windowsAppContainerProcess struct {
-	process          *os.Process
-	thread           windows.Handle
-	packageSID       string
-	stdout           io.Writer
-	stderr           io.Writer
-	stdoutReader     *os.File
-	stderrReader     *os.File
-	stdoutDone       chan struct{}
-	stderrDone       chan struct{}
-	startReadersOnce sync.Once
-	cleanupFunc      func() error
-	cleanupOnce      sync.Once
-	cleanupErr       error
+	process        *os.Process
+	thread         windows.Handle
+	packageSID     string
+	stdout         io.Writer
+	stderr         io.Writer
+	stdoutFile     *os.File
+	stderrFile     *os.File
+	outputMax      int
+	outputOverflow *outputLimitSignal
+	cleanupFunc    func() error
+	cleanupOnce    sync.Once
+	cleanupErr     error
 }
 
 func AppContainerAvailable() bool {
@@ -95,39 +92,40 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 		return nil, fmt.Errorf("open AppContainer stdin: %w", err)
 	}
 	defer stdin.Close()
-	stdoutR, stdoutW, err := os.Pipe()
+	stdoutFile, err := newAppContainerOutputFile("stdout")
 	if err != nil {
-		return nil, fmt.Errorf("create AppContainer stdout pipe: %w", err)
+		return nil, err
 	}
-	stderrR, stderrW, err := os.Pipe()
+	stderrFile := stdoutFile
+	if !sameOutputWriter(stdout, stderr) {
+		stderrFile, err = newAppContainerOutputFile("stderr")
+	}
 	if err != nil {
-		_ = stdoutR.Close()
-		_ = stdoutW.Close()
-		return nil, fmt.Errorf("create AppContainer stderr pipe: %w", err)
+		_ = cleanupAppContainerOutputFile(stdoutFile)
+		return nil, err
 	}
-	closePipes := true
+	closeOutputFiles := true
 	defer func() {
-		if closePipes {
-			_ = stdoutR.Close()
-			_ = stdoutW.Close()
-			_ = stderrR.Close()
-			_ = stderrW.Close()
+		if closeOutputFiles {
+			_ = cleanupAppContainerOutputFile(stdoutFile)
+			if stderrFile != stdoutFile {
+				_ = cleanupAppContainerOutputFile(stderrFile)
+			}
 		}
 	}()
 
+	stdoutHandle := windows.Handle(stdoutFile.Fd())
+	stderrHandle := windows.Handle(stderrFile.Fd())
 	childHandles := []windows.Handle{
 		windows.Handle(stdin.Fd()),
-		windows.Handle(stdoutW.Fd()),
-		windows.Handle(stderrW.Fd()),
+		stdoutHandle,
+	}
+	if stderrHandle != stdoutHandle {
+		childHandles = append(childHandles, stderrHandle)
 	}
 	for _, handle := range childHandles {
 		if err := windows.SetHandleInformation(handle, windows.HANDLE_FLAG_INHERIT, windows.HANDLE_FLAG_INHERIT); err != nil {
 			return nil, fmt.Errorf("mark AppContainer standard handle inheritable: %w", err)
-		}
-	}
-	for _, handle := range []windows.Handle{windows.Handle(stdoutR.Fd()), windows.Handle(stderrR.Fd())} {
-		if err := windows.SetHandleInformation(handle, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-			return nil, fmt.Errorf("clear AppContainer pipe inheritance: %w", err)
 		}
 	}
 
@@ -166,8 +164,8 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 			Cb:        uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
 			Flags:     windows.STARTF_USESTDHANDLES,
 			StdInput:  childHandles[0],
-			StdOutput: childHandles[1],
-			StdErr:    childHandles[2],
+			StdOutput: stdoutHandle,
+			StdErr:    stderrHandle,
 		},
 		ProcThreadAttributeList: attributeList.List(),
 	}
@@ -185,28 +183,73 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	}
 	_ = windows.CloseHandle(info.Process)
 
-	// The child owns inherited copies of the writer handles. Close the
-	// parent's copies now. Do not start a read on either pipe until after
-	// the suspended child has resumed: Go 1.26 probes inherited pipe handles
-	// during os package initialization, and a pending peer read can make that
-	// probe block. The reader uses PeekNamedPipe first so it does not create a
-	// pending read until the child has emitted output or closed the handle.
-	_ = stdoutW.Close()
-	_ = stderrW.Close()
-	closePipes = false
+	// Keep the parent copies open until the child has exited. Regular file
+	// handles avoid Go 1.26's blocked-pipe probe during os package
+	// initialization, while still allowing the parent to collect bounded
+	// output after the child terminates.
+	closeOutputFiles = false
 	setupCleanup = false
 	return &windowsAppContainerProcess{
-		process:      process,
-		thread:       info.Thread,
-		packageSID:   profile.sid.String(),
-		stdout:       stdout,
-		stderr:       stderr,
-		stdoutReader: stdoutR,
-		stderrReader: stderrR,
-		stdoutDone:   make(chan struct{}),
-		stderrDone:   make(chan struct{}),
-		cleanupFunc:  func() error { return errors.Join(aclCleanup(), profileCleanup()) },
+		process:        process,
+		thread:         info.Thread,
+		packageSID:     profile.sid.String(),
+		stdout:         stdout,
+		stderr:         stderr,
+		stdoutFile:     stdoutFile,
+		stderrFile:     stderrFile,
+		outputMax:      outputMax(stdout),
+		outputOverflow: outputOverflow(stdout),
+		cleanupFunc: func() error {
+			return errors.Join(cleanupAppContainerOutputFile(stdoutFile), cleanupAppContainerOutputFileIfDistinct(stderrFile, stdoutFile), aclCleanup(), profileCleanup())
+		},
 	}, nil
+}
+
+func newAppContainerOutputFile(label string) (*os.File, error) {
+	file, err := os.CreateTemp("", "autogit-appcontainer-"+label+"-*")
+	if err != nil {
+		return nil, fmt.Errorf("create AppContainer %s output file: %w", label, err)
+	}
+	if err := windows.SetHandleInformation(windows.Handle(file.Fd()), windows.HANDLE_FLAG_INHERIT, windows.HANDLE_FLAG_INHERIT); err != nil {
+		_ = cleanupAppContainerOutputFile(file)
+		return nil, fmt.Errorf("mark AppContainer %s output file inheritable: %w", label, err)
+	}
+	return file, nil
+}
+
+func cleanupAppContainerOutputFile(file *os.File) error {
+	if file == nil {
+		return nil
+	}
+	name := file.Name()
+	return errors.Join(file.Close(), os.Remove(name))
+}
+
+func cleanupAppContainerOutputFileIfDistinct(file, other *os.File) error {
+	if file == other {
+		return nil
+	}
+	return cleanupAppContainerOutputFile(file)
+}
+
+func outputMax(writer io.Writer) int {
+	if output, ok := writer.(*boundedOutput); ok {
+		return output.max
+	}
+	return 0
+}
+
+func outputOverflow(writer io.Writer) *outputLimitSignal {
+	if output, ok := writer.(*boundedOutput); ok {
+		return output.overflow
+	}
+	return nil
+}
+
+func sameOutputWriter(left, right io.Writer) bool {
+	leftOutput, leftOK := left.(*boundedOutput)
+	rightOutput, rightOK := right.(*boundedOutput)
+	return leftOK && rightOK && leftOutput == rightOutput
 }
 
 func (p *windowsAppContainerProcess) resume() error {
@@ -220,55 +263,6 @@ func (p *windowsAppContainerProcess) resume() error {
 		return fmt.Errorf("resume AppContainer process: %w", err)
 	}
 	return closeErr
-}
-
-func (p *windowsAppContainerProcess) startOutputReaders() {
-	if p == nil {
-		return
-	}
-	p.startReadersOnce.Do(func() {
-		go func() {
-			copyAppContainerOutput(p.stdout, p.stdoutReader)
-			_ = p.stdoutReader.Close()
-			close(p.stdoutDone)
-		}()
-		go func() {
-			copyAppContainerOutput(p.stderr, p.stderrReader)
-			_ = p.stderrReader.Close()
-			close(p.stderrDone)
-		}()
-	})
-}
-
-func copyAppContainerOutput(dst io.Writer, reader *os.File) {
-	if err := waitForAppContainerPipeData(reader); err != nil {
-		return
-	}
-	_, _ = io.Copy(dst, reader)
-}
-
-func waitForAppContainerPipeData(reader *os.File) error {
-	for {
-		var available uint32
-		result, _, callErr := peekNamedPipeProc.Call(
-			reader.Fd(),
-			0,
-			0,
-			0,
-			uintptr(unsafe.Pointer(&available)),
-			0,
-		)
-		if result != 0 {
-			if available > 0 {
-				return nil
-			}
-		} else if callErr == windows.ERROR_BROKEN_PIPE || callErr == windows.ERROR_HANDLE_EOF {
-			return io.EOF
-		} else if callErr != nil {
-			return callErr
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 func (p *windowsAppContainerProcess) osProcess() *os.Process {
@@ -289,11 +283,68 @@ func (p *windowsAppContainerProcess) wait() (*os.ProcessState, error) {
 	if p == nil || p.process == nil {
 		return nil, errors.New("AppContainer process is unavailable")
 	}
-	p.startOutputReaders()
+	monitorStop := make(chan struct{})
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		p.monitorOutput(monitorStop)
+	}()
 	state, err := p.process.Wait()
-	<-p.stdoutDone
-	<-p.stderrDone
+	close(monitorStop)
+	<-monitorDone
+	if collectErr := p.collectOutput(); collectErr != nil {
+		err = errors.Join(err, collectErr)
+	}
 	return state, err
+}
+
+func (p *windowsAppContainerProcess) monitorOutput(stop <-chan struct{}) {
+	if p == nil || p.outputMax <= 0 || p.outputOverflow == nil {
+		return
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			for _, file := range []*os.File{p.stdoutFile, p.stderrFile} {
+				if file == nil {
+					continue
+				}
+				info, err := file.Stat()
+				if err == nil && info.Size() > int64(p.outputMax) {
+					p.outputOverflow.once.Do(func() { close(p.outputOverflow.ch) })
+					return
+				}
+			}
+		}
+	}
+}
+
+func (p *windowsAppContainerProcess) collectOutput() error {
+	if p == nil {
+		return nil
+	}
+	var collectErr error
+	if err := collectAppContainerOutput(p.stdout, p.stdoutFile); err != nil {
+		collectErr = errors.Join(collectErr, err)
+	}
+	if p.stderrFile != p.stdoutFile {
+		if err := collectAppContainerOutput(p.stderr, p.stderrFile); err != nil {
+			collectErr = errors.Join(collectErr, err)
+		}
+	}
+	return collectErr
+}
+
+func collectAppContainerOutput(dst io.Writer, file *os.File) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	_, err := io.Copy(dst, file)
+	return err
 }
 
 func (p *windowsAppContainerProcess) cleanup() error {
