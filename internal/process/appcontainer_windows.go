@@ -44,14 +44,19 @@ type appContainerProfile struct {
 }
 
 type windowsAppContainerProcess struct {
-	process     *os.Process
-	thread      windows.Handle
-	packageSID  string
-	stdoutDone  <-chan struct{}
-	stderrDone  <-chan struct{}
-	cleanupFunc func() error
-	cleanupOnce sync.Once
-	cleanupErr  error
+	process          *os.Process
+	thread           windows.Handle
+	packageSID       string
+	stdout           io.Writer
+	stderr           io.Writer
+	stdoutReader     *os.File
+	stderrReader     *os.File
+	stdoutDone       chan struct{}
+	stderrDone       chan struct{}
+	startReadersOnce sync.Once
+	cleanupFunc      func() error
+	cleanupOnce      sync.Once
+	cleanupErr       error
 }
 
 func AppContainerAvailable() bool {
@@ -177,32 +182,26 @@ func startAppContainer(command *exec.Cmd, stdout, stderr io.Writer, options Opti
 	}
 	_ = windows.CloseHandle(info.Process)
 
-	stdoutDone := make(chan struct{})
-	go func() {
-		_, _ = io.Copy(stdout, stdoutR)
-		_ = stdoutR.Close()
-		close(stdoutDone)
-	}()
-	stderrDone := make(chan struct{})
-	go func() {
-		_, _ = io.Copy(stderr, stderrR)
-		_ = stderrR.Close()
-		close(stderrDone)
-	}()
 	// The child owns inherited copies of the writer handles. Close the
-	// parent's copies now so the reader goroutines observe EOF when the child
-	// exits; the readers themselves are owned by those goroutines until then.
+	// parent's copies now. Do not start a read on either named pipe until after
+	// the suspended child has resumed: Go 1.26 probes inherited pipe handles
+	// during os package initialization, and a pending peer read can make that
+	// probe block.
 	_ = stdoutW.Close()
 	_ = stderrW.Close()
 	closePipes = false
 	setupCleanup = false
 	return &windowsAppContainerProcess{
-		process:     process,
-		thread:      info.Thread,
-		packageSID:  profile.sid.String(),
-		stdoutDone:  stdoutDone,
-		stderrDone:  stderrDone,
-		cleanupFunc: func() error { return errors.Join(aclCleanup(), profileCleanup()) },
+		process:      process,
+		thread:       info.Thread,
+		packageSID:   profile.sid.String(),
+		stdout:       stdout,
+		stderr:       stderr,
+		stdoutReader: stdoutR,
+		stderrReader: stderrR,
+		stdoutDone:   make(chan struct{}),
+		stderrDone:   make(chan struct{}),
+		cleanupFunc:  func() error { return errors.Join(aclCleanup(), profileCleanup()) },
 	}, nil
 }
 
@@ -286,6 +285,24 @@ func (p *windowsAppContainerProcess) resume() error {
 	return closeErr
 }
 
+func (p *windowsAppContainerProcess) startOutputReaders() {
+	if p == nil {
+		return
+	}
+	p.startReadersOnce.Do(func() {
+		go func() {
+			_, _ = io.Copy(p.stdout, p.stdoutReader)
+			_ = p.stdoutReader.Close()
+			close(p.stdoutDone)
+		}()
+		go func() {
+			_, _ = io.Copy(p.stderr, p.stderrReader)
+			_ = p.stderrReader.Close()
+			close(p.stderrDone)
+		}()
+	})
+}
+
 func (p *windowsAppContainerProcess) osProcess() *os.Process {
 	if p == nil {
 		return nil
@@ -304,6 +321,7 @@ func (p *windowsAppContainerProcess) wait() (*os.ProcessState, error) {
 	if p == nil || p.process == nil {
 		return nil, errors.New("AppContainer process is unavailable")
 	}
+	p.startOutputReaders()
 	state, err := p.process.Wait()
 	<-p.stdoutDone
 	<-p.stderrDone
