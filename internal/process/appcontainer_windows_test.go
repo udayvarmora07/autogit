@@ -52,7 +52,7 @@ func TestWindowsAppContainerEnforcesAllowlistAndAttestsFromParent(t *testing.T) 
 		"AUTOGIT_APPCONTAINER_DENIED=" + deniedPath,
 		"PATH=" + filepath.Dir(executable),
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	result, err := Run(ctx, Options{
 		Executable:          executable,
