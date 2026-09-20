@@ -67,5 +67,7 @@ replacement verification result, and reviewer/date. Evidence must remain
 redacted: no credentials, prompts, source, diffs, raw URLs, or local paths.
 
 This document and the executable drill establish the implementation contract.
-P5-07 remains a release-acceptance row until a named reviewer records the
-tabletop/technical result against the exact tagged release environment.
+The technical rollback drill passed alongside the exact-tag `v0.1.2` consumer
+verification and published-release evidence. P5-07 remains a
+release-acceptance row until a named security/release reviewer records the
+tabletop result against the exact tagged release environment.

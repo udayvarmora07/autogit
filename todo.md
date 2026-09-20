@@ -2,7 +2,7 @@
 
 Source of truth: [world-class implementation plan](docs/implementation-plan.md)
 Audited baseline: f9b692f261c22a5ca101074c644a42a33a96f9e0
-Last updated: 2026-09-15
+Last updated: 2026-09-20
 Release posture: NO-GO for private alpha
 Private-alpha review policy: the documented single-maintainer exception allows
 named release-owner approval; it does not waive exact-tag, canary, provenance,
@@ -12,22 +12,22 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 96 total rows, 78 checked, 18 open; the
-user-assigned batch is 10 work packages occupying 2 open rows. The local
-implementation exists, and formal acceptance is 8/10 after P4-01 quality-tier,
-P4-02 shell-safety, P4-04 fuzz-floor, P4-05 chaos/recovery, P4-06 scenario,
-P4-07 compatibility, P5-01 governance, and P5-02 dependency/workflow
-acceptance; exact-tag evidence, signing/provenance, and remaining named review
-are still required.
+before starting work. Current audit: 96 total rows, 83 checked, 13 open. The
+user-assigned implementation batch is verified, and exact-tag `v0.1.2` release
+evidence now covers the GitHub Release path; package-channel, clean-machine,
+phase-gate, cohort, and named-review requirements remain open where listed
+below.
 Implementation state for that batch is tracked separately in the
 [Phase 4/5 implementation ledger](docs/release-evidence/phase-4-5-implementation-ledger.json):
 10/10 packages are verified against the recorded implementation evidence;
 2 release-acceptance rows remain pending review.
 The checked-in Phase 4 machine manifest records a generated clean collection
 for evidence snapshot commit
-`06ba87508ff53abc8b0001885e8341b6c07ad27a`. Documentation commits may advance
-the branch after that snapshot. If source or toolchain inputs change, regenerate
-it with the evidence command; never update its commit identity by hand.
+`06ba87508ff53abc8b0001885e8341b6c07ad27a`. Documentation and release-workflow
+commits now advance the branch after that snapshot. The exact-tag `v0.1.2`
+release is separately recorded in the Phase 5 evidence bundle. If source or
+toolchain inputs change, regenerate the manifest with the evidence command;
+never update its commit identity by hand.
 The package-level reconciliation is recorded in the [Phase 4/5 acceptance
 matrix](docs/release-evidence/phase-4-5-acceptance-matrix.md).
 The recommended two-ledger closure model and depth-first loop are documented
@@ -155,9 +155,10 @@ All items are release blockers.
   filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
-  native platforms. Current exact-SHA full matrix `35492327966` passed all 20
-  jobs against `f8ad8d5f61d046551c281f759809d607d6a9fe79`, including native
-  platform, artifact lifecycle, soak, fuzz, security, and recovery paths; the
+  native platforms. Current exact-HEAD push run `35505877385` passed all
+  push-triggered core jobs, and the native artifact jobs in manual run
+  `35507277048` passed. That manual run still failed the Ubuntu provider
+  postcondition test and the Windows AppContainer test by timeout; the
   complete Phase 1 exit record and named platform-owner acceptance remain
   outstanding.
 
@@ -224,12 +225,11 @@ named-review requirements are executed and reviewed.
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.
-  Current exact-SHA matrix `35492327966` passed the native adapter registry
-  and installer tests on Linux, macOS, and Windows. Current exact-SHA canary
-  `35493024891` passed for private target
-  `udayvarmora07/autogit-v1-test-35493024891`, verified `main` at
-  `75efeca81576d17eaebec6cbd916946ab6ac2a15`, and confirmed allowlisted
-  cleanup; named permission/release review remains outstanding.
+  Current exact-HEAD canary `35505108644` passed for private target
+  `udayvarmora07/autogit-v1-test-35505108644`, verified `main` at
+  `e497d422955c4b051941a489a5f93ae3670dc207`, and confirmed allowlisted
+  cleanup. Current native artifact jobs also passed in manual run
+  `35507277048`; named permission/release review remains outstanding.
 
 ## Phase 3 — product UX and operations
 
@@ -317,18 +317,22 @@ named-review requirements are executed and reviewed.
 - [ ] P5-06 Publish verified GitHub Releases and add tested Homebrew plus
   winget/Scoop channels according to demonstrated platform demand. Evidence:
   [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md)
-  now re-verifies the downloaded attested bundle on the protected publication
-  runner and regenerates byte-identical Homebrew/Scoop metadata from
-  `SHA256SUMS`; package-repository publication and native clean-machine install
-  evidence remain open.
+  published and consumer-verified `v0.1.2` at `abcd3fb`; the protected
+  publication runner regenerated byte-identical Homebrew/Scoop metadata from
+  `SHA256SUMS`. Package-repository publication and native clean-machine
+  package evidence remain open.
 - [ ] P5-07 Test native install, upgrade, downgrade, uninstall, checksum,
   signature, and rollback paths. Local raw-binary lifecycle evidence:
-  [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md); exact-source hosted run `34604368677` passed the six-target raw-binary drill; package-channel, clean-machine, and signed-release checks remain open.
+  [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md); the
+  published `v0.1.2` bundle passed exact consumer verification and the native
+  Linux lifecycle drill, while package-channel and clean-machine native tests
+  remain open.
 - [ ] P5-07 Define disclosure/patch SLAs, signing identity recovery, release
   rollback, and compromised-release drills. Evidence: [rollback and disclosure
   implementation evidence](docs/release-evidence/phase-5-rollback-drill.md),
-  including explicit severity targets in [SECURITY.md](SECURITY.md);
-  exact-tag hosted review remains required for release acceptance.
+  including explicit severity targets in [SECURITY.md](SECURITY.md) and a
+  passing technical rollback drill alongside `v0.1.2`; named tabletop/security
+  review remains required for release acceptance.
 
 ## Phase 6 — release progression
 

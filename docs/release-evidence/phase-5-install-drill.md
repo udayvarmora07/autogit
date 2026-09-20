@@ -57,3 +57,22 @@ retained evidence files each report schema
 `sensitive_data_recorded: false`, and passed initial-install, upgrade,
 tampered-upgrade rejection, downgrade, rollback-preservation, and uninstall
 checks for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64/arm64.
+
+## Published-release consumer and Linux evidence — v0.1.2
+
+The published `v0.1.2` bundle at source commit
+`abcd3fb3b7ced0b34e33a34bfb335a800806f00b` passed
+`scripts/verify-release-artifacts.sh` against the exact repository, tag, and
+commit. The verifier accepted every checksum and all required hosted
+provenance/SBOM predicates. The six release binaries and evidence files also
+passed a direct `sha256sum -c SHA256SUMS` check.
+
+On the native Linux host, the same published candidate passed the complete
+install drill against a previous-version binary built from immutable tag
+`v0.1.1`: initial install, upgrade, tampered-upgrade rejection, downgrade,
+rollback preservation, and uninstall. The redacted result reported
+`autogit.release-install-drill/1` and `status: "passed"`.
+
+Package-manager installation on clean native Linux/macOS/Windows machines
+remains open; the prior tag was not a GitHub Release, so the previous-version
+drill input was built from its immutable source tag.

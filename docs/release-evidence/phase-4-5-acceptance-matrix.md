@@ -73,3 +73,31 @@ and thirteen controls; manifest SHA-256:
 
 The final publication job failed during the separate P5-06 package-metadata
 revalidation, so no GitHub Release is claimed by this addendum.
+
+## Current exact-tag and current-HEAD addendum — 2026-09-20
+
+The exact tag `v0.1.2` resolves to
+`abcd3fb3b7ced0b34e33a34bfb335a800806f00b`. Release run
+[35506194835](https://github.com/udayvarmora07/autogit/actions/runs/35506194835)
+passed quality, independent reproducibility, artifact attestation, and
+consumer verification; protected deployment `6552017112` then published the
+verified [GitHub Release v0.1.2](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2).
+The current push run
+[35505877385](https://github.com/udayvarmora07/autogit/actions/runs/35505877385)
+passed all push-triggered core jobs, and canary run
+[35505108644](https://github.com/udayvarmora07/autogit/actions/runs/35505108644)
+passed with verified cleanup.
+
+The published release bundle passed exact consumer verification and direct
+checksum validation. The native Linux lifecycle and technical rollback drills
+also passed. P5-06 remains open for package-repository publication and clean
+native package-channel acceptance; P5-07 remains open for clean-machine
+package testing and the named rollback/security tabletop.
+
+Manual full matrix
+[35507277048](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
+ran at the same source and passed all six native artifact jobs plus fuzz,
+soak, reproducibility, security, cross-build, and policy jobs. Its Ubuntu
+native provider-postcondition test and Windows AppContainer test failed, so
+this run is retained as a diagnostic and does not close the Phase 1 or Phase 2
+gate.

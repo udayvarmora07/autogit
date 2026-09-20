@@ -8,13 +8,14 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-20.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`.
+- Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`; current
+  source HEAD is `abcd3fb3b7ced0b34e33a34bfb335a800806f00b`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally the clean source
   snapshot rather than a manually edited current-HEAD value.
 - Overall release posture: **NO-GO for private alpha**.
-- Tracker: 96 total checklist rows, 78 checked, 18 open.
+- Tracker: 96 total checklist rows, 83 checked, 13 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
@@ -23,15 +24,15 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   generation and hosted macOS Bash portability and deterministic fuzz-floor
   fixes.
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
-  independent substeps. P4-01, P4-02, P4-04, P4-05, P4-06, P4-07, P5-01, and P5-02 are
-  accepted for the bounded private-alpha scope under the documented owner-
-  review exception; P4-03 and P4-08 stay open pending their distinct release
-  gates. PR-011 and the process-bounded PR-012 baseline are now checked;
+  independent substeps. P4-01 through P4-08 and P5-01 through P5-05 now have
+  exact-tag `v0.1.2` implementation/release evidence where applicable;
+  package-channel, clean-machine, phase-gate, cohort, and named-review rows
+  remain open below. PR-011 and the process-bounded PR-012 baseline are now checked;
   Linux now has an ABI-gated in-process Landlock ruleset behind the existing
   bubblewrap namespace path, and Windows now has native AppContainer
   enforcement with parent-side token attestation. Native macOS acceptance
   and named platform-owner review remain separate P1-04 gates. The full
-  project now has 18 open rows.
+  project now has 13 open rows.
 
 ## Why the tracker is still open
 
@@ -76,6 +77,21 @@ remaining P4 rows.
   generated collection for evidence snapshot commit `06ba875`; it records
   10/10 local suites and six artifact hashes with `tag_verified: false` and a
   clean tree at collection time.
+
+- Exact-tag release workflow `35506194835` passed all six jobs for `v0.1.2` at
+  `abcd3fb`, including independent Ubuntu/macOS reproducibility, hosted
+  attestations, consumer verification, and protected GitHub Release
+  publication. The release is live at the `v0.1.2` tag with six binaries,
+  checksums, SBOMs, vulnerability reports, evidence, and package metadata.
+- Current-HEAD push core run `35505877385` passed native Linux/macOS/Windows,
+  security, cross-build, reproducibility, dependency, and presubmit jobs. The
+  completed manual full matrix `35507277048` passed its artifact, fuzz, soak,
+  security, cross-build, and policy jobs but failed Ubuntu provider-postcondition
+  and Windows AppContainer native tests; it remains diagnostic evidence.
+- Current-HEAD private canary `35505108644` passed for owner `udayvarmora07`;
+  it created `autogit-v1-test-35505108644`, verified `main` at
+  `e497d422955c4b051941a489a5f93ae3670dc207`, and its cleanup was confirmed by
+  a post-run repository lookup.
 
 - The exact-source full matrix run `34604368677` passed all 20 jobs against
   `0d40d6af1ae38618edfa904f28fd7267e41e179e`, including fuzz, soak, native
@@ -124,26 +140,24 @@ remaining P4 rows.
 
 ## Immediate continuation order
 
-1. Re-read `todo.md`, this handoff, and the relevant Phase 4/5 sections of
-   `implementation-plan.md`; inspect the current evidence generator and its
-   output contract before running it.
-2. Preserve the fresh exact-snapshot local manifest and hosted records above; if
-   source or toolchain changes, regenerate with the configured 40-second fuzz
-   budget and verify its commit, dirty-tree state, suite results, artifact
-   identities, and control statuses before replacement. Do not edit the
-   generated commit identity by hand.
-3. Retain the completed current-HEAD dedicated-token private-canary evidence,
-   including its exact owner/name/visibility/ref/SHA and cleanup result.
-4. Reconcile the evidence against the remaining P4-03/P4-08 and P5-03
-   acceptance conditions. Native artifact, manifest-tooling, and local
-   release-workflow implementation evidence is recorded, but no exact stable
-   release tag is approved.
-5. Handle the remaining external gates separately: exact release tag and
-   release-environment approval, hosted attestation and independent-runner
-   verification, provider/App permission review, named security/release
-   review, package-channel demand and publication, native install/rollback
-   tests, and alpha
-   backup/restore/reconciliation/rollback drills.
+1. Finish and reconcile manual full matrix `35507277048` against exact HEAD
+   `abcd3fb`, including six native artifact lifecycle jobs, fuzz, soak, and
+   scenario/performance evidence. It completed with all artifact/soak/fuzz/
+   security/policy jobs green, but Ubuntu provider-postcondition and Windows
+   AppContainer native tests failed; retain it as diagnostic until those
+   hosted failures are reproduced or explicitly reviewed.
+2. Update the Phase 1 and Phase 2 gate records with that matrix and the fresh
+   current-HEAD canary; obtain or record the remaining named platform/provider
+   review rather than inferring it from green automation.
+3. Keep P5-06 open only for demonstrated package-channel demand,
+   package-repository publication, and clean-machine package tests; the
+   verified GitHub Release path is complete for `v0.1.2`.
+4. Complete native clean-machine Homebrew/Scoop/winget testing only on the
+   claimed platforms and retain redacted results; do not treat attached
+   metadata as package-repository publication.
+5. Obtain the named security/release tabletop review for P5-07, then run the
+   bounded private cohort and backup/provider/adapter/release rollback drills
+   required for alpha entry.
 6. Report any gate that cannot be completed with the exact missing authority,
    credential, platform, reviewer, or external event. Do not loop indefinitely
    on already-green local tests.

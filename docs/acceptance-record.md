@@ -87,7 +87,7 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
 
-## Exact-tag P5-03/P5-04/P5-05 release review
+## Historical v0.1.1 P5-03/P5-04/P5-05 release review
 
 The owner reviewed the exact-tag release execution for `v0.1.1` at source
 `0743443224dd809e652ea69d5d6b275eef29a4ce` in run
@@ -115,6 +115,31 @@ GA.
 Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-20
+
+## v0.1.2 P5-06 publication execution record
+
+The exact tag `v0.1.2` resolves to source commit
+`abcd3fb3b7ced0b34e33a34bfb335a800806f00b`. Release run
+[`35506194835`](https://github.com/udayvarmora07/autogit/actions/runs/35506194835)
+passed its quality, independent reproducibility, attestation, and consumer
+verification jobs. The protected `release` environment approval produced
+deployment `6552017112`, and the publication job `106068191231` created the
+non-draft GitHub Release
+[`v0.1.2`](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2).
+The release contains six target binaries, checksums, SBOMs, vulnerability
+reports, provenance evidence, and the generated Homebrew/Scoop metadata.
+
+The published consumer bundle passed the exact repository/tag/commit verifier
+and a direct `SHA256SUMS` check. A native Linux install drill also passed
+initial install, upgrade, tampered-upgrade rejection, downgrade, rollback,
+and uninstall against the previous binary built from immutable `v0.1.1`
+source. This execution record does not claim package-repository publication,
+clean-machine Homebrew/Scoop/winget acceptance, or the remaining named
+Phase 1/Phase 2/P5-07 release reviews.
+
+Recorded by: Uday Varmora (`@udayvarmora07`)
+
+Recorded on: 2026-09-20
 
 ## P4-07 compatibility-window review
 

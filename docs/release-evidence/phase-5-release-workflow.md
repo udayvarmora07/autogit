@@ -1,8 +1,8 @@
 # Phase 5 release workflow implementation evidence
 
-Date: 2026-09-11
+Date: 2026-09-20
 Scope: P5-03 through P5-06 local implementation slices
-Status: local implementation slices present; exact-tag hosted acceptance remains open
+Status: v0.1.2 exact-tag hosted release published; package-channel and clean-machine acceptance remains open
 
 ## Delivered controls
 
@@ -54,9 +54,9 @@ packages, stable ordering, and no `/home/` or `/tmp/` path disclosure.
 The existing local release integration suite also builds the supported target
 set twice with separate output directories and verifies matching bytes. The
 cross-runner comparison is intentionally hosted-only; it cannot be claimed
-from this Linux workstation. The final GitHub Release publication job also
-cannot be claimed as executed until an approved exact tag reaches the hosted
-workflow and the protected `release-publish` environment is approved.
+from this Linux workstation. The exact-tag publication path is recorded below;
+package-channel publication and native clean-machine package tests remain
+separate gates.
 
 On 2026-09-15, current-tree core workflow dispatch
 [34961479624](https://github.com/udayvarmora07/autogit/actions/runs/34961479624)
@@ -87,14 +87,32 @@ verification. The retained machine manifest SHA-256 is
 The initial `v0.1.0` run failed at the attestation job's clean-checkout check
 because downloaded evidence was placed in the worktree. Commit `0743443`
 moved those downloads under `$RUNNER_TEMP` and updated the workflow regression
-test; the corrected `v0.1.1` quality and attestation jobs passed. The later
-publication job is P5-06 scope and did not publish a GitHub Release; its
-package-metadata revalidation remains a separate follow-up.
+test; the corrected `v0.1.1` quality and attestation jobs passed. Its
+publication job then failed before metadata comparison because checkout-relative
+`dist` and `package-metadata` paths were uploaded together with runner-temp
+attestation paths, and downloaded binaries lacked executable bits. Commits
+`f9ab978` and `04837f5` split the artifacts, restore executable bits before
+identity checks, and add regression coverage.
+
+## Exact-tag hosted execution — v0.1.2
+
+Tag `v0.1.2` resolves to source commit
+`abcd3fb3b7ced0b34e33a34bfb335a800806f00b`. Release workflow
+[35506194835](https://github.com/udayvarmora07/autogit/actions/runs/35506194835)
+passed clean-room quality, independent Ubuntu/macOS builds, byte-for-byte
+comparison, attestation/consumer verification, and protected GitHub Release
+publication. The `release` environment approval is recorded by deployment
+`6552017112`; the publication job was `106068191231`.
+
+The public [v0.1.2 GitHub Release](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2)
+contains six binaries, checksums, SPDX/CycloneDX SBOMs, binary vulnerability
+reports, exact-tag machine evidence, and deterministic Homebrew/Scoop metadata.
+The metadata is attached and verified, but no package repository has been
+published because demand and clean-machine package tests remain open.
 
 ## Acceptance boundary
 
-P5-03, P5-04, and P5-05 are accepted for the bounded private-alpha scope by
-the exact-tag evidence above. No GitHub Release or package-repository
-publication is claimed: those are P5-06 gates and still require the protected
-publication path, package-channel demand, and native clean-machine install
-evidence.
+P5-03, P5-04, P5-05, and the GitHub Release portion of P5-06 have exact-tag
+hosted evidence for `v0.1.2`. P5-06 remains open for demonstrated package
+channel demand, package-repository publication, and native clean-machine
+package tests.

@@ -1,12 +1,33 @@
 # AutoGit v1 release and rollback runbook
 
 Status: implementation artifact; alpha/beta approval pending  
-Last updated: 2026-09-12
+Last updated: 2026-09-20
 
 This runbook covers the bounded private-alpha and public-beta gates. It does
 not authorize a live provider run or replace explicit release-owner approval.
 
 ## Current evidence snapshot
+
+The exact tag `v0.1.2` resolves to `abcd3fb3b7ced0b34e33a34bfb335a800806f00b`.
+Release run
+[`35506194835`](https://github.com/udayvarmora07/autogit/actions/runs/35506194835)
+passed the quality, reproducibility, attestation, and consumer-verification
+jobs; protected release deployment `6552017112` then published the verified
+GitHub Release
+[`v0.1.2`](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2).
+The current-HEAD push run
+[`35505877385`](https://github.com/udayvarmora07/autogit/actions/runs/35505877385)
+also passed all push-triggered core jobs. Current-HEAD canary run
+[`35505108644`](https://github.com/udayvarmora07/autogit/actions/runs/35505108644)
+created and cleaned up its private disposable repository after verifying the
+expected owner, `main` SHA, and post-cleanup absence.
+
+The manual full matrix
+[`35507277048`](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
+is the remaining hosted diagnostic for the exact current source. Its native
+artifact, soak, fuzz, reproducibility, security, cross-build, and policy jobs
+are being retained separately from the release record; the Phase 1/Phase 2
+gate decisions still require their named reviewers.
 
 The local evidence manifest was regenerated cleanly at commit
 `16c6325952b7937cdf8333b12cc7de0189b91f2b`; all 10 local suites passed and it
