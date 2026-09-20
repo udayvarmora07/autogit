@@ -87,6 +87,35 @@ Reviewed by: Uday Varmora (`@udayvarmora07`)
 
 Reviewed on: 2026-09-10
 
+## Exact-tag P5-03/P5-04/P5-05 release review
+
+The owner reviewed the exact-tag release execution for `v0.1.1` at source
+`0743443224dd809e652ea69d5d6b275eef29a4ce` in run
+[`35496909526`](https://github.com/udayvarmora07/autogit/actions/runs/35496909526).
+The clean-room quality job passed exact identity, uncached/race tests, release
+integration, source govulncheck, ShellCheck, dependency policy, and exact-tag
+machine evidence. The independent Ubuntu and macOS builds and byte-for-byte
+comparison passed. The attestation job passed SPDX and CycloneDX generation,
+six binary govulncheck reports, signed checksums, SLSA provenance and both SBOM
+attestations, followed by the consumer verifier bound to the exact repository,
+workflow, tag, and source commit.
+
+The initial `v0.1.0` attempt exposed a clean-checkout defect because downloaded
+machine evidence was placed inside the Git worktree. Commit `0743443` moved
+intermediate downloads under `$RUNNER_TEMP` and updated the regression test;
+the corrected `v0.1.1` run passed the formerly failing identity check. The
+later GitHub Release publication job is a separate P5-06 gate and remains open;
+no release publication is claimed here.
+
+Decision: P5-03, P5-04, and P5-05 exact-tag implementation and hosted evidence
+accepted for the bounded private-alpha scope under the documented
+single-maintainer owner-review exception. This does not approve public beta or
+GA.
+
+Reviewed by: Uday Varmora (`@udayvarmora07`)
+
+Reviewed on: 2026-09-20
+
 ## P4-07 compatibility-window review
 
 The owner reviewed P4-07 against the clean implementation evidence snapshot
@@ -119,26 +148,18 @@ Reviewed on: 2026-09-11
 
 ## P4-08 evidence-manifest review
 
-The owner reviewed P4-08 against the clean implementation evidence snapshot
-`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The retained machine manifest
-records the exact evidence commit, clean collection state, ten suite results,
-six artifact hashes, and ten controls with requirement, test, command, and
-threat mappings. Fresh evidence generation and schema validation also passed;
-the generated manifest retained `working_tree: "clean"`, all four executed
-suites passed, and P4-08 exposed its three evidence tests and traceability
-fields without recording local paths.
+The owner reviewed P4-08 against exact tag `v0.1.1` at source
+`0743443224dd809e652ea69d5d6b275eef29a4ce`. Release run
+[`35496909526`](https://github.com/udayvarmora07/autogit/actions/runs/35496909526)
+generated and retained `autogit.release-evidence.json` with
+`tag_verified: true`, `working_tree: "clean"`, ten passed suites, six artifact
+hashes, and thirteen requirement/threat/control records. The downloaded
+manifest SHA-256 is
+`479c818954f9198a43e7c81b709c7bf0316d06dd96e54b37433506080662310e`.
 
-Acceptance remains pending because P4-08 requires the evidence to be bound to
-an approved exact stable `vMAJOR.MINOR.PATCH` tag and its release artifacts.
-The retained manifest correctly records `tag_verified: false`, and no approved
-exact release tag or tag-bound artifact bundle currently exists. The
-single-maintainer owner-review exception does not waive that release identity
-requirement.
-
-Decision: implementation evidence accepted as verified; release acceptance is
-blocked on the approved release-version decision and regenerated tag-bound
-evidence manifest. This does not approve private-alpha release artifacts,
-public beta, or GA.
+Decision: P4-08 exact-tag evidence accepted for the bounded private-alpha
+scope under the documented single-maintainer owner-review exception. This does
+not approve public beta or GA.
 
 Reviewed by: Uday Varmora (`@udayvarmora07`)
 
@@ -226,25 +247,19 @@ Reviewed on: 2026-09-10
 
 ## P4-03 native-artifact review
 
-The owner reviewed P4-03 against the clean evidence snapshot
-`16c6325952b7937cdf8333b12cc7de0189b91f2b`. The machine manifest records six
-artifact hashes and the hosted run
-[`34600488282`](https://github.com/udayvarmora07/autogit/actions/runs/34600488282)
-passed all six native-artifact jobs: Linux amd64/arm64, macOS amd64/arm64,
-and Windows amd64/arm64. The fresh local release suite rebuilt all six
-targets, verified `SHA256SUMS`, and passed host artifact smoke on system Git
-2.43.0. The full Go test suite also passed.
+The owner reviewed P4-03 against exact tag `v0.1.1` at source
+`0743443224dd809e652ea69d5d6b275eef29a4ce`. Exact-tag CI run
+[`35497942544`](https://github.com/udayvarmora07/autogit/actions/runs/35497942544)
+passed all 20 jobs, including native built-artifact smoke, system-Git floor,
+scenario, and raw-binary lifecycle checks for Linux amd64/arm64, macOS
+amd64/arm64, and Windows amd64/arm64. Native artifact job IDs were
+`106044355136`, `106044355251`, `106044355261`, `106044355270`,
+`106044355282`, and `106044355321`. The local release suite also rebuilt all
+six targets and passed checksum and host smoke checks.
 
-Acceptance remains pending because the release plan requires the native
-artifacts to be bound to an approved exact stable `vMAJOR.MINOR.PATCH` tag and
-to a tag-gated hosted release run. No local tag, GitHub release, or
-`release.yml` run currently exists, and the manifest correctly records
-`tag_verified: false`.
-
-Decision: implementation evidence accepted as verified; release acceptance is
-blocked on the approved release-version decision and its resulting
-tag-bound hosted artifact evidence. The owner-review exception does not waive
-that release identity requirement.
+Decision: P4-03 exact-tag native artifact evidence accepted for the bounded
+private-alpha scope under the documented single-maintainer owner-review
+exception. This does not approve public beta or GA.
 
 Reviewed by: Uday Varmora (`@udayvarmora07`)
 

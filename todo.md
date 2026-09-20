@@ -269,9 +269,9 @@ named-review requirements are executed and reviewed.
 - [x] P4-02 Add shellcheck and direct failure/safety tests for canary,
   performance, and release shell scripts.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
-- [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
+- [x] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
-  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); current exact-SHA full matrix `35492327966` passed all six native artifact jobs with built-artifact smoke, system-Git minimum checks, scenarios, and raw-binary lifecycle drills; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-tag CI run `35497942544` passed all 20 jobs at `v0.1.1` / `0743443224dd809e652ea69d5d6b275eef29a4ce`, including native artifact jobs `106044355136`, `106044355251`, `106044355261`, `106044355270`, `106044355282`, and `106044355321` for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64/arm64.
 - [x] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
   Evidence: [P4-04 fuzz-floor review](docs/acceptance-record.md#p4-04-fuzz-floor-review).
@@ -284,13 +284,9 @@ named-review requirements are executed and reviewed.
 - [x] P4-07 Automate compatibility-window testing and expiry issues for Go,
   Git, SQLite, clients, GitHub API, MCP, and durable schemas.
   Evidence: [P4-07 compatibility-window review](docs/acceptance-record.md#p4-07-compatibility-window-review).
-- [ ] P4-08 Publish machine-readable requirement/threat/test evidence for the
+- [x] P4-08 Publish machine-readable requirement/threat/test evidence for the
   exact tagged commit and artifacts.
-  Evidence: [P4-08 evidence-manifest review](docs/acceptance-record.md#p4-08-evidence-manifest-review);
-  the tag workflow now generates and retains `autogit.release-evidence.json`
-  beside the attested bundle, and the generator/traceability tests pass, but
-  the checked-in manifest remains `tag_verified: false`; release acceptance
-  still requires an approved exact stable tag and completed tag-bound run.
+  Evidence: [P4-08 evidence-manifest review](docs/acceptance-record.md#p4-08-evidence-manifest-review); release run `35496909526` generated and retained `autogit.release-evidence.json` for `v0.1.1` / `0743443224dd809e652ea69d5d6b275eef29a4ce` with `tag_verified: true`, clean worktree, ten passed suites, six artifact hashes, and thirteen control records.
 
 ## Phase 5 — supply chain, governance, and distribution
 
@@ -302,20 +298,22 @@ named-review requirements are executed and reviewed.
 - [x] P5-02 Add controlled dependency updates, license policy, dependency
   review, CodeQL, OpenSSF Scorecard, least workflow permissions, and pinned
   action update review. Evidence: [dependency and workflow policy review](docs/acceptance-record.md#dependency-and-workflow-policy-review).
-- [ ] P5-03 Build a tag-gated clean-room release workflow that rejects dirty,
+- [x] P5-03 Build a tag-gated clean-room release workflow that rejects dirty,
   reused, version-mismatched, or incompletely tested artifacts. Evidence:
   [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
-  current local release integration, artifact, shell-safety, and diff checks
-  pass, but exact-tag hosted execution remains required.
-- [ ] P5-04 Produce SPDX/CycloneDX SBOMs, binary govulncheck evidence, signed
+  exact-tag release run `35496909526` passed the quality and attestation jobs
+  for `v0.1.1` after the clean-checkout evidence download fix in `0743443`.
+- [x] P5-04 Produce SPDX/CycloneDX SBOMs, binary govulncheck evidence, signed
   checksums, and hosted SLSA provenance/attestations. Evidence:
   [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
-  local SPDX/CycloneDX generation and consumer predicate checks are present;
-  exact-tag hosted attestations remain required.
-- [ ] P5-05 Compare release artifacts across independent runners/build paths
+  the exact-tag attestation job in run `35496909526` passed SBOM generation,
+  six binary govulncheck scans, checksum verification, three attestations, and
+  consumer verification.
+- [x] P5-05 Compare release artifacts across independent runners/build paths
   and publish reproducibility evidence. Evidence:
   [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
-  exact-tag hosted execution remains required.
+  Ubuntu/macOS independent builds and the byte-for-byte comparison all passed
+  in run `35496909526` for `v0.1.1`.
 - [ ] P5-06 Publish verified GitHub Releases and add tested Homebrew plus
   winget/Scoop channels according to demonstrated platform demand. Evidence:
   [tag-gated release publication](docs/release-evidence/phase-5-release-workflow.md)

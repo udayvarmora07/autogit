@@ -72,15 +72,29 @@ current checkout: `go test -count=1 ./scripts -run 'TestRelease'`,
 `bash scripts/test-suites.sh release`, `bash scripts/check-shell.sh`, and
 `git diff --check`. The release suite built and checksum-verified all six
 supported targets, ran artifact smoke, and completed the raw-binary install
-drill. These checks verify P5-03 implementation behavior but do not replace
-the exact-tag hosted workflow or its protected release approvals.
+drill.
+
+The exact-tag hosted execution for `v0.1.1` at commit
+`0743443224dd809e652ea69d5d6b275eef29a4ce` passed in
+[run 35496909526](https://github.com/udayvarmora07/autogit/actions/runs/35496909526):
+the quality job generated a clean `tag_verified: true` evidence manifest, the
+Ubuntu/macOS independent builds compared byte-for-byte, and the attestation
+job generated SPDX/CycloneDX SBOMs, six binary govulncheck reports, signed
+checksums, SLSA provenance, SBOM attestations, and a passing consumer
+verification. The retained machine manifest SHA-256 is
+`479c818954f9198a43e7c81b709c7bf0316d06dd96e54b37433506080662310e`.
+
+The initial `v0.1.0` run failed at the attestation job's clean-checkout check
+because downloaded evidence was placed in the worktree. Commit `0743443`
+moved those downloads under `$RUNNER_TEMP` and updated the workflow regression
+test; the corrected `v0.1.1` quality and attestation jobs passed. The later
+publication job is P5-06 scope and did not publish a GitHub Release; its
+package-metadata revalidation remains a separate follow-up.
 
 ## Acceptance boundary
 
-No release tag was created during this implementation. Consequently there is
-no hosted attestation, no release-environment approval record, no package
-repository publication, and no consumer verification result yet. P5-03/P5-05
-remain unchecked in the tracker until an authorized release owner runs an exact
-tag, verifies the independent-runner comparison, and checks the hosted bundles;
-P5-06 additionally requires package-channel demand and native clean-machine
-install evidence.
+P5-03, P5-04, and P5-05 are accepted for the bounded private-alpha scope by
+the exact-tag evidence above. No GitHub Release or package-repository
+publication is claimed: those are P5-06 gates and still require the protected
+publication path, package-channel demand, and native clean-machine install
+evidence.

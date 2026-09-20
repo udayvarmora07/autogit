@@ -48,3 +48,28 @@ with the dedicated token, a release-environment approval, keyless hosted
 attestations, independent release verification, or a named security/release
 review. The current dedicated-token canary evidence is a separate prior
 `36c045f` run (`34489797141`) and is not silently promoted to this snapshot.
+
+## Exact-tag execution addendum — 2026-09-20
+
+The exact stable tag `v0.1.1` resolves to source commit
+`0743443224dd809e652ea69d5d6b275eef29a4ce`. Native artifact and full quality
+validation passed in [CI run 35497942544](https://github.com/udayvarmora07/autogit/actions/runs/35497942544),
+which completed all 20 jobs, including the six native artifact targets and
+their raw-binary lifecycle drills. The tag-gated release run
+[35496909526](https://github.com/udayvarmora07/autogit/actions/runs/35496909526)
+passed its quality, independent reproducibility, artifact attestation, and
+consumer-verification jobs. Its retained exact-tag manifest reports
+`tag_verified: true`, a clean worktree, ten passed suites, six artifact hashes,
+and thirteen controls; manifest SHA-256:
+`479c818954f9198a43e7c81b709c7bf0316d06dd96e54b37433506080662310e`.
+
+| Package | Exact-tag evidence | Acceptance status |
+| --- | --- | --- |
+| P4-03 | Six native artifact jobs passed in CI run `35497942544` for `v0.1.1`; local release suite also passed all six target builds and host smoke. | Accepted for bounded private-alpha scope under the owner-review exception. |
+| P4-08 | The release quality job generated the retained `tag_verified: true` manifest for the exact tag and commit. | Accepted for bounded private-alpha scope under the owner-review exception. |
+| P5-03 | Exact-tag quality and attestation jobs passed in release run `35496909526`; the clean-checkout download defect was fixed in `0743443`. | Accepted for bounded private-alpha scope under the owner-review exception. |
+| P5-04 | The attestation job passed SBOM generation, six binary govulncheck scans, checksum signing, SLSA provenance, SPDX/CycloneDX attestations, and consumer verification. | Accepted for bounded private-alpha scope under the owner-review exception. |
+| P5-05 | Ubuntu/macOS independent builds and byte-for-byte comparison passed; retained comparison reports `status=byte-identical`. | Accepted for bounded private-alpha scope under the owner-review exception. |
+
+The final publication job failed during the separate P5-06 package-metadata
+revalidation, so no GitHub Release is claimed by this addendum.
