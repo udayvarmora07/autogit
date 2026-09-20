@@ -404,8 +404,21 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --directory "$bundle/dist" \
             --output "$metadata_verify"
-          cmp "$bundle/package-metadata/autogit.rb" "$metadata_verify/autogit.rb"
-          cmp "$bundle/package-metadata/autogit.json" "$metadata_verify/autogit.json"
+          compare_metadata() {
+            local name="$1"
+            local bundled="$bundle/package-metadata/$name"
+            local regenerated="$metadata_verify/$name"
+            if cmp -- "$bundled" "$regenerated"; then
+              return 0
+            fi
+            echo "package metadata mismatch: $name" >&2
+            echo "bundled sha256:    $(sha256sum -- "$bundled" | awk '{print $1}')" >&2
+            echo "regenerated sha256: $(sha256sum -- "$regenerated" | awk '{print $1}')" >&2
+            diff -u -- "$bundled" "$regenerated" >&2 || true
+            return 1
+          }
+          compare_metadata autogit.rb
+          compare_metadata autogit.json
       - name: publish verified GitHub Release
         shell: bash
         env:
