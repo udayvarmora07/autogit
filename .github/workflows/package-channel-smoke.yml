@@ -1,0 +1,81 @@
+name: AutoGit package-channel smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  attestations: read
+
+env:
+  RELEASE_TAG: v0.1.2
+  RELEASE_REPOSITORY: udayvarmora07/autogit
+
+jobs:
+  homebrew:
+    name: Homebrew on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-14]
+    steps:
+      - name: install from the published tap
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew tap udayvarmora07/autogit https://github.com/udayvarmora07/homebrew-autogit
+          brew install autogit
+          result="$(autogit version)"
+          grep -F '"version":"v0.1.2"' <<<"$result"
+      - name: verify installed checksum and release attestation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/autogit-package-verification"
+          mkdir -p "$work"
+          curl --fail --location --silent --show-error \
+            "https://github.com/$RELEASE_REPOSITORY/releases/download/$RELEASE_TAG/SHA256SUMS" \
+            --output "$work/SHA256SUMS"
+          binary="$(command -v autogit)"
+          expected="$(awk '$2 == "autogit-darwin-amd64" { print $1 }' "$work/SHA256SUMS")"
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            expected="$(awk '$2 == "autogit-darwin-arm64" { print $1 }' "$work/SHA256SUMS")"
+          fi
+          actual="$(shasum -a 256 "$binary" | awk '{ print $1 }')"
+          test "$actual" = "$expected"
+          gh attestation verify "$binary" --repo "$RELEASE_REPOSITORY" --signer-workflow \
+            "$RELEASE_REPOSITORY/.github/workflows/release.yml"
+
+  scoop:
+    name: Scoop on Windows
+    runs-on: windows-2025
+    steps:
+      - name: install from the published bucket
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          irm get.scoop.sh | iex
+          scoop bucket add autogit https://github.com/udayvarmora07/scoop-autogit
+          scoop install autogit
+          $result = autogit version | ConvertFrom-Json
+          if ($result.version -ne 'v0.1.2') { throw "unexpected version: $($result.version)" }
+      - name: verify installed checksum and release attestation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'autogit-package-verification'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $manifest = Join-Path $work 'SHA256SUMS'
+          Invoke-WebRequest -UseBasicParsing `
+            "https://github.com/$env:RELEASE_REPOSITORY/releases/download/$env:RELEASE_TAG/SHA256SUMS" `
+            -OutFile $manifest
+          $binary = (scoop which autogit).Trim()
+          $expected = (Select-String -Path $manifest -Pattern 'autogit-windows-amd64.exe').Line.Split(' ')[0]
+          $actual = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "installed checksum mismatch" }
+          gh attestation verify $binary --repo $env:RELEASE_REPOSITORY --signer-workflow `
+            "$env:RELEASE_REPOSITORY/.github/workflows/release.yml"

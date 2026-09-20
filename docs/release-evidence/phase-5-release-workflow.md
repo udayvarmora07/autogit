@@ -18,8 +18,8 @@ Status: v0.1.2 exact-tag hosted release published; package-channel and clean-mac
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
 | Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe, incomplete, or unexpectedly expanded bundles, verifies checksums for all six binaries, both SBOMs, the exact-tag machine-evidence manifest, and vulnerability reports, then verifies binary provenance plus SPDX and CycloneDX predicates against a release binary with the exact repository, workflow, tag, source commit, and hosted-runner requirement. The release workflow runs this verifier after all attestations and before final evidence upload. |
-| Package-channel metadata | `scripts/generate-package-metadata.sh` validates the exact semver tag, six binary files, and their entries in `SHA256SUMS`, then emits deterministic Homebrew and Scoop metadata with release URLs and digests. The publication runner regenerates both files from the downloaded bundle and requires byte-for-byte equality before attaching them to the release. Package-repository publication and native clean-machine package tests remain open. |
-| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS`, the embedded tag/commit identity, all required provenance/SBOM predicates, and package metadata on the publication runner, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` plus read-only attestation metadata only on this final job; package channels remain deferred until demand and native install evidence exist. |
+| Package-channel metadata | `scripts/generate-package-metadata.sh` validates the exact semver tag, six binary files, and their entries in `SHA256SUMS`, then emits deterministic Homebrew and Scoop metadata with release URLs and digests. The publication runner regenerates both files from the downloaded bundle and requires byte-for-byte equality before attaching them to the release. The selected Homebrew and Scoop repositories now contain the exact metadata; native clean-machine package tests remain open. |
+| Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS`, the embedded tag/commit identity, all required provenance/SBOM predicates, and package metadata on the publication runner, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` plus read-only attestation metadata only on this final job; package-channel lifecycle acceptance remains pending native install evidence. |
 
 ## Local verification
 
@@ -107,12 +107,31 @@ publication. The `release` environment approval is recorded by deployment
 The public [v0.1.2 GitHub Release](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2)
 contains six binaries, checksums, SPDX/CycloneDX SBOMs, binary vulnerability
 reports, exact-tag machine evidence, and deterministic Homebrew/Scoop metadata.
-The metadata is attached and verified, but no package repository has been
-published because demand and clean-machine package tests remain open.
+The metadata is attached and verified. Package repositories were subsequently
+published for the selected Homebrew and Scoop scope; clean-machine package
+tests remain open.
+
+## Package-channel publication — v0.1.2
+
+The demonstrated demand decision selects Homebrew for macOS consumers and
+Scoop for Windows consumers. Winget remains deferred because this project does
+not yet generate a winget manifest or have separate demand evidence. The exact
+metadata from the verified `v0.1.2` release was published without modification
+to these maintained public repositories:
+
+| Channel | Repository revision | Published file | Metadata SHA-256 |
+| --- | --- | --- | --- |
+| Homebrew | [`310184dd16b4e5f5419ced6d4ab36493dcb2db79`](https://github.com/udayvarmora07/homebrew-autogit/commit/310184dd16b4e5f5419ced6d4ab36493dcb2db79) | `Formula/autogit.rb` | `ca52c5323fb3d6417a8605291dccaeefa844500950442e8b0b5c2b84038f7d0e` |
+| Scoop | [`9d3a61ac04945f8cd4afe71dd4c141addee66567`](https://github.com/udayvarmora07/scoop-autogit/commit/9d3a61ac04945f8cd4afe71dd4c141addee66567) | `bucket/autogit.json` | `ff3d043f68eb0a934c6eb27c91bb9ad458b9e537199eb9d4d6d8d1e04bdd8476` |
+
+Both manifests point to the exact `v0.1.2` release assets and checksums. The
+repositories are independently reachable; their native clean-machine install,
+upgrade, downgrade, tamper-rejection, provenance, rollback, and uninstall
+evidence is the separate P5-07 gate.
 
 ## Acceptance boundary
 
 P5-03, P5-04, P5-05, and the GitHub Release portion of P5-06 have exact-tag
-hosted evidence for `v0.1.2`. P5-06 remains open for demonstrated package
-channel demand, package-repository publication, and native clean-machine
-package tests.
+hosted evidence for `v0.1.2`. Package repositories are now published for the
+selected Homebrew and Scoop scope, but P5-06 remains open until the native
+clean-machine package tests in P5-07 are retained.

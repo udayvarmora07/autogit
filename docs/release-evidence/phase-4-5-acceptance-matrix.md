@@ -43,11 +43,12 @@ public beta or GA.
 | P5-01 | LICENSE, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, CODEOWNERS, support policy, and CHANGELOG.md are present. | Accepted for the bounded private-alpha scope by the named release owner; public beta/GA review remains separate. |
 | P5-02 | Dependabot, dependency review, CodeQL, Scorecard, pinned-action enforcement, module verification, and license policy are present and passed. | Accepted for the bounded private-alpha scope by the named release owner; automated-update review and policy exceptions are recorded. Public beta/GA review remains separate. |
 
-The following evidence is intentionally not claimed: a live provider canary
-with the dedicated token, a release-environment approval, keyless hosted
-attestations, independent release verification, or a named security/release
-review. The current dedicated-token canary evidence is a separate prior
-`36c045f` run (`34489797141`) and is not silently promoted to this snapshot.
+The earlier snapshot intentionally did not claim a live provider canary with
+the dedicated token. Current evidence includes private canary run
+`35508083681` for source `3888b570`, with verified cleanup; App-permission,
+provider/release review, release-environment approval, independent release
+verification, and named security/release review remain open gates. The earlier
+`36c045f` run (`34489797141`) remains historical evidence.
 
 ## Exact-tag execution addendum — 2026-09-20
 
@@ -87,9 +88,11 @@ The current push run
 passed all push-triggered core jobs. Exact-HEAD manual matrix
 [35508065704](https://github.com/udayvarmora07/autogit/actions/runs/35508065704)
 also passed all 20 jobs, including native platform and six artifact lifecycle
-jobs. Exact-HEAD canary run
+jobs. Private canary run
 [35508083681](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
-passed with verified cleanup.
+passed with verified cleanup. The private canary evidence is for source SHA
+`3888b570aa072317fbe132c284ed4e844092daa0`; it is not a run against
+documentation HEAD `0745e0bc77a63af3cf21fa59522a387f6b533465`.
 
 The published release bundle passed exact consumer verification and direct
 checksum validation. The native Linux lifecycle and technical rollback drills
@@ -100,6 +103,6 @@ package testing and the named rollback/security tabletop.
 The earlier manual matrix
 [35507277048](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
 is retained as a diagnostic because its Ubuntu provider-postcondition and
-Windows AppContainer native tests failed. The successful exact-HEAD run above
+Windows AppContainer native tests failed. The successful exact-source run above
 supersedes it for implementation evidence; named Phase 1/Phase 2 review and
 promotion decisions remain separate.

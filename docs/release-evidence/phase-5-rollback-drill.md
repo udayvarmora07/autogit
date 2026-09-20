@@ -71,3 +71,28 @@ The technical rollback drill passed alongside the exact-tag `v0.1.2` consumer
 verification and published-release evidence. P5-07 remains a
 release-acceptance row until a named security/release reviewer records the
 tabletop result against the exact tagged release environment.
+
+## Redacted tabletop record — v0.1.2
+
+Status: `pending_named_security_release_review`
+
+This is the prepared tabletop record for the exact published release. It is
+not represented as approval until a named security/release reviewer completes
+and signs the exercise.
+
+| Required field | Redacted exercise value |
+| --- | --- |
+| Incident class | Suspected compromised release evidence during publication revalidation |
+| Affected release | `v0.1.2` / source `abcd3fb3b7ced0b34e33a34bfb335a800806f00b` |
+| Publication freeze | Stop the protected `release-publish` environment before channel mutation |
+| Quarantine outcome | Candidate quarantined; publication state `stopped` |
+| Rollback target | `previous-approved` |
+| Trust decision | Re-check workflow, repository, environment, and OIDC trust before a fresh exact tag |
+| Replacement verification | Re-run checksum, consumer, provenance, and SBOM verification before approval |
+| Technical drill | `autogit.release-rollback-drill/1`, status `passed`, sensitive data `false` |
+| Reviewer/date | Pending named security/release reviewer |
+
+The technical drill independently passed candidate rejection, publication stop,
+quarantine, channel-pointer rollback, and local-history preservation. The
+tabletop remains a pending human acceptance action; no credentials, prompts,
+source, diffs, raw URLs, or local paths are retained here.

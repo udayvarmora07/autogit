@@ -136,7 +136,8 @@ publication path is explicit and exact-SHA based; public publication returns a
 bounded preflight report until all evidence is available. Fully implicit
 lifecycle-driven inference remains open; installed-hook completion is
 available only through the explicit trusted profile described below. No command contacts GitHub or modifies a user
-repository implicitly; provider tests/canaries are not live.
+repository implicitly; private canary evidence exists, but Phase 2 acceptance
+remains pending.
 
 Adapter compatibility is maintained by the versioned registry in
 `internal/adapters/registry.go`, with sanitized client-versioned payload and
@@ -189,9 +190,10 @@ locally. Hosted native Linux, macOS, and Windows execution, including the
 native p95 gates, passed in [CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903)
 for commit `bbf2e37`. This closes the native-OS gate only. The repository does
 not contain the prototype shell scripts used for the documented 177-case
-baseline. Phase 0 acceptance, live execution of the disposable provider
-canary, and publication/alpha/beta release gates remain open. The canary is
-available only through the manually dispatched workflow and requires the
+baseline. Phase 0 acceptance, Phase 2 provider-acceptance review, and
+publication/alpha/beta release gates remain open. Disposable provider canary
+evidence exists in run `35508083681`; the canary is available only through the
+manually dispatched workflow and requires the
 dedicated `AUTOGIT_CANARY_TOKEN`; an ambient or personal GitHub token is not a
 valid substitute.
 Operational rollout, incident, upgrade, and rollback procedures are documented

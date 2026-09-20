@@ -17,13 +17,16 @@ GitHub Release
 [`v0.1.2`](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2).
 The current-HEAD push run
 [`35505877385`](https://github.com/udayvarmora07/autogit/actions/runs/35505877385)
-also passed all push-triggered core jobs. Current-HEAD canary run
+also passed all push-triggered core jobs. Private canary evidence run
 [`35508083681`](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
 created and cleaned up its private disposable repository after verifying the
-expected owner, `main` SHA, and post-cleanup absence. The exact-HEAD full
+expected owner, `main` SHA, and post-cleanup absence. The exact-source full
 matrix
 [`35508065704`](https://github.com/udayvarmora07/autogit/actions/runs/35508065704)
 passed all 20 hosted jobs, including six native artifact lifecycle drills.
+The private canary evidence is for source SHA
+`3888b570aa072317fbe132c284ed4e844092daa0`; it is not a run against
+documentation HEAD `0745e0bc77a63af3cf21fa59522a387f6b533465`.
 
 The earlier failed matrix
 [`35507277048`](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
@@ -43,12 +46,15 @@ This closes the hosted verification matrix for the implementation evidence
 snapshot, not the release gate. The snapshot-bound evidence
 manifest is in
 [`docs/release-evidence/phase-4-quality.json`](release-evidence/phase-4-quality.json).
-The live disposable-provider canary, exact release tag, signed artifacts, and
+The live disposable-provider canary evidence is retained in run
+[`35508083681`](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
+for source `3888b570`; Phase 2 acceptance remains pending App-permission and
+named provider/release review. The exact release tag, signed artifacts, and
 alpha/beta promotion remain pending. The dedicated-token private canary
 dispatch [`34489797141`](https://github.com/udayvarmora07/autogit/actions/runs/34489797141)
 passed against the earlier `36c045f` snapshot for owner `udayvarmora07`, and
 the allowlisted repository was confirmed absent after cleanup. It is retained
-as canary evidence but is not current-HEAD canary evidence. The earlier failed
+as historical canary evidence, not documentation-HEAD evidence. The earlier failed
 dispatch [`34324968472`](https://github.com/udayvarmora07/autogit/actions/runs/34324968472)
 and the failed `568c722` hosted run are historical only.
 
@@ -104,10 +110,10 @@ local test does not authorize public publication.
   in the [acceptance record](acceptance-record.md#phase-0-exit-acceptance),
   based on exact-source hosted matrix `34682716776`. Phase 1, release, and
   alpha-promotion gates remain open.
-- The disposable canary remains open: dedicated-token run `34489797141`
-  passed against `36c045f`, but it is not current-HEAD evidence. A successful
-  run against the intended release snapshot and retained cleanup evidence are
-  still required.
+- The current disposable canary evidence is run `35508083681` against source
+  `3888b570`; the older `34489797141` run remains historical evidence. App-
+  permission and named provider/release review are still required for Phase 2
+  acceptance.
 - Private alpha remains open: native CI and local reliability evidence pass,
   but the bounded cohort and release-owner approval are not recorded.
 - Public beta remains open: it depends on those unresolved gates and has no

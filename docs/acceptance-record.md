@@ -50,6 +50,96 @@ Accepted by: Uday Varmora (`@udayvarmora07`)
 
 Accepted on: 2026-09-12
 
+## Phase 1 exit record (implementation verified; acceptance pending)
+
+The Phase 1 implementation evidence is verified against exact source commit
+`3888b570aa072317fbe132c284ed4e844092daa0` by manual workflow-dispatch run
+[`35508065704`](https://github.com/udayvarmora07/autogit/actions/runs/35508065704).
+The run completed successfully with 20/20 jobs, including native Linux,
+macOS, and Windows core jobs, six native artifact lifecycle jobs, soak, fuzz,
+performance, security, cross-build, and dependency/workflow policy checks.
+The Phase 1 evidence bundles record the corresponding P1-01 through P1-10
+implementation coverage and the explicit macOS process-group fallback.
+
+The checked-out `HEAD` is `0745e0bc77a63af3cf21fa59522a387f6b533465`, a
+documentation-only descendant of the tested commit. The intervening diff
+contains only evidence, handoff, tracker, and release-runbook documentation;
+no Go source, workflow, module, or toolchain input changed. Therefore the
+matrix remains implementation evidence for this checkout, but it is not
+described as a newly executed hosted run against `0745e0b`.
+
+Decision: Phase 1 implementation status is **verified**; Phase 1 release
+acceptance remains **pending**. This record does not close the Phase 1 gate.
+
+Blockers:
+
+- No named platform owner/reviewer acceptance for the claimed native Linux,
+  macOS, and Windows Phase 1 matrix is recorded.
+- The evidence reports the macOS process-group fallback and does not claim
+  native macOS filesystem/network isolation; a named platform owner must
+  explicitly disposition that limitation for the claimed Phase 1 scope.
+
+Required next action: obtain and record the named platform-owner decision
+against the exact evidence source and the documented macOS capability
+limitation. Until then, the Phase 1 tracker checkbox stays open.
+
+Recorded by: implementation agent
+
+Recorded on: 2026-09-20
+
+## Phase 2 exit record (implementation verified; acceptance pending)
+
+The Phase 2 implementation evidence is reconciled against exact source
+`3888b570aa072317fbe132c284ed4e844092daa0`. Manual matrix run
+[`35508065704`](https://github.com/udayvarmora07/autogit/actions/runs/35508065704)
+passed all 20 jobs. Its native Linux, macOS, and Windows core jobs run the
+complete Go suite, including the fixture-backed adapter registry/translation
+tests and schema-specific config install/uninstall tests in
+`internal/adapters/p3_contract_matrix_test.go`,
+`internal/adapters/registry_test.go`, and
+`internal/install/client_install_registry_test.go`. The six native-artifact
+jobs run AutoGit raw-binary smoke, scenario, and install-lifecycle drills.
+These are native implementation checks; they do not establish that the real
+Codex, Claude Code, Gemini CLI, or Cursor clients were installed, upgraded,
+and uninstalled on every claimed native host.
+
+The exact-source private provider canary
+[`35508083681`](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
+used the disposable-canary workflow and passed against the same source. It
+created `udayvarmora07/autogit-v1-test-35508083681`, verified private `main`
+at `8fd321c37412aa04f70df8667d4132286b40a150`, and confirmed the exact
+allowlisted target was absent after cleanup. No public consent or GitHub App
+permission approval is inferred from this user-token canary.
+
+The checked-out `HEAD` is
+`0745e0bc77a63af3cf21fa59522a387f6b533465`, a documentation-only descendant
+of the tested source; no Go source, workflow, module, or toolchain input
+changed between those commits. The evidence therefore remains applicable to
+the implementation inputs in this checkout, but no hosted run against
+`0745e0b` is claimed.
+
+Decision: Phase 2 implementation status is **verified** for P2-01 through
+P2-11; Phase 2 release acceptance remains **pending**. This record does not
+close the Phase 2 gate.
+
+Blockers:
+
+- Retained native evidence covers fixture-backed adapter behavior and
+  AutoGit artifact lifecycle, not actual native client install/upgrade/
+  uninstall for every advertised installable adapter.
+- No exact GitHub App installation permission review or approval is recorded;
+  the canary evidence uses the dedicated disposable provider credential.
+- No named provider/release reviewer has accepted the Phase 2 evidence, and
+  the Phase 1 gate remains open.
+
+Required next action: execute and retain the missing native adapter-client
+install evidence for the claimed subset, then record the exact App permission
+decision and named provider/release review against the same candidate source.
+
+Recorded by: implementation agent
+
+Recorded on: 2026-09-20
+
 ## Private-alpha release-owner exception
 
 For this single-maintainer repository, the owner may serve as the named
@@ -133,13 +223,46 @@ The published consumer bundle passed the exact repository/tag/commit verifier
 and a direct `SHA256SUMS` check. A native Linux install drill also passed
 initial install, upgrade, tampered-upgrade rejection, downgrade, rollback,
 and uninstall against the previous binary built from immutable `v0.1.1`
-source. This execution record does not claim package-repository publication,
-clean-machine Homebrew/Scoop/winget acceptance, or the remaining named
-Phase 1/Phase 2/P5-07 release reviews.
+source. This execution record does not claim clean-machine Homebrew/Scoop/
+winget acceptance or the remaining named Phase 1/Phase 2/P5-07 release
+reviews.
 
 Recorded by: Uday Varmora (`@udayvarmora07`)
 
 Recorded on: 2026-09-20
+
+## v0.1.2 package-channel publication record
+
+The demonstrated demand decision selects Homebrew for macOS and Scoop for
+Windows. Winget is deferred because no generated winget manifest or separate
+demand evidence exists. Exact metadata from the verified `v0.1.2` release at
+source `abcd3fb3b7ced0b34e33a34bfb335a800806f00b` was published to:
+
+- Homebrew tap repository `udayvarmora07/homebrew-autogit`, revision
+  `310184dd16b4e5f5419ced6d4ab36493dcb2db79`, formula SHA-256
+  `ca52c5323fb3d6417a8605291dccaeefa844500950442e8b0b5c2b84038f7d0e`.
+- Scoop bucket repository `udayvarmora07/scoop-autogit`, revision
+  `9d3a61ac04945f8cd4afe71dd4c141addee66567`, manifest SHA-256
+  `ff3d043f68eb0a934c6eb27c91bb9ad458b9e537199eb9d4d6d8d1e04bdd8476`.
+
+The repository files were compared byte-for-byte with the release assets.
+This is implementation/publishing evidence only. P5-06 remains acceptance-
+pending until native clean-machine package lifecycle evidence is recorded;
+no package-channel acceptance is inferred from repository publication.
+
+## v0.1.2 P5-07 rollback/tabletop status
+
+The offline technical drill passed with schema
+`autogit.release-rollback-drill/1`, publication state `stopped`, candidate
+state `quarantined`, rollback target `previous-approved`, and all six checks
+passed with `sensitive_data_recorded: false`. The redacted tabletop record is
+prepared in [phase-5-rollback-drill.md](release-evidence/phase-5-rollback-drill.md)
+for `v0.1.2` / source `abcd3fb3b7ced0b34e33a34bfb335a800806f00b` and protected
+deployment `6552017112`.
+
+P5-07 remains acceptance-pending until a named security/release reviewer
+executes and records the tabletop decision. The prepared record is not an
+approval and does not change the overall private-alpha `NO-GO` posture.
 
 ## P4-07 compatibility-window review
 

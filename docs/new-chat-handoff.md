@@ -9,7 +9,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 - Snapshot date: 2026-09-20.
 - Repository: `/home/uday-varmora/autogit`.
 - Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`; current
-  source HEAD is `abcd3fb3b7ced0b34e33a34bfb335a800806f00b`.
+  source HEAD is `0745e0bc77a63af3cf21fa59522a387f6b533465`.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally the clean source
@@ -83,12 +83,19 @@ remaining P4 rows.
   attestations, consumer verification, and protected GitHub Release
   publication. The release is live at the `v0.1.2` tag with six binaries,
   checksums, SBOMs, vulnerability reports, evidence, and package metadata.
-- Current-HEAD push core run `35505877385` passed native Linux/macOS/Windows,
-  security, cross-build, reproducibility, dependency, and presubmit jobs. The
-  exact-HEAD manual full matrix `35508065704` also passed all 20 jobs,
-  including six native artifact lifecycle drills, fuzz, soak, and performance.
-- Current-HEAD private canary `35508083681` passed for owner `udayvarmora07`;
-  it created `autogit-v1-test-35508083681`, verified `main` at
+- Push core run `35505877385` passed native Linux/macOS/Windows, security,
+  cross-build, reproducibility, dependency, and presubmit jobs. Manual full
+  matrix `35508065704` passed all 20 jobs against exact source
+  `3888b570aa072317fbe132c284ed4e844092daa0`, including six native artifact
+  lifecycle drills, fuzz, soak, and performance. Current `HEAD` `0745e0b` is a
+  documentation-only descendant with no implementation inputs changed, so the
+  matrix remains implementation evidence but is not a new hosted run against
+  the current documentation commit.
+- Private canary evidence run `35508083681` passed for owner `udayvarmora07`.
+  The private canary evidence is for source SHA
+  `3888b570aa072317fbe132c284ed4e844092daa0`; it is not a run against
+  documentation HEAD `0745e0bc77a63af3cf21fa59522a387f6b533465`. It created
+  `autogit-v1-test-35508083681`, verified `main` at
   `8fd321c37412aa04f70df8667d4132286b40a150`, and its cleanup was confirmed by
   a post-run repository lookup.
 
@@ -139,19 +146,19 @@ remaining P4 rows.
 
 ## Immediate continuation order
 
-1. Retain successful exact-HEAD matrix `35508065704` at `3888b57` as the
+1. Retain successful exact-source matrix `35508065704` at `3888b57` as the
    current implementation evidence. Keep failed diagnostic run `35507277048`
    visible for the Ubuntu provider-postcondition and Windows AppContainer
    timeout investigation rather than treating it as a gate pass.
 2. Update the Phase 1 and Phase 2 gate records with that matrix and the fresh
-   current-HEAD canary; obtain or record the remaining named platform/provider
+   private canary evidence; obtain or record the remaining named platform/provider
    review rather than inferring it from green automation.
-3. Keep P5-06 open only for demonstrated package-channel demand,
-   package-repository publication, and clean-machine package tests; the
-   verified GitHub Release path is complete for `v0.1.2`.
-4. Complete native clean-machine Homebrew/Scoop/winget testing only on the
-   claimed platforms and retain redacted results; do not treat attached
-   metadata as package-repository publication.
+3. Keep P5-06 open for native clean-machine package tests; exact `v0.1.2`
+   metadata is now published in the selected Homebrew and Scoop repositories.
+   The verified GitHub Release path is complete.
+4. Complete native clean-machine Homebrew/Scoop testing only on the claimed
+   platforms and retain redacted results; winget remains deferred and attached
+   metadata must not be confused with lifecycle acceptance.
 5. Obtain the named security/release tabletop review for P5-07, then run the
    bounded private cohort and backup/provider/adapter/release rollback drills
    required for alpha entry.
