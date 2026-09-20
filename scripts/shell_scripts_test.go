@@ -170,7 +170,7 @@ func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	workflow := string(data)
+	workflow := strings.ReplaceAll(string(data), "\r\n", "\n")
 	releaseEvidenceUpload := strings.Index(workflow, "name: upload release evidence bundle")
 	attestationUpload := strings.Index(workflow, "name: upload attestation bundles")
 	if releaseEvidenceUpload < 0 || attestationUpload <= releaseEvidenceUpload {
