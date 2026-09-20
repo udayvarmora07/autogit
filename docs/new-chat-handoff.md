@@ -85,12 +85,11 @@ remaining P4 rows.
   checksums, SBOMs, vulnerability reports, evidence, and package metadata.
 - Current-HEAD push core run `35505877385` passed native Linux/macOS/Windows,
   security, cross-build, reproducibility, dependency, and presubmit jobs. The
-  completed manual full matrix `35507277048` passed its artifact, fuzz, soak,
-  security, cross-build, and policy jobs but failed Ubuntu provider-postcondition
-  and Windows AppContainer native tests; it remains diagnostic evidence.
-- Current-HEAD private canary `35505108644` passed for owner `udayvarmora07`;
-  it created `autogit-v1-test-35505108644`, verified `main` at
-  `e497d422955c4b051941a489a5f93ae3670dc207`, and its cleanup was confirmed by
+  exact-HEAD manual full matrix `35508065704` also passed all 20 jobs,
+  including six native artifact lifecycle drills, fuzz, soak, and performance.
+- Current-HEAD private canary `35508083681` passed for owner `udayvarmora07`;
+  it created `autogit-v1-test-35508083681`, verified `main` at
+  `8fd321c37412aa04f70df8667d4132286b40a150`, and its cleanup was confirmed by
   a post-run repository lookup.
 
 - The exact-source full matrix run `34604368677` passed all 20 jobs against
@@ -140,12 +139,10 @@ remaining P4 rows.
 
 ## Immediate continuation order
 
-1. Finish and reconcile manual full matrix `35507277048` against exact HEAD
-   `abcd3fb`, including six native artifact lifecycle jobs, fuzz, soak, and
-   scenario/performance evidence. It completed with all artifact/soak/fuzz/
-   security/policy jobs green, but Ubuntu provider-postcondition and Windows
-   AppContainer native tests failed; retain it as diagnostic until those
-   hosted failures are reproduced or explicitly reviewed.
+1. Retain successful exact-HEAD matrix `35508065704` at `3888b57` as the
+   current implementation evidence. Keep failed diagnostic run `35507277048`
+   visible for the Ubuntu provider-postcondition and Windows AppContainer
+   timeout investigation rather than treating it as a gate pass.
 2. Update the Phase 1 and Phase 2 gate records with that matrix and the fresh
    current-HEAD canary; obtain or record the remaining named platform/provider
    review rather than inferring it from green automation.

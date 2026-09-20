@@ -18,16 +18,17 @@ GitHub Release
 The current-HEAD push run
 [`35505877385`](https://github.com/udayvarmora07/autogit/actions/runs/35505877385)
 also passed all push-triggered core jobs. Current-HEAD canary run
-[`35505108644`](https://github.com/udayvarmora07/autogit/actions/runs/35505108644)
+[`35508083681`](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
 created and cleaned up its private disposable repository after verifying the
-expected owner, `main` SHA, and post-cleanup absence.
+expected owner, `main` SHA, and post-cleanup absence. The exact-HEAD full
+matrix
+[`35508065704`](https://github.com/udayvarmora07/autogit/actions/runs/35508065704)
+passed all 20 hosted jobs, including six native artifact lifecycle drills.
 
-The manual full matrix
+The earlier failed matrix
 [`35507277048`](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
-is the remaining hosted diagnostic for the exact current source. Its native
-artifact, soak, fuzz, reproducibility, security, cross-build, and policy jobs
-are being retained separately from the release record; the Phase 1/Phase 2
-gate decisions still require their named reviewers.
+is retained as a diagnostic only. The Phase 1/Phase 2 gate decisions still
+require their named reviewers.
 
 The local evidence manifest was regenerated cleanly at commit
 `16c6325952b7937cdf8333b12cc7de0189b91f2b`; all 10 local suites passed and it

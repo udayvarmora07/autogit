@@ -84,8 +84,11 @@ consumer verification; protected deployment `6552017112` then published the
 verified [GitHub Release v0.1.2](https://github.com/udayvarmora07/autogit/releases/tag/v0.1.2).
 The current push run
 [35505877385](https://github.com/udayvarmora07/autogit/actions/runs/35505877385)
-passed all push-triggered core jobs, and canary run
-[35505108644](https://github.com/udayvarmora07/autogit/actions/runs/35505108644)
+passed all push-triggered core jobs. Exact-HEAD manual matrix
+[35508065704](https://github.com/udayvarmora07/autogit/actions/runs/35508065704)
+also passed all 20 jobs, including native platform and six artifact lifecycle
+jobs. Exact-HEAD canary run
+[35508083681](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
 passed with verified cleanup.
 
 The published release bundle passed exact consumer verification and direct
@@ -94,10 +97,9 @@ also passed. P5-06 remains open for package-repository publication and clean
 native package-channel acceptance; P5-07 remains open for clean-machine
 package testing and the named rollback/security tabletop.
 
-Manual full matrix
+The earlier manual matrix
 [35507277048](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
-ran at the same source and passed all six native artifact jobs plus fuzz,
-soak, reproducibility, security, cross-build, and policy jobs. Its Ubuntu
-native provider-postcondition test and Windows AppContainer test failed, so
-this run is retained as a diagnostic and does not close the Phase 1 or Phase 2
-gate.
+is retained as a diagnostic because its Ubuntu provider-postcondition and
+Windows AppContainer native tests failed. The successful exact-HEAD run above
+supersedes it for implementation evidence; named Phase 1/Phase 2 review and
+promotion decisions remain separate.

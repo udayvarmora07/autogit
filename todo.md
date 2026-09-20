@@ -155,12 +155,10 @@ All items are release blockers.
   filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
-  native platforms. Current exact-HEAD push run `35505877385` passed all
-  push-triggered core jobs, and the native artifact jobs in manual run
-  `35507277048` passed. That manual run still failed the Ubuntu provider
-  postcondition test and the Windows AppContainer test by timeout; the
-  complete Phase 1 exit record and named platform-owner acceptance remain
-  outstanding.
+  native platforms. Exact-HEAD manual run `35508065704` passed all 20 jobs,
+  including native platform, artifact lifecycle, soak, fuzz, performance,
+  security, and recovery paths; the complete Phase 1 exit record and named
+  platform-owner acceptance remain outstanding.
 
 ## Phase 2 — integrations and provider productization
 
@@ -225,11 +223,11 @@ named-review requirements are executed and reviewed.
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.
-  Current exact-HEAD canary `35505108644` passed for private target
-  `udayvarmora07/autogit-v1-test-35505108644`, verified `main` at
-  `e497d422955c4b051941a489a5f93ae3670dc207`, and confirmed allowlisted
-  cleanup. Current native artifact jobs also passed in manual run
-  `35507277048`; named permission/release review remains outstanding.
+  Current exact-HEAD canary `35508083681` passed for private target
+  `udayvarmora07/autogit-v1-test-35508083681`, verified `main` at
+  `8fd321c37412aa04f70df8667d4132286b40a150`, and confirmed allowlisted
+  cleanup. Current native adapter/artifact jobs also passed in manual run
+  `35508065704`; named permission/release review remains outstanding.
 
 ## Phase 3 — product UX and operations
 
