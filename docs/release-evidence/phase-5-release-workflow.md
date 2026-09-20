@@ -67,6 +67,14 @@ and policy checks. This validates the current implementation path; it is not
 an execution of the exact-tag `release.yml` workflow and does not create
 attestations or a release.
 
+On 2026-09-20, the local clean-room implementation checks passed on the
+current checkout: `go test -count=1 ./scripts -run 'TestRelease'`,
+`bash scripts/test-suites.sh release`, `bash scripts/check-shell.sh`, and
+`git diff --check`. The release suite built and checksum-verified all six
+supported targets, ran artifact smoke, and completed the raw-binary install
+drill. These checks verify P5-03 implementation behavior but do not replace
+the exact-tag hosted workflow or its protected release approvals.
+
 ## Acceptance boundary
 
 No release tag was created during this implementation. Consequently there is

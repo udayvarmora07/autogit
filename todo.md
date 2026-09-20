@@ -155,9 +155,11 @@ All items are release blockers.
   filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
-  native platforms. Exact-SHA full matrix `34682716776` passed its native
-  platform checks against `1406352345886c116ba7750369fc3a14df960b63`; the
-  complete Phase 1 exit record and named acceptance remain outstanding.
+  native platforms. Current exact-SHA full matrix `35492327966` passed all 20
+  jobs against `f8ad8d5f61d046551c281f759809d607d6a9fe79`, including native
+  platform, artifact lifecycle, soak, fuzz, security, and recovery paths; the
+  complete Phase 1 exit record and named platform-owner acceptance remain
+  outstanding.
 
 ## Phase 2 — integrations and provider productization
 
@@ -222,8 +224,12 @@ named-review requirements are executed and reviewed.
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.
-  The current exact-SHA canary subcondition is satisfied by the linked
-  P2-06–P2-10 evidence; adapter-native evidence and review remain outstanding.
+  Current exact-SHA matrix `35492327966` passed the native adapter registry
+  and installer tests on Linux, macOS, and Windows. Current exact-SHA canary
+  `35493024891` passed for private target
+  `udayvarmora07/autogit-v1-test-35493024891`, verified `main` at
+  `75efeca81576d17eaebec6cbd916946ab6ac2a15`, and confirmed allowlisted
+  cleanup; named permission/release review remains outstanding.
 
 ## Phase 3 — product UX and operations
 
@@ -265,7 +271,7 @@ named-review requirements are executed and reviewed.
   Evidence: [P4-02 shell-safety review](docs/acceptance-record.md#p4-02-shell-safety-review).
 - [ ] P4-03 Execute built-artifact smoke tests for every claimed OS/arch and
   supported system Git range on native hosts.
-  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); exact-source hosted lifecycle matrix `34604368677`, exact-SHA full matrix `34682716776`, and current-tree dispatch `34961479624` passed all six native artifact jobs; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
+  Evidence: [P4-03 native-artifact review](docs/acceptance-record.md#p4-03-native-artifact-review); current exact-SHA full matrix `35492327966` passed all six native artifact jobs with built-artifact smoke, system-Git minimum checks, scenarios, and raw-binary lifecycle drills; release acceptance still requires an approved exact stable tag and tag-gated hosted artifact evidence.
 - [x] P4-04 Expand fuzz/property/differential tests across JSON, path, ref,
   status, policy, migration, scanner, and provider boundaries.
   Evidence: [P4-04 fuzz-floor review](docs/acceptance-record.md#p4-04-fuzz-floor-review).
@@ -282,8 +288,9 @@ named-review requirements are executed and reviewed.
   exact tagged commit and artifacts.
   Evidence: [P4-08 evidence-manifest review](docs/acceptance-record.md#p4-08-evidence-manifest-review);
   the tag workflow now generates and retains `autogit.release-evidence.json`
-  beside the attested bundle, but release acceptance still requires an
-  approved exact stable tag and completed tag-bound run.
+  beside the attested bundle, and the generator/traceability tests pass, but
+  the checked-in manifest remains `tag_verified: false`; release acceptance
+  still requires an approved exact stable tag and completed tag-bound run.
 
 ## Phase 5 — supply chain, governance, and distribution
 
@@ -298,7 +305,8 @@ named-review requirements are executed and reviewed.
 - [ ] P5-03 Build a tag-gated clean-room release workflow that rejects dirty,
   reused, version-mismatched, or incompletely tested artifacts. Evidence:
   [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);
-  exact-tag hosted execution remains required.
+  current local release integration, artifact, shell-safety, and diff checks
+  pass, but exact-tag hosted execution remains required.
 - [ ] P5-04 Produce SPDX/CycloneDX SBOMs, binary govulncheck evidence, signed
   checksums, and hosted SLSA provenance/attestations. Evidence:
   [Phase 5 release workflow](docs/release-evidence/phase-5-release-workflow.md);

@@ -24,6 +24,27 @@ The package-by-package acceptance reconciliation is recorded in the
 | P5-01 | Apache-2.0 license, security reporting, contribution, conduct, `.github/CODEOWNERS`, support, and changelog artifacts are present and linked from README. |
 | P5-02 | Dependabot, dependency review, CodeQL, Scorecard, pinned-action enforcement, module verification, and the SPDX license policy are present. `scripts/check-dependencies.sh` is enforced locally and by the CI `dependency-policy` job. |
 
+## Current-HEAD native artifact refresh — 2026-09-20
+
+Manual workflow dispatch `35492327966` passed all 20 jobs against exact source
+commit `f8ad8d5f61d046551c281f759809d607d6a9fe79`. The six native artifact
+jobs passed built-artifact smoke, live system-Git minimum validation,
+final-state scenario evaluation, and the raw-binary install lifecycle drill
+for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64/arm64. This is
+fresh P4-03 implementation evidence for the current source.
+
+P4-03 release acceptance remains pending because the plan requires the same
+checks to be retained from an approved exact stable tag and tag-gated hosted
+artifact bundle. No stable release version has been approved in the project
+documents, so this evidence does not create or imply one.
+
+The P4-08 evidence tooling was freshly verified with
+`go test -count=1 ./cmd/autogit-evidence ./scripts` and the repository
+traceability/compatibility tests. The checked-in manifest remains deliberately
+`tag_verified: false`; the generator rejects a dirty tree or missing exact tag
+for release evidence, so no new manifest was generated from this documentation-
+dirty working tree.
+
 ## Local verification
 
 The following checks passed during this implementation slice on Linux/amd64:

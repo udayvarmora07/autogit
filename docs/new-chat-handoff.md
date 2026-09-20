@@ -6,7 +6,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 ## Current snapshot
 
-- Snapshot date: 2026-09-15.
+- Snapshot date: 2026-09-20.
 - Repository: `/home/uday-varmora/autogit`.
 - Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`.
 - The manifest collection ran against a clean tree at that snapshot. This
@@ -94,6 +94,14 @@ remaining P4 rows.
   performance checks. The later Windows AppContainer follow-up is recorded
   separately in the Phase 1 evidence bundle; named acceptance and exact-tag
   release gates remain open.
+- Current-HEAD full matrix `35492327966` passed all 20 jobs against exact
+  source `f8ad8d5f61d046551c281f759809d607d6a9fe79`, including native
+  Linux/macOS/Windows checks, six native artifact lifecycle jobs, three soak
+  jobs, fuzz, reproducibility, security, and dependency-policy checks.
+- Current-HEAD private canary `35493024891` passed against the same source for
+  `udayvarmora07`; it verified private repository
+  `autogit-v1-test-35493024891`, `main` SHA
+  `75efeca81576d17eaebec6cbd916946ab6ac2a15`, and cleanup confirmed absence.
 - The clean Windows AppContainer follow-up passed native job `104271291760` in
   core run `34935126986` against exact source
   `c1a94d4902e13d454ef87eb9c5d394c604bea608`. It independently attests the
@@ -124,10 +132,12 @@ remaining P4 rows.
    budget and verify its commit, dirty-tree state, suite results, artifact
    identities, and control statuses before replacement. Do not edit the
    generated commit identity by hand.
-3. Retain the completed dedicated-token private-canary evidence, including its
-   exact owner/name/visibility/ref/SHA and cleanup result.
-4. Reconcile the evidence against the remaining P4-03..P4-08 acceptance
-   conditions. Check only rows whose evidence is genuinely complete.
+3. Retain the completed current-HEAD dedicated-token private-canary evidence,
+   including its exact owner/name/visibility/ref/SHA and cleanup result.
+4. Reconcile the evidence against the remaining P4-03/P4-08 and P5-03
+   acceptance conditions. Native artifact, manifest-tooling, and local
+   release-workflow implementation evidence is recorded, but no exact stable
+   release tag is approved.
 5. Handle the remaining external gates separately: exact release tag and
    release-environment approval, hosted attestation and independent-runner
    verification, provider/App permission review, named security/release
