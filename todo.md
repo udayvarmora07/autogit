@@ -327,8 +327,10 @@ named-review requirements are executed and reviewed.
   signature, and rollback paths. Local raw-binary lifecycle evidence:
   [Phase 5 install drill](docs/release-evidence/phase-5-install-drill.md); the
   published `v0.1.2` bundle passed exact consumer verification and the native
-  Linux lifecycle drill, while package-channel and clean-machine native tests
-  remain open.
+  Linux lifecycle drill. Hosted clean-machine package smoke run
+  `35514143281` passed Homebrew on macOS ARM/Intel and Scoop on Windows for
+  install, checksum, and attestation; prior-version package upgrade,
+  downgrade, tamper-rejection, rollback, and uninstall evidence remains open.
 - [ ] P5-07 Define disclosure/patch SLAs, signing identity recovery, release
   rollback, and compromised-release drills. Evidence: [rollback and disclosure
   implementation evidence](docs/release-evidence/phase-5-rollback-drill.md),

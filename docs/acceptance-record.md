@@ -264,6 +264,21 @@ P5-07 remains acceptance-pending until a named security/release reviewer
 executes and records the tabletop decision. The prepared record is not an
 approval and does not change the overall private-alpha `NO-GO` posture.
 
+## v0.1.2 package-channel smoke evidence
+
+Hosted workflow run
+[`35514143281`](https://github.com/udayvarmora07/autogit/actions/runs/35514143281)
+passed against source `8a807dd48d01fca68d62f685ccb8af6b73e7831e` for Homebrew
+on macOS ARM and Intel and Scoop on Windows. The jobs installed `v0.1.2`,
+matched the exact release checksum, and verified the release workflow
+attestation. This confirms clean-machine initial installation and consumer
+verification for the selected channels.
+
+P5-07 remains open for prior-version upgrade/downgrade, tamper-rejection,
+rollback-preservation, and uninstall evidence. No prior package-channel
+release is published, so those lifecycle results cannot be inferred from this
+smoke run.
+
 ## P4-07 compatibility-window review
 
 The owner reviewed P4-07 against the clean implementation evidence snapshot

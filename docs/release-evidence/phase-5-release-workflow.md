@@ -133,5 +133,6 @@ evidence is the separate P5-07 gate.
 
 P5-03, P5-04, P5-05, and the GitHub Release portion of P5-06 have exact-tag
 hosted evidence for `v0.1.2`. Package repositories are now published for the
-selected Homebrew and Scoop scope, but P5-06 remains open until the native
-clean-machine package tests in P5-07 are retained.
+selected Homebrew and Scoop scope, and hosted initial-install smoke evidence
+is recorded in run `35514143281`; P5-06 remains open until the complete native
+package lifecycle tests in P5-07 are retained.

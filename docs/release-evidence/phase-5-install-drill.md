@@ -76,3 +76,20 @@ rollback preservation, and uninstall. The redacted result reported
 Package-manager installation on clean native Linux/macOS/Windows machines
 remains open; the prior tag was not a GitHub Release, so the previous-version
 drill input was built from its immutable source tag.
+
+## Published package-channel smoke — v0.1.2
+
+Hosted workflow run
+[`35514143281`](https://github.com/udayvarmora07/autogit/actions/runs/35514143281)
+passed against source `8a807dd48d01fca68d62f685ccb8af6b73e7831e` with clean
+runner jobs for Homebrew on macOS ARM (`106087108581`), Homebrew on macOS
+Intel (`106087108588`), and Scoop on Windows (`106087108518`). Each job
+installed the published `v0.1.2` channel entry, checked the installed binary
+checksum against the exact release `SHA256SUMS`, and passed GitHub attestation
+verification for the release workflow.
+
+This is clean-machine initial-install and consumer-verification evidence only.
+It does not prove package upgrade, downgrade, tamper-rejection during an
+upgrade, rollback preservation, or uninstall across a previous package-channel
+version. Those checks remain open because no prior package-channel release is
+published.
