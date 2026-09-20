@@ -8,9 +8,10 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 
 - Snapshot date: 2026-09-20.
 - Repository: `/home/uday-varmora/autogit`.
-- Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`; current
-  source HEAD is `616b83b` (documentation/evidence descendants after the
-  snapshot).
+- Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`; the
+  current source HEAD is the checked-out branch tip, a documentation/evidence
+  descendant after the snapshot. Use `git rev-parse HEAD` when recording the
+  exact tip for a new evidence bundle.
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally the clean source
