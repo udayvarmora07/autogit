@@ -213,6 +213,8 @@ func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T)
 		"test \"$(git rev-parse HEAD)\" = \"$RELEASE_SHA\"",
 		"test -z \"$(git status --porcelain=v1)\"",
 		"bash scripts/verify-release-artifacts.sh",
+		"chmod 0755 \\\n            \"$bundle/dist/autogit-linux-amd64\"",
+		"test -x \"$bundle/dist/autogit-linux-amd64\"",
 		"--verify-tag",
 	} {
 		if !strings.Contains(workflow, required) {

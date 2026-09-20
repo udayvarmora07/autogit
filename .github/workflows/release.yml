@@ -394,6 +394,14 @@ jobs:
           test "$(git describe --exact-match --tags HEAD)" = "$RELEASE_TAG"
           test -z "$(git status --porcelain=v1)"
           (cd "$bundle/dist" && sha256sum -c SHA256SUMS)
+          chmod 0755 \
+            "$bundle/dist/autogit-linux-amd64" \
+            "$bundle/dist/autogit-linux-arm64" \
+            "$bundle/dist/autogit-darwin-amd64" \
+            "$bundle/dist/autogit-darwin-arm64" \
+            "$bundle/dist/autogit-windows-amd64.exe" \
+            "$bundle/dist/autogit-windows-arm64.exe"
+          test -x "$bundle/dist/autogit-linux-amd64"
           version_output="$("$bundle/dist/autogit-linux-amd64" version)"
           grep -Eq '"version":"'"${RELEASE_TAG}"'"' <<<"$version_output"
           grep -Eq '"commit":"'"${RELEASE_SHA}"'"' <<<"$version_output"
