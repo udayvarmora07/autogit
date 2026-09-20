@@ -24,7 +24,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export HOMEBREW_NO_AUTO_UPDATE=1
           brew tap udayvarmora07/autogit https://github.com/udayvarmora07/homebrew-autogit
+          brew trust udayvarmora07/autogit
           brew install autogit
           result="$(autogit version)"
           grep -F '"version":"v0.1.2"' <<<"$result"
@@ -67,6 +69,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
           $work = Join-Path $env:RUNNER_TEMP 'autogit-package-verification'
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           $manifest = Join-Path $work 'SHA256SUMS'
