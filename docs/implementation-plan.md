@@ -170,7 +170,7 @@ current release-blocking gaps are:
    Homebrew and Scoop metadata from the exact six-binary checksum manifest and
    the publication runner regenerates and byte-compares both files before
    attaching them to the GitHub Release. This prepares the channel artifacts;
-   it does not replace package-repository publication or native clean-machine
+  it does not replace package-channel lifecycle or native clean-machine
    checks. The raw-binary lifecycle drill is retained in
    `phase-5-install-drill.md` but does not replace those native package checks.
 6. P5-01 and P5-02 still require explicit product/maintainer review, including

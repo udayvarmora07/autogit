@@ -157,8 +157,9 @@ All items are release blockers.
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
   native platforms. Manual run `35508065704` passed all 20 jobs against exact
   source `3888b570aa072317fbe132c284ed4e844092daa0`; current `HEAD`
-  `0745e0bc77a63af3cf21fa59522a387f6b533465` is a documentation-only
-  descendant with no implementation inputs changed. Implementation status is
+`ccf06ac` is the documentation/evidence and package-smoke-workflow descendant
+  used for the hosted package smoke; later records are documentation-only and
+  no Go, module, or toolchain inputs changed. Implementation status is
   verified in the [Phase 1 exit record](docs/acceptance-record.md#phase-1-exit-record-implementation-verified-acceptance-pending),
   but acceptance remains pending because the named platform-owner decision,
   including disposition of the macOS fallback, is not recorded.
@@ -226,7 +227,7 @@ named-review requirements are executed and reviewed.
 - [ ] Phase 2 gate: all advertised adapters have fixture and native install
   evidence, and the exact alpha provider path passes a disposable private
   GitHub canary with allowlisted cleanup.
-  Current exact-HEAD canary `35508083681` passed for private target
+  Current exact-source canary `35508083681` passed for private target
   `udayvarmora07/autogit-v1-test-35508083681`, verified `main` at
   `8fd321c37412aa04f70df8667d4132286b40a150`, and confirmed allowlisted
   cleanup. Current native adapter/artifact jobs also passed in manual run

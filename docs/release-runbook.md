@@ -26,7 +26,7 @@ matrix
 passed all 20 hosted jobs, including six native artifact lifecycle drills.
 The private canary evidence is for source SHA
 `3888b570aa072317fbe132c284ed4e844092daa0`; it is not a run against
-documentation HEAD `0745e0bc77a63af3cf21fa59522a387f6b533465`.
+the later documentation/workflow descendants after `ccf06ac`.
 
 The earlier failed matrix
 [`35507277048`](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)

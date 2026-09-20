@@ -88,14 +88,15 @@ remaining P4 rows.
   cross-build, reproducibility, dependency, and presubmit jobs. Manual full
   matrix `35508065704` passed all 20 jobs against exact source
   `3888b570aa072317fbe132c284ed4e844092daa0`, including six native artifact
-  lifecycle drills, fuzz, soak, and performance. Current `HEAD` `0745e0b` is a
-  documentation-only descendant with no implementation inputs changed, so the
-  matrix remains implementation evidence but is not a new hosted run against
-  the current documentation commit.
+  lifecycle drills, fuzz, soak, and performance. The checkout includes the
+  documentation/evidence and package-smoke-workflow descendant `ccf06ac` plus
+  later documentation-only changes with no Go, module, or toolchain inputs
+  changed, so the matrix remains implementation evidence but is not a new
+  hosted run against the current checkout.
 - Private canary evidence run `35508083681` passed for owner `udayvarmora07`.
   The private canary evidence is for source SHA
   `3888b570aa072317fbe132c284ed4e844092daa0`; it is not a run against
-  documentation HEAD `0745e0bc77a63af3cf21fa59522a387f6b533465`. It created
+  the later documentation/workflow descendants after `ccf06ac`. It created
   `autogit-v1-test-35508083681`, verified `main` at
   `8fd321c37412aa04f70df8667d4132286b40a150`, and its cleanup was confirmed by
   a post-run repository lookup.

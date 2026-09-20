@@ -61,12 +61,12 @@ performance, security, cross-build, and dependency/workflow policy checks.
 The Phase 1 evidence bundles record the corresponding P1-01 through P1-10
 implementation coverage and the explicit macOS process-group fallback.
 
-The checked-out `HEAD` is `0745e0bc77a63af3cf21fa59522a387f6b533465`, a
-documentation-only descendant of the tested commit. The intervening diff
-contains only evidence, handoff, tracker, and release-runbook documentation;
-no Go source, workflow, module, or toolchain input changed. Therefore the
+The checkout includes documentation/evidence and package-smoke-workflow
+descendant `ccf06ac` plus later documentation-only reconciliation commits.
+The intervening changes contain no Go source, module, or toolchain input; the
+package smoke workflow was added only to exercise published channels. Therefore the
 matrix remains implementation evidence for this checkout, but it is not
-described as a newly executed hosted run against `0745e0b`.
+described as a newly executed hosted run against the later documentation tree.
 
 Decision: Phase 1 implementation status is **verified**; Phase 1 release
 acceptance remains **pending**. This record does not close the Phase 1 gate.
@@ -111,12 +111,12 @@ at `8fd321c37412aa04f70df8667d4132286b40a150`, and confirmed the exact
 allowlisted target was absent after cleanup. No public consent or GitHub App
 permission approval is inferred from this user-token canary.
 
-The checked-out `HEAD` is
-`0745e0bc77a63af3cf21fa59522a387f6b533465`, a documentation-only descendant
-of the tested source; no Go source, workflow, module, or toolchain input
-changed between those commits. The evidence therefore remains applicable to
+The checkout includes documentation/evidence and package-smoke-workflow
+descendant `ccf06ac` plus later documentation-only reconciliation commits; no
+Go source, module, or toolchain input changed between those commits. The evidence therefore
+remains applicable to
 the implementation inputs in this checkout, but no hosted run against
-`0745e0b` is claimed.
+the later documentation tree is claimed for the Phase 2 matrix.
 
 Decision: Phase 2 implementation status is **verified** for P2-01 through
 P2-11; Phase 2 release acceptance remains **pending**. This record does not

@@ -92,13 +92,13 @@ jobs. Private canary run
 [35508083681](https://github.com/udayvarmora07/autogit/actions/runs/35508083681)
 passed with verified cleanup. The private canary evidence is for source SHA
 `3888b570aa072317fbe132c284ed4e844092daa0`; it is not a run against
-documentation HEAD `0745e0bc77a63af3cf21fa59522a387f6b533465`.
+the later documentation/workflow descendants after `ccf06ac`.
 
 The published release bundle passed exact consumer verification and direct
 checksum validation. The native Linux lifecycle and technical rollback drills
-also passed. P5-06 remains open for package-repository publication and clean
-native package-channel acceptance; P5-07 remains open for clean-machine
-package testing and the named rollback/security tabletop.
+also passed. P5-06 remains open for complete clean native package-channel
+acceptance; P5-07 remains open for prior-version package testing and the named
+rollback/security tabletop.
 
 The earlier manual matrix
 [35507277048](https://github.com/udayvarmora07/autogit/actions/runs/35507277048)
