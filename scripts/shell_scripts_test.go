@@ -171,6 +171,23 @@ func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T)
 		t.Fatal(err)
 	}
 	workflow := string(data)
+	releaseEvidenceUpload := strings.Index(workflow, "name: upload release evidence bundle")
+	attestationUpload := strings.Index(workflow, "name: upload attestation bundles")
+	if releaseEvidenceUpload < 0 || attestationUpload <= releaseEvidenceUpload {
+		t.Fatal("release workflow must upload the release evidence before attestation bundles")
+	}
+	releaseEvidenceBlock := workflow[releaseEvidenceUpload:attestationUpload]
+	if strings.Contains(releaseEvidenceBlock, "steps.provenance.outputs.bundle-path") ||
+		strings.Contains(releaseEvidenceBlock, "steps.sbom_spdx.outputs.bundle-path") ||
+		strings.Contains(releaseEvidenceBlock, "steps.sbom_cyclonedx.outputs.bundle-path") {
+		t.Fatal("release evidence artifact must not mix checkout and runner-temp paths")
+	}
+	if !strings.Contains(releaseEvidenceBlock, "            dist\n            package-metadata") {
+		t.Fatal("release evidence artifact must contain only dist and package-metadata")
+	}
+	if !strings.Contains(workflow[attestationUpload:], "autogit-${{ github.ref_name }}-attestation-bundles") {
+		t.Fatal("attestation bundles must be retained in a separate artifact")
+	}
 	for _, required := range []string{
 		"sbom-path: dist/autogit.spdx.json",
 		"sbom-path: dist/autogit.cyclonedx.json",
