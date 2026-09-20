@@ -9,7 +9,8 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 - Snapshot date: 2026-09-20.
 - Repository: `/home/uday-varmora/autogit`.
 - Evidence snapshot commit: `06ba87508ff53abc8b0001885e8341b6c07ad27a`; current
-  source HEAD is `0745e0bc77a63af3cf21fa59522a387f6b533465`.
+  source HEAD is `616b83b` (documentation/evidence descendants after the
+  snapshot).
 - The manifest collection ran against a clean tree at that snapshot. This
   continuity/evidence refresh may be committed as a newer documentation
   commit, so the manifest's commit identity is intentionally the clean source
@@ -26,7 +27,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
 - Those earlier packages occupy 11 checklist rows because P5-01 has two
   independent substeps. P4-01 through P4-08 and P5-01 through P5-05 now have
   exact-tag `v0.1.2` implementation/release evidence where applicable;
-  package-channel, clean-machine, phase-gate, cohort, and named-review rows
+  package-channel lifecycle, phase-gate, cohort, and named-review rows
   remain open below. PR-011 and the process-bounded PR-012 baseline are now checked;
   Linux now has an ABI-gated in-process Landlock ruleset behind the existing
   bubblewrap namespace path, and Windows now has native AppContainer
@@ -153,8 +154,9 @@ remaining P4 rows.
 2. Update the Phase 1 and Phase 2 gate records with that matrix and the fresh
    private canary evidence; obtain or record the remaining named platform/provider
    review rather than inferring it from green automation.
-3. Keep P5-06 open for native clean-machine package tests; exact `v0.1.2`
-   metadata is now published in the selected Homebrew and Scoop repositories.
+3. Keep P5-06 open for native clean-machine package lifecycle tests; exact
+   `v0.1.2` metadata is now published in the selected Homebrew and Scoop
+   repositories, and hosted initial-install smoke run `35514143281` passed.
    The verified GitHub Release path is complete.
 4. Complete native clean-machine Homebrew/Scoop testing only on the claimed
    platforms and retain redacted results; winget remains deferred and attached

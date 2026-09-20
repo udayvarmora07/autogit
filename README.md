@@ -190,8 +190,9 @@ locally. Hosted native Linux, macOS, and Windows execution, including the
 native p95 gates, passed in [CI run 34087491903](https://github.com/udayvarmora07/autogit/actions/runs/34087491903)
 for commit `bbf2e37`. This closes the native-OS gate only. The repository does
 not contain the prototype shell scripts used for the documented 177-case
-baseline. Phase 0 acceptance, Phase 2 provider-acceptance review, and
-publication/alpha/beta release gates remain open. Disposable provider canary
+baseline. Phase 0 acceptance is recorded for the bounded private-alpha scope;
+Phase 2 provider-acceptance review and publication/alpha/beta release gates
+remain open. Disposable provider canary
 evidence exists in run `35508083681`; the canary is available only through the
 manually dispatched workflow and requires the
 dedicated `AUTOGIT_CANARY_TOKEN`; an ambient or personal GitHub token is not a
