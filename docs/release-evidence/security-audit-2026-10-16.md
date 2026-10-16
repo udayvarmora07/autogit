@@ -1,7 +1,8 @@
 # Security audit record — 2026-10-16
 
-Status: local adversarial audit; five findings fixed at their exact commits,
-one open finding tracked as P1-11. Release posture is unchanged (NO-GO).
+Status: local adversarial audit; all six findings fixed at their exact commits
+or same-day follow-up, with the TLS trust-override residual recorded for
+follow-up. Release posture is unchanged (NO-GO).
 
 ## Scope and method
 
@@ -24,19 +25,31 @@ fix. Fixes landed with regression tests and the full local core suite.
 | A verifier could `setsid` a helper that escapes process-group and process-tree cleanup while holding the output pipes, so `process.Run` could never return and descendant cleanup was overstated | Medium | `71303a0` | `cmd.WaitDelay` force-closes the stream and reports `exec.ErrWaitDelay`; the limitation is recorded in ADR-0010, the isolation capability, and the P1-04 evidence; Linux regression test covers the setsid pipe holder |
 | `install.Plan` skipped the Apply-time confinement comparison when the target parent did not exist, so a symlink planted at the missing parent could redirect the config write outside the approved root | Low | `4ef2c1d` | Plan records the nearest existing ancestor and its canonical form; regression tests cover the swap and normal nested first install |
 
-## Open finding
+## Findings fixed after the first record (same day)
 
-`internal/repository/repository.go` accepts any `.git` gitfile whose `gitdir:`
-points at another repository's active git directory. Because repository identity
-is the digest of that common directory and policy is keyed by identity, a
-checkout can adopt another local repository's policy/consent scope: `enable` on
-the alias rewrites the other repository's policy and hook scope checks accept
-the alias. A legitimate linked worktree is indistinguishable by path shape, so
-the fix requires an explicit design decision (worktree-registration check or
-explicit identity confirmation when the requested root is not the registered
-worktree). Tracked as P1-11 in [todo.md](../../todo.md) and TM-027 in the
-[threat model](../threat-model.md); not fixed in this audit to avoid silently
-changing worktree semantics.
+The identity-adoption finding below was fixed the same day once the design
+decision was made: `repository.Discover` now requires the git directory to
+record the requesting directory as its worktree, using Git's own bindings — a
+linked worktree's `gitdir` back-pointer file, or `core.worktree` for git
+directories that carry their worktree path (submodules, and separate git
+directories configured with an explicit worktree). Metadata with neither
+binding is rejected instead of trusted, which covers hostile aliases, moved
+worktrees whose back-pointer is stale (repaired with `git worktree repair`),
+and `git init --separate-git-dir` checkouts without a recorded worktree.
+Regression tests use real Git for the alias rejection, the recorded-binding
+acceptance, submodule gitfiles, and the stale-pointer repair workflow.
+
+## Original open finding (now fixed)
+
+`internal/repository/repository.go` accepted any `.git` gitfile whose `gitdir:`
+pointed at another repository's active git directory. Because repository
+identity is the digest of that common directory and policy is keyed by
+identity, a checkout could adopt another local repository's policy/consent
+scope: `enable` on the alias rewrote the other repository's policy and hook
+scope checks accepted the alias. This is tracked as P1-11 in
+[todo.md](../../todo.md) and TM-027 in the [threat model](../threat-model.md)
+and is now implemented; the remaining residual hardening item is the TLS trust
+override recorded above.
 
 ## Residual hardening (recorded, not fixed)
 

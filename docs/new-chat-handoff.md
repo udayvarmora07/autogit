@@ -17,7 +17,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   commit, so the manifest's commit identity is intentionally the clean source
   snapshot rather than a manually edited current-HEAD value.
 - Overall release posture: **NO-GO for private alpha**.
-- Tracker: 97 total checklist rows, 83 checked, 14 open.
+- Tracker: 97 total checklist rows, 84 checked, 13 open.
 - Earlier user-assigned implementation scope: 10 work packages—P4-01 through
   P4-08, P5-01, and P5-02. The local continuation has also implemented the
   P5-03 through P5-05 release workflow slice and consumer artifact verifier,
@@ -34,7 +34,7 @@ promotion rules are in [implementation-plan.md](implementation-plan.md).
   bubblewrap namespace path, and Windows now has native AppContainer
   enforcement with parent-side token attestation. Native macOS acceptance
   and named platform-owner review remain separate P1-04 gates. The full
-  project now has 14 open rows.
+  project now has 13 open rows.
 
 ## Why the tracker is still open
 
@@ -165,10 +165,11 @@ remaining P4 rows.
    now generated and byte-compared with the other channels, but winget channel
    publication remains deferred pending separate demand evidence, and attached
    metadata must not be confused with lifecycle acceptance.
-5. Resolve P1-11 (repository identity adoption through a `.git` gitfile) with
-   an explicit design decision recorded in the [2026-10-16 security audit
-   record](release-evidence/security-audit-2026-10-16.md), and consider the
-   recorded residual hardening for repository-local TLS trust overrides.
+5. Consider the recorded residual hardening for repository-local TLS trust
+   overrides in the [2026-10-16 security audit
+   record](release-evidence/security-audit-2026-10-16.md); P1-11 (repository
+   identity adoption through a `.git` gitfile) is now implemented with a
+   worktree-binding check and real-Git regression tests.
 6. Obtain the named security/release tabletop review for P5-07, then run the
    bounded private cohort and backup/provider/adapter/release rollback drills
    required for alpha entry.
@@ -181,9 +182,10 @@ remaining P4 rows.
 - 2026-10-16 security audit: fixed a critical multi-push-URL exfiltration path
   (`f41bff3`), repository-local TLS/transport overrides (`f634ee2`), invented
   issue closure/provenance trailers (`b24d604`), a detached-descendant process
-  hang plus overstated cleanup claims (`71303a0`), and a missing-parent
-  install-confinement gap (`4ef2c1d`). The full record, the open P1-11
-  identity-adoption finding, and the recorded TLS residual are in the
+  hang plus overstated cleanup claims (`71303a0`), a missing-parent
+  install-confinement gap (`4ef2c1d`), and repository identity adoption
+  through a `.git` gitfile (worktree-binding check, P1-11). The full record
+  and the recorded TLS residual are in the
   [security audit record](release-evidence/security-audit-2026-10-16.md).
 - 2026-10-16 winget generation: package metadata now includes the three-file
   winget 1.12.0 portable-installer manifest set under the `winget-pkgs`

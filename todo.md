@@ -12,7 +12,7 @@ or GA.
 ## New-chat continuation handoff
 
 For cross-chat continuity, read [docs/new-chat-handoff.md](docs/new-chat-handoff.md)
-before starting work. Current audit: 97 total rows, 83 checked, 14 open. The
+before starting work. Current audit: 97 total rows, 84 checked, 13 open. The
 user-assigned implementation batch is verified, and exact-tag `v0.1.2` release
 evidence now covers the GitHub Release path; package-channel, clean-machine,
 phase-gate, cohort, and named-review requirements remain open where listed
@@ -153,14 +153,15 @@ All items are release blockers.
   property-test policy merge/validation. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
 - [x] P1-10 Guarantee status, plan, config explain, and non-repair doctor are
   filesystem- and network-read-only. Evidence: [Phase 1 P1-06–P1-10 bundle](docs/release-evidence/phase-1-p1-06-p1-10.md).
-- [ ] P1-11 Bind repository identity to the requesting worktree so a checkout
+- [x] P1-11 Bind repository identity to the requesting worktree so a checkout
   cannot adopt another local repository's policy scope through a `.git`
   gitfile. Evidence: [security audit record](docs/release-evidence/security-audit-2026-10-16.md);
-  a gitfile whose `gitdir:` points at another repository's active git
-  directory currently resolves to that repository's identity, so `enable` on
-  the alias rewrites the other repository's policy and hook scope checks
-  accept the alias. Requires a design decision (worktree-registration check or
-  explicit identity confirmation) before implementation.
+  `repository.Discover` now requires the git directory to record the
+  requesting directory as its worktree through Git's own bindings (a linked
+  worktree `gitdir` back-pointer or `core.worktree`), and rejects metadata
+  with neither binding — hostile aliases, stale back-pointers until
+  `git worktree repair`, and unbound separate git directories — with
+  real-Git regression tests for each path.
 - [ ] Phase 1 gate: local workflow passes hostile repository, crash,
   cancellation, backup/restore, privacy, and ownership matrices on all claimed
   native platforms. Manual run `35508065704` passed all 20 jobs against exact

@@ -18,6 +18,10 @@ tagged binary or package channel is currently endorsed.
   before an exact-SHA push, TLS verification and helper transports are pinned
   in the hardened git argv, and commit validation denies invented
   issue-closure and provenance trailers.
+- Bound repository identity to the requesting worktree: a `.git` gitfile must
+  record the directory as its worktree through a linked-worktree back-pointer
+  or `core.worktree`, so a checkout cannot adopt another local repository's
+  policy scope.
 - Bounded the external process wait when a detached descendant holds the
   output pipes, and recorded the process-bounded containment limitation in
   the isolation capability and ADR-0010.
