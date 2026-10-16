@@ -65,9 +65,19 @@ func TestGitPusherBindsCanonicalIdentityBeforeExactPush(t *testing.T) {
 	if err := p.Push(context.Background(), "owner/repo", sha, "feature/x"); err != nil {
 		t.Fatal(err)
 	}
+	hardening := []string{
+		"-c", "core.hooksPath=",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.sshCommand=",
+		"-c", "credential.helper=",
+		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.file.allow=never",
+		"-c", "http.sslVerify=true",
+		"-c", "http.https://github.com/.sslVerify=true",
+	}
 	want := [][]string{
-		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "remote", "get-url", "--push", "--all", "--", "origin"},
-		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "push", "--", "origin", sha + ":refs/heads/feature/x"},
+		append(append([]string{}, hardening...), "remote", "get-url", "--push", "--all", "--", "origin"),
+		append(append([]string{}, hardening...), "push", "--", "origin", sha+":refs/heads/feature/x"),
 	}
 	if len(r.calls) != len(want) {
 		t.Fatalf("calls=%#v want %#v", r.calls, want)

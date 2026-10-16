@@ -441,8 +441,24 @@ func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
 	return nil
 }
 
+// safeGitArgs pins the repository-independent hardening flags for every
+// direct git invocation. The TLS verification pin is URL-scoped as well as
+// generic because `http.<url>.*` entries take precedence over `http.*`, so a
+// hostile repository-local `http.sslVerify=false` (or a URL-scoped variant)
+// must not be able to disable certificate verification for the canonical
+// GitHub endpoint. The ext and file transports are refused outright because
+// no AutoGit operation pushes to a local or helper transport.
 func safeGitArgs(args ...string) []string {
-	return append([]string{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper="}, args...)
+	return append([]string{
+		"-c", "core.hooksPath=",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.sshCommand=",
+		"-c", "credential.helper=",
+		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.file.allow=never",
+		"-c", "http.sslVerify=true",
+		"-c", "http.https://github.com/.sslVerify=true",
+	}, args...)
 }
 
 const maxOutput = 1 << 20
