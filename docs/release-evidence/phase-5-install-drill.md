@@ -93,3 +93,29 @@ It does not prove package upgrade, downgrade, tamper-rejection during an
 upgrade, rollback preservation, or uninstall across a previous package-channel
 version. Those checks remain open because no prior package-channel release is
 published.
+
+## Partial Homebrew-on-Linux container drill — 2026-10-16 (supporting only)
+
+Run in a clean `ubuntu:24.04` container (digest
+`sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55`,
+kernel `7.0.0-38-generic`) with the official non-interactive Homebrew
+installer, Homebrew `7.0.9`, and an unprivileged user. Completed steps:
+
+- clean Homebrew installation with the official installer;
+- `brew tap udayvarmora07/autogit` and `brew trust udayvarmora07/autogit`;
+- `brew install autogit` succeeded
+  (`/home/linuxbrew/.linuxbrew/Cellar/autogit/0.1.2`, 4 files, 15.8MB), which
+  means Homebrew's own digest verification accepted the formula's `sha256` for
+  the released `autogit-linux-amd64` asset;
+- `autogit version` reported `v0.1.2` at commit
+  `abcd3fb3b7ced0b34e33a34bfb335a800806f00b` with the expected
+  `autogit.compatibility/1` and `autogit.result/1` identities. The binary also
+  emitted its Landlock capability warning on this kernel (ABI 8 below the
+  ABI 10 network-denial floor) and continued normally.
+
+The remaining steps — published-`SHA256SUMS` digest equality, tampered-formula
+rejection, installed-version preservation, and uninstall — did not complete:
+container egress to `github.com` stalled during the digest download and the run
+was stopped at its 20-minute bound. This is partial supporting evidence from a
+container; the claimed macOS/Windows native clean-machine acceptance and the
+upgrade/downgrade/tamper/uninstall lifecycle remain open.
