@@ -367,7 +367,7 @@ func (p GitPusher) RemoteURL(ctx context.Context, alias string) (string, error) 
 	if p.Runner == nil {
 		return "", ErrUnsupportedPush
 	}
-	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "get-url", "--push", "--", alias)...)
+	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "get-url", "--push", "--all", "--", alias)...)
 	if len(res.Output) > maxOutput {
 		return "", ErrOutputLimit
 	}
@@ -413,7 +413,11 @@ func (p GitPusher) Push(ctx context.Context, remote, sha, ref string) error {
 	if !ok || !validGitRemoteAlias(alias) {
 		return remoteBindingError()
 	}
-	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "get-url", "--push", "--", alias)...)
+	// `git push` contacts every configured push URL under the alias, while
+	// `git remote get-url --push` without --all prints only the first one.
+	// Enumerate all of them here; the single-line canonical check below then
+	// fails closed when any additional destination is configured.
+	res, runErr := p.Runner.Run(ctx, p.Dir, safeGitArgs("remote", "get-url", "--push", "--all", "--", alias)...)
 	if len(res.Output) > maxOutput {
 		return ErrOutputLimit
 	}

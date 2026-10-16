@@ -66,7 +66,7 @@ func TestGitPusherBindsCanonicalIdentityBeforeExactPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := [][]string{
-		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "remote", "get-url", "--push", "--", "origin"},
+		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "remote", "get-url", "--push", "--all", "--", "origin"},
 		{"-c", "core.hooksPath=", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "credential.helper=", "push", "--", "origin", sha + ":refs/heads/feature/x"},
 	}
 	if len(r.calls) != len(want) {
@@ -179,6 +179,54 @@ func TestGitPusherBindsRealTemporaryGitRemoteBeforePush(t *testing.T) {
 	err = p.Push(context.Background(), "owner/repo", strings.Repeat("a", 40), "main")
 	if !errors.Is(err, ErrRemoteBinding) {
 		t.Fatalf("mismatched real remote error=%v, want binding rejection", err)
+	}
+}
+
+// `git push` delivers to every configured push URL, while `git remote
+// get-url --push` without --all prints only the first. A hostile repository
+// could therefore prepend a canonical push URL and append an attacker URL to
+// receive the private pack while the binding check passed. The binding check
+// must enumerate all push URLs and fail closed on any extra destination.
+func TestGitPusherRejectsMultipleRealPushURLsBeforePush(t *testing.T) {
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	gitPath, err = filepath.EvalSymlinks(gitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	if output, err := exec.Command(gitPath, "init", "--quiet", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v (%s)", err, output)
+	}
+	attacker := filepath.Join(t.TempDir(), "attacker.git")
+	if output, err := exec.Command(gitPath, "init", "--quiet", "--bare", attacker).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v (%s)", err, output)
+	}
+	for _, args := range [][]string{
+		{"-C", repo, "remote", "add", "origin", "https://github.com/owner/repo.git"},
+		{"-C", repo, "remote", "set-url", "--add", "--push", "origin", "https://github.com/owner/repo.git"},
+		{"-C", repo, "remote", "set-url", "--add", "--push", "origin", attacker},
+	} {
+		if output, err := exec.Command(gitPath, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v (%s)", args, err, output)
+		}
+	}
+	p := GitPusher{
+		Runner:         SystemRunner{Executable: gitPath, WorkingDir: repo},
+		AllowedRemotes: map[string]string{"owner/repo": "origin"},
+	}
+	err = p.Push(context.Background(), "owner/repo", strings.Repeat("a", 40), "main")
+	if !errors.Is(err, ErrRemoteBinding) {
+		t.Fatalf("multiple push URLs error=%v, want binding rejection", err)
+	}
+	output, err := exec.Command(gitPath, "-C", attacker, "branch", "--list", "main").CombinedOutput()
+	if err != nil {
+		t.Fatalf("inspect unvalidated destination: %v (%s)", err, output)
+	}
+	if strings.TrimSpace(string(output)) != "" {
+		t.Fatalf("pack delivered to an unvalidated push URL: %s", output)
 	}
 }
 

@@ -1274,7 +1274,7 @@ func main() {
 		os.Exit(1)
 	}
 	args := os.Args[1:]
-	if hasFixtureArgs(args, "remote", "get-url", "--push", "--", "origin") {
+	if hasFixtureArgs(args, "remote", "get-url", "--push", "--all", "--", "origin") {
 		fmt.Fprintln(os.Stdout, "https://github.com/owner/repo")
 		return
 	}
