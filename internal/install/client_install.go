@@ -78,7 +78,8 @@ func PlanClient(entry ClientInstallation, path string, roots []string, projectRo
 	if err != nil {
 		return ClientInstallPlan{}, err
 	}
-	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Mode: 0600, resolvedDir: resolvedInstallDir(filepath.Dir(clean))}
+	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Mode: 0600}
+	recordPlannedDir(&p, filepath.Dir(clean))
 	info, statErr := os.Lstat(clean)
 	if statErr == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
@@ -215,7 +216,8 @@ func UninstallClient(entry ClientInstallation, path string, roots []string, proj
 	if err != nil {
 		return err
 	}
-	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Original: original, Desired: desired, Exists: true, Mode: info.Mode(), Changed: true, resolvedDir: resolvedInstallDir(filepath.Dir(clean))}
+	p := InstallPlan{Spec: ConfigSpec{Adapter: entry.Adapter, Path: clean, Format: FormatJSON}, Path: clean, Original: original, Desired: desired, Exists: true, Mode: info.Mode(), Changed: true}
+	recordPlannedDir(&p, filepath.Dir(clean))
 	return RemoveWithProvenance(p)
 }
 

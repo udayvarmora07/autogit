@@ -47,8 +47,13 @@ type InstallPlan struct {
 	// resolvedDir records the canonical directory observed during planning.
 	// The spelling of an absolute path may legitimately change across platforms
 	// (for example /var -> /private/var on macOS), so Apply compares canonical
-	// identities rather than raw path strings.
-	resolvedDir string
+	// identities rather than raw path strings. When the directory did not
+	// exist yet at planning time, plannedBase and plannedBaseResolved record
+	// the nearest existing ancestor instead so Apply can still prove that
+	// creating the directory did not cross a symlink planted after planning.
+	resolvedDir         string
+	plannedBase         string
+	plannedBaseResolved string
 }
 
 var (
@@ -77,7 +82,8 @@ func Plan(spec ConfigSpec, roots []string) (InstallPlan, error) {
 	if err != nil {
 		return InstallPlan{}, err
 	}
-	p := InstallPlan{Spec: spec, Path: path, Mode: 0600, resolvedDir: resolvedInstallDir(filepath.Dir(path))}
+	p := InstallPlan{Spec: spec, Path: path, Mode: 0600}
+	recordPlannedDir(&p, filepath.Dir(path))
 	info, err := os.Lstat(path)
 	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
@@ -126,8 +132,23 @@ func Apply(p InstallPlan) error {
 	if err != nil {
 		return ErrScope
 	}
-	if p.resolvedDir != "" && canonicalDir != p.resolvedDir {
-		return ErrScope
+	switch {
+	case p.resolvedDir != "":
+		if canonicalDir != p.resolvedDir {
+			return ErrScope
+		}
+	case p.plannedBase != "":
+		// The directory did not exist during planning: require the created
+		// directory to be exactly the planned ancestor plus the planned
+		// relative suffix, so a symlink planted at a missing parent cannot
+		// redirect the write outside the approved root.
+		rel, relErr := filepath.Rel(p.plannedBase, dir)
+		if relErr != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return ErrScope
+		}
+		if canonicalDir != filepath.Join(p.plannedBaseResolved, rel) {
+			return ErrScope
+		}
 	}
 	if info, err := os.Lstat(p.Path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
@@ -176,12 +197,28 @@ func Apply(p InstallPlan) error {
 	return syncDir(dir)
 }
 
-func resolvedInstallDir(dir string) string {
-	resolved, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return ""
+// recordPlannedDir records the plan-time canonical identity of the target
+// directory. An existing directory is recorded canonically so legitimate
+// platform path aliases are accepted. A directory that does not exist yet
+// records its nearest existing ancestor so Apply can later prove that path
+// creation did not cross a symlink planted after planning.
+func recordPlannedDir(p *InstallPlan, dir string) {
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		p.resolvedDir = resolved
+		return
 	}
-	return resolved
+	for base := filepath.Dir(dir); ; {
+		if resolved, err := filepath.EvalSymlinks(base); err == nil {
+			p.plannedBase = base
+			p.plannedBaseResolved = resolved
+			return
+		}
+		parent := filepath.Dir(base)
+		if parent == base {
+			return
+		}
+		base = parent
+	}
 }
 
 // Uninstall removes only an entry carrying AutoGit's ownership marker. A

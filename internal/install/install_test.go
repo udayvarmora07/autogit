@@ -191,6 +191,54 @@ func TestApplyAcceptsCanonicalAliasForPlannedDirectory(t *testing.T) {
 	}
 }
 
+// A plan whose target parent does not exist yet must still confine Apply to
+// the approved root: a symlink planted at the missing parent between planning
+// and applying may not redirect the write.
+func TestApplyRejectsSymlinkAtMissingPlannedParent(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	fresh := filepath.Join(root, "new-client")
+	path := filepath.Join(fresh, "client.json")
+	plan, err := Plan(ConfigSpec{Adapter: "codex", Path: path, Format: FormatJSON}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.plannedBase == "" || plan.resolvedDir != "" {
+		t.Fatalf("plan did not record a missing-parent identity: %#v", plan)
+	}
+	if err := os.Symlink(outside, fresh); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := Apply(plan); !errors.Is(err, ErrScope) {
+		t.Fatalf("missing-parent symlink error=%v, want ErrScope", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "client.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside target was modified: %v", err)
+	}
+}
+
+// The same missing-parent plan shape must still install normally when no
+// symlink appears, including nested directories created by Apply.
+func TestApplyCreatesMissingPlannedParentWithinScope(t *testing.T) {
+	root := t.TempDir()
+	fresh := filepath.Join(root, "nested", "new-client")
+	path := filepath.Join(fresh, "client.json")
+	plan, err := Plan(ConfigSpec{Adapter: "codex", Path: path, Format: FormatJSON}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(plan); err != nil {
+		t.Fatalf("fresh nested parent rejected: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("installed mode=%v, want 0600", info.Mode().Perm())
+	}
+}
+
 func fileMode(path string) os.FileMode {
 	info, _ := os.Stat(path)
 	return info.Mode()
