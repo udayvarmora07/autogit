@@ -18,7 +18,7 @@ Status: v0.1.2 exact-tag hosted release published; package-channel and clean-mac
 | Signed provenance | Pinned official `actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d` creates a SLSA provenance attestation and a separate SBOM attestation using the checksum subjects. Required OIDC, attestation, and artifact metadata permissions exist only on the post-quality job. |
 | Independent reproducibility | Ubuntu and macOS jobs rebuild the exact tag with the same source-derived `SOURCE_DATE_EPOCH`, upload separate artifact sets, and a third Ubuntu job compares every checksum and binary byte-for-byte. The attestation job depends on that comparison. |
 | Consumer verification | `scripts/verify-release-artifacts.sh` rejects unsafe, incomplete, or unexpectedly expanded bundles, verifies checksums for all six binaries, both SBOMs, the exact-tag machine-evidence manifest, and vulnerability reports, then verifies binary provenance plus SPDX and CycloneDX predicates against a release binary with the exact repository, workflow, tag, source commit, and hosted-runner requirement. The release workflow runs this verifier after all attestations and before final evidence upload. |
-| Package-channel metadata | `scripts/generate-package-metadata.sh` validates the exact semver tag, six binary files, and their entries in `SHA256SUMS`, then emits deterministic Homebrew and Scoop metadata with release URLs and digests. The publication runner regenerates both files from the downloaded bundle and requires byte-for-byte equality before attaching them to the release. The selected Homebrew and Scoop repositories now contain the exact metadata; native clean-machine package tests remain open. |
+| Package-channel metadata | `scripts/generate-package-metadata.sh` validates the exact semver tag, six binary files, and their entries in `SHA256SUMS`, then emits deterministic Homebrew and Scoop metadata (with release URLs and digests) plus the three-file winget 1.12.0 portable-installer manifest set under the `winget-pkgs` partition path. The publication runner regenerates all files from the downloaded bundle and requires byte-for-byte equality before attaching them to the release; the attestation job asserts the winget file count. The selected Homebrew and Scoop repositories now contain the exact metadata; native clean-machine package tests remain open, and no winget channel is published. |
 | Verified GitHub Release publication | A separate `release-publish` protected environment downloads only the attested bundle, rechecks `SHA256SUMS`, the embedded tag/commit identity, all required provenance/SBOM predicates, and package metadata on the publication runner, then publishes the exact tag with `gh release create --verify-tag`. It has `contents: write` plus read-only attestation metadata only on this final job; package-channel lifecycle acceptance remains pending native install evidence. |
 
 ## Local verification
@@ -114,10 +114,13 @@ tests remain open.
 ## Package-channel publication — v0.1.2
 
 The demonstrated demand decision selects Homebrew for macOS consumers and
-Scoop for Windows consumers. Winget remains deferred because this project does
-not yet generate a winget manifest or have separate demand evidence. The exact
-metadata from the verified `v0.1.2` release was published without modification
-to these maintained public repositories:
+Scoop for Windows consumers. Winget remains deferred pending separate demand
+evidence; the missing generator blocker was removed on 2026-10-16 when
+deterministic winget manifests (three-file 1.12.0 layout, portable installer,
+`winget-pkgs` partition path) joined the generated package metadata and the
+publication byte-comparison. The exact metadata from the verified `v0.1.2`
+release was published without modification to these maintained public
+repositories:
 
 | Channel | Repository revision | Published file | Metadata SHA-256 |
 | --- | --- | --- | --- |
