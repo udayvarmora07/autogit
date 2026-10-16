@@ -42,12 +42,12 @@ func CapabilityFor(tier IsolationTier) IsolationCapability {
 		if !process.ProcessBoundedAvailable() {
 			return IsolationCapability{Tier: tier, Reason: fmt.Sprintf("native process supervisor is unavailable on %s", runtime.GOOS), Limitations: []string{"process-bounded execution is unavailable; verification must fail closed"}}
 		}
-		reason := fmt.Sprintf("argv, scrubbed environment, timeout, bounded output, descendant cleanup, and process limits supported on %s", runtime.GOOS)
+		reason := fmt.Sprintf("argv, scrubbed environment, timeout, bounded output, process-group descendant cleanup, and process limits supported on %s", runtime.GOOS)
 		primitive := "process-group"
-		limitations := []string(nil)
+		limitations := []string{"a descendant that deliberately starts a new session can escape process-group and process-tree cleanup, and a descendant that holds the inherited output pipes is reported as exec.ErrWaitDelay after a bounded wait; use a namespace isolation tier for hostile code that must not outlive verification"}
 		if runtime.GOOS == "darwin" {
 			reason = "argv, scrubbed environment, timeout, bounded output, and process-group cleanup; macOS resource ceilings are unavailable"
-			limitations = []string{"resource ceilings are unavailable; filesystem and network isolation tiers are unavailable"}
+			limitations = append(limitations, "resource ceilings are unavailable; filesystem and network isolation tiers are unavailable")
 		} else if runtime.GOOS == "windows" {
 			reason = "argv, scrubbed environment, timeout, bounded output, descendant cleanup, and Windows job-object CPU/memory/process limits"
 			primitive = "job-object"

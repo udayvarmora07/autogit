@@ -5,6 +5,7 @@ package process
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +14,15 @@ import (
 )
 
 const DefaultMaxOutput = 1 << 20
+
+// waitDelay bounds the residual wait after the direct child has exited while
+// a detached descendant still holds an inherited output pipe (for example a
+// repository-controlled helper that deliberately daemonizes into a new
+// session). Without a bound, cmd.Wait waits for pipe EOF that may never
+// arrive and Run can never return. WaitDelay only starts once Wait observes
+// the child exit, and it surfaces as exec.ErrWaitDelay so callers can fail
+// closed instead of treating a force-closed output stream as complete.
+const waitDelay = 2 * time.Second
 
 var ErrOutputLimit = errors.New("process output exceeded limit")
 var ErrSandboxUnavailable = errors.New("requested process sandbox is unavailable")
@@ -119,6 +129,7 @@ func Run(ctx context.Context, options Options) (finalResult Result, finalErr err
 	}
 	command := exec.Command(executable, options.Args...) // #nosec G204 -- executable and argv are validated by the owning boundary.
 	command.Dir = options.Dir
+	command.WaitDelay = waitDelay
 	if options.Env != nil {
 		command.Env = append([]string(nil), options.Env...)
 	}
@@ -219,6 +230,13 @@ func Run(ctx context.Context, options Options) (finalResult Result, finalErr err
 	processState, waitErr := wait()
 	close(done)
 	<-watcherDone
+	if errors.Is(waitErr, exec.ErrWaitDelay) {
+		// The command exited, but its output stream could not be completed
+		// because a descendant kept the inherited pipes open. Treat the
+		// force-closed stream as an explicit failure rather than as a
+		// complete result.
+		waitErr = fmt.Errorf("descendants held the output pipes after exit: %w", exec.ErrWaitDelay)
+	}
 	exitCode := 0
 	if processState != nil {
 		exitCode = processState.ExitCode()
