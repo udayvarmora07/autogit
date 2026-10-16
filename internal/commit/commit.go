@@ -123,7 +123,21 @@ func Compose(intent, message string, e Evidence) (Message, error) {
 	return Message{Subject: strings.Split(message, "\n")[0], Body: message, MessageDigest: "sha256:" + hex.EncodeToString(h[:]), CandidateDigest: e.CandidateDigest, BaseDigest: e.BaseDigest, PolicyDigest: e.PolicyDigest, VerifierDigest: e.VerifierDigest}, nil
 }
 
-var headerRE = regexp.MustCompile(`^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9._/-]+\))?!?: .+$`)
+var (
+	headerRE = regexp.MustCompile(`^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9._/-]+\))?!?: .+$`)
+	// provenanceTrailerRE denies every hyphenated author/review-style Git
+	// trailer (Co-authored-by, Signed-off-by, Reviewed-by, Tested-by, ...).
+	// TM-015 requires that untrusted completion text cannot invent authorship
+	// or review provenance in permanent history, so the schema denies the
+	// trailer shape rather than only the two most common spellings.
+	provenanceTrailerRE = regexp.MustCompile(`(?i)^[a-z][a-z-]*-by\s*:`)
+	// issueClosureRE denies GitHub/GitLab issue-closure keywords followed by
+	// an issue reference: "Closes #12", "fixes: owner/repo#7", or
+	// "Resolved https://github.com/owner/repo/issues/3". TM-015 lists
+	// invented issue closure as a repudiation threat because the reference
+	// takes effect when the commit reaches the target branch.
+	issueClosureRE = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s*:?\s+(?:#\d+\b|[\w.-]+/[\w.-]+#\d+\b|https?://\S+/(?:issues|pull|merge_requests)/\d+\b)`)
+)
 
 func Validate(message string) error {
 	message = strings.TrimSpace(message)
@@ -140,15 +154,22 @@ func Validate(message string) error {
 	lower := strings.ToLower(message)
 	for _, line := range strings.Split(lower, "\n") {
 		trimmed := strings.TrimSpace(line)
-		for _, trailer := range []string{"co-authored-by", "signed-off-by"} {
-			if strings.HasPrefix(trimmed, trailer) && strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(trimmed, trailer)), ":") {
-				return fmt.Errorf("forbidden trailer or sensitive content")
-			}
-		}
+		// The lowercase copy is used for the case-insensitive checks; the
+		// original line is matched for the trailer shape so the diagnosis is
+		// deterministic.
 		for _, bad := range []string{"gh-token", "yes public", "password", "secret"} {
 			if strings.Contains(trimmed, bad) {
 				return fmt.Errorf("forbidden trailer or sensitive content")
 			}
+		}
+	}
+	for _, line := range strings.Split(message, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if provenanceTrailerRE.MatchString(trimmed) {
+			return fmt.Errorf("forbidden provenance trailer")
+		}
+		if issueClosureRE.MatchString(trimmed) {
+			return fmt.Errorf("forbidden issue-closure reference")
 		}
 	}
 	return nil

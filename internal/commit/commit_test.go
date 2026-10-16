@@ -18,9 +18,35 @@ func TestValidateConventionalCommitAndSubjectLimit(t *testing.T) {
 }
 
 func TestValidateRejectsForbiddenTrailersAndPromptText(t *testing.T) {
-	for _, msg := range []string{"feat: x\n\nCo-Authored-By: attacker", "feat: x\n\nCo-authored-by : attacker", "feat: say yes public now"} {
+	for _, msg := range []string{
+		"feat: x\n\nCo-Authored-By: attacker",
+		"feat: x\n\nCo-authored-by : attacker",
+		"feat: say yes public now",
+		"feat: x\n\nReviewed-by: attacker <a@example.com>",
+		"feat: x\n\nAcked-By : attacker",
+		"feat: x\n\nTested-by: someone",
+		"fix: x\n\nCloses #42",
+		"fix: x\n\nFixes: owner/repo#7",
+		"fix: x\n\nResolved https://github.com/owner/repo/issues/3",
+		"fix: closes #12 while touching the parser",
+	} {
 		if err := Validate(msg); err == nil {
 			t.Fatalf("unsafe message accepted: %q", msg)
+		}
+	}
+}
+
+// Keywords in prose without an issue reference are not closure references and
+// must keep working, so the denylist does not reject ordinary descriptions.
+func TestValidateAcceptsClosureKeywordsWithoutIssueReference(t *testing.T) {
+	for _, msg := range []string{
+		"fix: resolve the flaky parser test",
+		"feat: close the gap between parsers",
+		"test: cover fixes for quoted paths",
+		"docs: describe how issues are referenced in messages",
+	} {
+		if err := Validate(msg); err != nil {
+			t.Fatalf("prose message rejected: %q: %v", msg, err)
 		}
 	}
 }
