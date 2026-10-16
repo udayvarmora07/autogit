@@ -208,6 +208,11 @@ func TestReleaseWorkflowRevalidatesAttestedBundleBeforePublication(t *testing.T)
 		"diff -u -- \"$bundled\" \"$regenerated\"",
 		"compare_metadata autogit.rb",
 		"compare_metadata autogit.json",
+		"compare_metadata \"$winget_relative/$package_identifier.yaml\"",
+		"compare_metadata \"$winget_relative/$package_identifier.installer.yaml\"",
+		"compare_metadata \"$winget_relative/$package_identifier.locale.en-US.yaml\"",
+		"winget_relative=\"winget/manifests/$winget_partition/$repository_owner/$repository_name/${RELEASE_TAG#v}\"",
+		"test \"$(find package-metadata/winget -type f | wc -l)\" = \"3\"",
 		"attestations: read",
 		"artifact-metadata: read",
 		"test \"$(git rev-parse HEAD)\" = \"$RELEASE_SHA\"",
@@ -356,8 +361,8 @@ func TestPackageMetadataGeneratorUsesReleaseManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("package metadata entries=%d, want 2", len(entries))
+	if len(entries) != 3 {
+		t.Fatalf("package metadata entries=%d, want 3", len(entries))
 	}
 	formula, err := os.ReadFile(filepath.Join(metadata, "autogit.rb"))
 	if err != nil {
@@ -409,6 +414,72 @@ func TestPackageMetadataGeneratorUsesReleaseManifest(t *testing.T) {
 	}
 	if bytes.Contains(formula, []byte(filepath.Dir(dist))) || bytes.Contains(manifestData, []byte(filepath.Dir(dist))) {
 		t.Fatal("package metadata leaked a local path")
+	}
+
+	wingetDirectory := filepath.Join(metadata, "winget", "manifests", "o", "owner", "repo", "1.2.3")
+	versionManifest, err := os.ReadFile(filepath.Join(wingetDirectory, "owner.repo.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerManifest, err := os.ReadFile(filepath.Join(wingetDirectory, "owner.repo.installer.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	localeManifest, err := os.ReadFile(filepath.Join(wingetDirectory, "owner.repo.locale.en-US.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"owner.repo.yaml":              versionManifest,
+		"owner.repo.installer.yaml":    installerManifest,
+		"owner.repo.locale.en-US.yaml": localeManifest,
+	} {
+		if bytes.Contains(data, []byte(filepath.Dir(dist))) {
+			t.Fatalf("winget manifest %s leaked a local path", name)
+		}
+		for _, required := range []string{
+			"PackageIdentifier: owner.repo",
+			"PackageVersion: 1.2.3",
+			"ManifestVersion: 1.12.0",
+		} {
+			if !bytes.Contains(data, []byte(required)) {
+				t.Fatalf("winget manifest %s is missing %q: %s", name, required, data)
+			}
+		}
+	}
+	for _, required := range []string{
+		"DefaultLocale: en-US",
+		"ManifestType: version",
+	} {
+		if !bytes.Contains(versionManifest, []byte(required)) {
+			t.Fatalf("winget version manifest is missing %q: %s", required, versionManifest)
+		}
+	}
+	for _, required := range []string{
+		"InstallerType: portable",
+		"Commands:\n- autogit",
+		"ManifestType: installer",
+		"Architecture: x64",
+		"Architecture: arm64",
+		"https://github.com/owner/repo/releases/download/v1.2.3/autogit-windows-amd64.exe",
+		"https://github.com/owner/repo/releases/download/v1.2.3/autogit-windows-arm64.exe",
+		"InstallerSha256: " + checksums["autogit-windows-amd64.exe"],
+		"InstallerSha256: " + checksums["autogit-windows-arm64.exe"],
+	} {
+		if !bytes.Contains(installerManifest, []byte(required)) {
+			t.Fatalf("winget installer manifest is missing %q: %s", required, installerManifest)
+		}
+	}
+	for _, required := range []string{
+		"PackageLocale: en-US",
+		"PackageName: AutoGit",
+		"License: Apache-2.0",
+		"ManifestType: defaultLocale",
+		"https://github.com/owner/repo/blob/v1.2.3/LICENSE",
+	} {
+		if !bytes.Contains(localeManifest, []byte(required)) {
+			t.Fatalf("winget locale manifest is missing %q: %s", required, localeManifest)
+		}
 	}
 
 	output, err = runShellScript(t, nil, "generate-package-metadata.sh",

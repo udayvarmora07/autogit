@@ -311,6 +311,7 @@ jobs:
           test -f package-metadata/autogit.rb
           test -f package-metadata/autogit.json
           python3 -m json.tool package-metadata/autogit.json >/dev/null
+          test "$(find package-metadata/winget -type f | wc -l)" = "3"
       - name: attest SLSA provenance and checksums
         id: provenance
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
@@ -433,6 +434,14 @@ jobs:
           }
           compare_metadata autogit.rb
           compare_metadata autogit.json
+          repository_owner="${GITHUB_REPOSITORY%%/*}"
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          package_identifier="$repository_owner.$repository_name"
+          winget_partition="$(printf '%s' "${repository_owner:0:1}" | tr '[:upper:]' '[:lower:]')"
+          winget_relative="winget/manifests/$winget_partition/$repository_owner/$repository_name/${RELEASE_TAG#v}"
+          compare_metadata "$winget_relative/$package_identifier.yaml"
+          compare_metadata "$winget_relative/$package_identifier.installer.yaml"
+          compare_metadata "$winget_relative/$package_identifier.locale.en-US.yaml"
       - name: publish verified GitHub Release
         shell: bash
         env:

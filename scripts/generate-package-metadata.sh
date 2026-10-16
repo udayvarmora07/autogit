@@ -6,9 +6,11 @@ usage() {
 Usage: scripts/generate-package-metadata.sh --version TAG --repo OWNER/REPO \
   --directory DIST --output DIRECTORY
 
-Generate deterministic Homebrew and Scoop metadata for an exact AutoGit
-release. The release directory must contain all six binaries and SHA256SUMS.
-The output directory must not already exist.
+Generate deterministic Homebrew, Scoop, and winget metadata for an exact
+AutoGit release. The release directory must contain all six binaries and
+SHA256SUMS. The output directory must not already exist. The winget manifests
+use the three-file 1.12.0 layout and are emitted under a winget-pkgs partition
+path so they can be submitted unchanged if the winget channel is approved.
 EOF
 }
 
@@ -57,6 +59,12 @@ done
 }
 [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
   echo "repository must be OWNER/REPO" >&2
+  exit 2
+}
+repository_owner="${repository%%/*}"
+repository_name="${repository#*/}"
+[[ "$repository_owner" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$repository_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+  echo "repository segments must start with an alphanumeric character for winget identifiers" >&2
   exit 2
 }
 [[ -n "$release_directory" ]] || { echo "--directory is required" >&2; exit 2; }
@@ -170,6 +178,9 @@ trap cleanup EXIT
 
 version="${version_tag#v}"
 base_url="https://github.com/$repository/releases/download/$version_tag"
+package_identifier="$repository_owner.$repository_name"
+winget_partition="$(printf '%s' "${repository_owner:0:1}" | tr '[:upper:]' '[:lower:]')"
+winget_directory="$temporary_output/winget/manifests/$winget_partition/$repository_owner/$repository_name/$version"
 
 cat > "$temporary_output/autogit.rb" <<EOF
 class Autogit < Formula
@@ -238,6 +249,66 @@ cat > "$temporary_output/autogit.json" <<EOF
 EOF
 
 chmod 0644 "$temporary_output/autogit.rb" "$temporary_output/autogit.json"
+
+# Winget manifests use the three-file 1.12.0 layout with a portable installer
+# so the raw signed release executable is installed without an additional
+# installer format. The partition path matches the winget-pkgs repository.
+mkdir -p "$winget_directory"
+
+cat > "$winget_directory/$package_identifier.yaml" <<EOF
+PackageIdentifier: $package_identifier
+PackageVersion: $version
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.12.0
+EOF
+
+cat > "$winget_directory/$package_identifier.installer.yaml" <<EOF
+PackageIdentifier: $package_identifier
+PackageVersion: $version
+Platform:
+- Windows.Desktop
+InstallerType: portable
+Commands:
+- autogit
+Installers:
+- Architecture: x64
+  InstallerUrl: $base_url/autogit-windows-amd64.exe
+  InstallerSha256: $windows_amd64_checksum
+- Architecture: arm64
+  InstallerUrl: $base_url/autogit-windows-arm64.exe
+  InstallerSha256: $windows_arm64_checksum
+ManifestType: installer
+ManifestVersion: 1.12.0
+EOF
+
+cat > "$winget_directory/$package_identifier.locale.en-US.yaml" <<EOF
+PackageIdentifier: $package_identifier
+PackageVersion: $version
+PackageLocale: en-US
+Publisher: $repository_owner
+PublisherUrl: https://github.com/$repository_owner
+PackageName: AutoGit
+PackageUrl: https://github.com/$repository
+License: Apache-2.0
+LicenseUrl: https://github.com/$repository/blob/$version_tag/LICENSE
+ShortDescription: Consent-based Git automation tool for AI-assisted development
+Description: AutoGit preserves useful work automatically while preventing unrelated, unverified, or sensitive changes from being published. It publishes only a consented, attributable change set after its configured safety and verification policy has passed.
+Tags:
+- git
+- automation
+- ai
+- cli
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
+EOF
+
+winget_files=(
+  "$winget_directory/$package_identifier.yaml"
+  "$winget_directory/$package_identifier.installer.yaml"
+  "$winget_directory/$package_identifier.locale.en-US.yaml"
+)
+chmod 0644 "${winget_files[@]}"
 if [[ -e "$output_directory" || -L "$output_directory" ]]; then
   echo "package metadata output appeared during generation: $output_directory" >&2
   exit 1
